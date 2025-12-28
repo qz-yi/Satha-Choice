@@ -169,7 +169,14 @@ export default function RequestFlow() {
   }, [watchVehicle, form.watch("pickupLat"), form.watch("pickupLng"), form.watch("destLat"), form.watch("destLng")]);
 
   const onSubmit = (data: FormValues) => {
-    mutate(data, {
+    const formattedData = {
+      ...data,
+      pickupLat: data.pickupLat.toString(),
+      pickupLng: data.pickupLng.toString(),
+      destLat: data.destLat.toString(),
+      destLng: data.destLng.toString(),
+    };
+    mutate(formattedData, {
       onSuccess: () => setIsSuccess(true),
     });
   };

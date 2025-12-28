@@ -8,11 +8,11 @@ export const requests = pgTable("requests", {
   vehicleType: text("vehicle_type").notNull(), // 'small', 'large', 'hydraulic'
   price: text("price").notNull(),
   location: text("location").notNull(),
-  pickupLat: decimal("pickup_lat", { precision: 10, scale: 7 }),
-  pickupLng: decimal("pickup_lng", { precision: 10, scale: 7 }),
+  pickupLat: text("pickup_lat"),
+  pickupLng: text("pickup_lng"),
   destination: text("destination"),
-  destLat: decimal("dest_lat", { precision: 10, scale: 7 }),
-  destLng: decimal("dest_lng", { precision: 10, scale: 7 }),
+  destLat: text("dest_lat"),
+  destLng: text("dest_lng"),
   scheduledAt: timestamp("scheduled_at"),
   status: text("status").default("pending"),
   driverId: integer("driver_id"), // Linked to user if we had one, but keeping simple
