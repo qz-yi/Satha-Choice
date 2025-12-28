@@ -125,6 +125,14 @@ const formSchema = insertRequestSchema.extend({
   scheduledAt: z.string().optional(),
 });
 
+const BASE_RATES = {
+  small: 15000,
+  large: 30000,
+  hydraulic: 25000
+};
+
+const KM_RATE = 2000;
+
 export default function RequestFlow() {
   const [isSuccess, setIsSuccess] = useState(false);
   const { mutate, isPending } = useCreateRequest();
