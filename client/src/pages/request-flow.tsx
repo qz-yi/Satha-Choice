@@ -5,21 +5,33 @@ import { z } from "zod";
 import { insertRequestSchema, VEHICLE_OPTIONS } from "@shared/schema";
 import { useCreateRequest } from "@/hooks/use-requests";
 import { VehicleCard } from "@/components/vehicle-card";
-import { MapPin, Loader2, Phone, CalendarCheck, Truck } from "lucide-react";
+import { MapPin, Loader2, Phone, CalendarCheck, Truck, Clock, Navigation } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Extend schema to ensure fields are required in UI
 const formSchema = insertRequestSchema.extend({
-  location: z.string().min(3, "يرجى تحديد الموقع بدقة"),
+  location: z.string().min(3, "يرجى تحديد موقع التحميل"),
+  destination: z.string().min(3, "يرجى تحديد موقع التوصيل"),
   vehicleType: z.string().min(1, "يرجى اختيار نوع السطحة"),
   price: z.string(),
+  timeMode: z.enum(["now", "later"]),
+  scheduledAt: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
+
+const BASE_RATES = {
+  small: 15000,
+  large: 30000,
+  hydraulic: 25000
+};
+
+const KM_RATE = 2000;
 
 export default function RequestFlow() {
   const [isSuccess, setIsSuccess] = useState(false);
@@ -29,10 +41,26 @@ export default function RequestFlow() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       location: "",
+      destination: "",
       vehicleType: "",
       price: "",
+      timeMode: "now",
     },
   });
+
+  const watchVehicle = form.watch("vehicleType");
+  const watchLocation = form.watch("location");
+  const watchDestination = form.watch("destination");
+
+  useEffect(() => {
+    if (watchVehicle && watchLocation && watchDestination) {
+      // Simulation of distance-based pricing
+      const base = BASE_RATES[watchVehicle as keyof typeof BASE_RATES] || 20000;
+      const simulatedDistance = Math.floor(Math.random() * 20) + 5; // 5-25km
+      const total = base + (simulatedDistance * KM_RATE);
+      form.setValue("price", `${total.toLocaleString()} د.ع`);
+    }
+  }, [watchVehicle, watchLocation, watchDestination]);
 
   const onSubmit = (data: FormValues) => {
     mutate(data, {
@@ -140,9 +168,28 @@ export default function RequestFlow() {
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
               
-              {/* Location Input Section */}
+              {/* Location & Time Section */}
               <Card className="border-border shadow-sm overflow-hidden">
-                <CardContent className="p-6">
+                <CardContent className="p-6 space-y-6">
+                  <div className="flex gap-4 mb-4">
+                    <FormField
+                      control={form.control}
+                      name="timeMode"
+                      render={({ field }) => (
+                        <Tabs value={field.value} onValueChange={field.onChange} className="w-full">
+                          <TabsList className="grid w-full grid-cols-2">
+                            <TabsTrigger value="now" className="gap-2">
+                              <Clock className="w-4 h-4" /> الآن
+                            </TabsTrigger>
+                            <TabsTrigger value="later" className="gap-2">
+                              <CalendarCheck className="w-4 h-4" /> لاحقاً
+                            </TabsTrigger>
+                          </TabsList>
+                        </Tabs>
+                      )}
+                    />
+                  </div>
+
                   <FormField
                     control={form.control}
                     name="location"
@@ -155,11 +202,35 @@ export default function RequestFlow() {
                         <FormControl>
                           <div className="relative">
                             <Input 
-                              placeholder="مثال: الرياض، حي الملقا، شارع أنس بن مالك..." 
+                              placeholder="حدد موقع السيارة المعطلة..." 
                               className="h-14 pr-11 text-lg rounded-xl border-2 focus-visible:ring-primary focus-visible:border-primary transition-all bg-background"
                               {...field} 
                             />
                             <MapPin className="absolute right-4 top-4 text-muted-foreground w-5 h-5" />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="destination"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-lg font-bold flex items-center gap-2 mb-2">
+                          <Navigation className="w-5 h-5 text-blue-500" />
+                          وجهة التوصيل
+                        </FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Input 
+                              placeholder="إلى أين تريد نقل السيارة؟" 
+                              className="h-14 pr-11 text-lg rounded-xl border-2 focus-visible:ring-primary focus-visible:border-primary transition-all bg-background"
+                              {...field} 
+                            />
+                            <Navigation className="absolute right-4 top-4 text-muted-foreground w-5 h-5" />
                           </div>
                         </FormControl>
                         <FormMessage />

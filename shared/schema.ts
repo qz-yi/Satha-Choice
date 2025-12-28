@@ -7,8 +7,14 @@ export const requests = pgTable("requests", {
   id: serial("id").primaryKey(),
   vehicleType: text("vehicle_type").notNull(), // 'small', 'large', 'hydraulic'
   price: text("price").notNull(),
-  location: text("location").notNull(), // Simple text for MVP
-  status: text("status").default("pending"), // pending, confirmed, completed
+  location: text("location").notNull(),
+  pickupLat: decimal("pickup_lat", { precision: 10, scale: 7 }),
+  pickupLng: decimal("pickup_lng", { precision: 10, scale: 7 }),
+  destination: text("destination"),
+  destLat: decimal("dest_lat", { precision: 10, scale: 7 }),
+  destLng: decimal("dest_lng", { precision: 10, scale: 7 }),
+  scheduledAt: timestamp("scheduled_at"),
+  status: text("status").default("pending"),
   driverId: integer("driver_id"), // Linked to user if we had one, but keeping simple
   createdAt: timestamp("created_at").defaultNow(),
 });
