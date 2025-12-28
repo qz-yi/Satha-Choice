@@ -5,7 +5,7 @@ import { z } from "zod";
 import { insertRequestSchema, VEHICLE_OPTIONS } from "@shared/schema";
 import { useCreateRequest } from "@/hooks/use-requests";
 import { VehicleCard } from "@/components/vehicle-card";
-import { MapPin, Loader2, Phone, CalendarCheck } from "lucide-react";
+import { MapPin, Loader2, Phone, CalendarCheck, Truck } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
