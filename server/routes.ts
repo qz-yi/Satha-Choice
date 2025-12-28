@@ -25,7 +25,7 @@ export async function registerRoutes(
     }
   });
 
-  // List all requests (for admin or history)
+  // List all requests
   app.get(api.requests.list.path, async (req, res) => {
     const requests = await storage.getRequests();
     res.json(requests);
@@ -40,20 +40,54 @@ export async function registerRoutes(
     res.json(request);
   });
 
-  // Seed data function (optional, but good for testing)
+  // Accept request (Driver action)
+  app.post("/api/drivers/:id/accept/:requestId", async (req, res) => {
+    try {
+      const driverId = parseInt(req.params.id);
+      const requestId = parseInt(req.params.requestId);
+      const result = await storage.acceptRequest(driverId, requestId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // Get driver wallet info
+  app.get("/api/drivers/:id", async (req, res) => {
+    const driver = await storage.getDriver(Number(req.params.id));
+    if (!driver) return res.status(404).json({ message: "Driver not found" });
+    res.json(driver);
+  });
+
+  // Seed data function
   async function seed() {
-    const existing = await storage.getRequests();
-    if (existing.length === 0) {
+    const driversList = await storage.getDrivers();
+    if (driversList.length === 0) {
+      // Create a test driver with balance
+      await storage.createDriver({
+        name: "أحمد السائق",
+        phone: "07700000000",
+        walletBalance: "50000.00",
+      });
+      // Create a test driver with ZERO balance
+      await storage.createDriver({
+        name: "سائق بدون رصيد",
+        phone: "07800000000",
+        walletBalance: "0.00",
+      });
+      console.log("Seeded drivers data");
+    }
+
+    const requestsList = await storage.getRequests();
+    if (requestsList.length === 0) {
       await storage.createRequest({
         vehicleType: "small",
         price: "25,000 د.ع",
         location: "بغداد - الكرادة",
       });
-      console.log("Seeded initial data");
     }
   }
 
-  // Run seed
   seed().catch(console.error);
 
   return httpServer;

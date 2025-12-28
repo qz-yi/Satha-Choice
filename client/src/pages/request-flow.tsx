@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -46,6 +46,14 @@ export default function RequestFlow() {
     form.clearErrors("vehicleType");
   };
 
+  const [driverBalance, setDriverBalance] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/api/drivers/1")
+      .then(res => res.json())
+      .then(data => setDriverBalance(data.walletBalance))
+      .catch(console.error);
+  }, []);
+
   if (isSuccess) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -87,7 +95,14 @@ export default function RequestFlow() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50/50 pb-24 md:pb-0">
+    <div className="min-h-screen bg-gray-50/50 pb-24 md:pb-0" dir="rtl">
+      {/* Driver Balance Info (Simulating Driver View) */}
+      {driverBalance !== null && (
+        <div className="bg-orange-50 border-b border-orange-200 px-4 py-2 flex justify-between items-center text-sm">
+          <span className="font-bold text-orange-800">رصيد المحفظة:</span>
+          <span className="font-mono font-bold text-orange-900">{parseFloat(driverBalance).toLocaleString()} د.ع</span>
+        </div>
+      )}
       {/* Header / AppBar */}
       <header className="bg-primary shadow-lg sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 md:py-5 flex items-center justify-between">

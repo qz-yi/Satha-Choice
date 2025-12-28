@@ -7,31 +7,35 @@ export const requests = pgTable("requests", {
   id: serial("id").primaryKey(),
   vehicleType: text("vehicle_type").notNull(), // 'small', 'large', 'hydraulic'
   price: text("price").notNull(),
-  location: text("location").notNull(), // Pickup address name
-  destination: text("destination").notNull(), // Destination address name
-  pickupLat: decimal("pickup_lat", { precision: 10, scale: 7 }).notNull(),
-  pickupLng: decimal("pickup_lng", { precision: 10, scale: 7 }).notNull(),
-  destinationLat: decimal("destination_lat", { precision: 10, scale: 7 }).notNull(),
-  destinationLng: decimal("destination_lng", { precision: 10, scale: 7 }).notNull(),
+  location: text("location").notNull(), // Simple text for MVP
   status: text("status").default("pending"), // pending, confirmed, completed
+  driverId: integer("driver_id"), // Linked to user if we had one, but keeping simple
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const drivers = pgTable("drivers", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  phone: text("phone").notNull(),
+  walletBalance: decimal("wallet_balance", { precision: 10, scale: 2 }).notNull().default("0.00"),
+});
+
 // === BASE SCHEMAS ===
-export const insertRequestSchema = createInsertSchema(requests, {
-  pickupLat: z.coerce.number(),
-  pickupLng: z.coerce.number(),
-  destinationLat: z.coerce.number(),
-  destinationLng: z.coerce.number(),
-}).omit({ 
+export const insertRequestSchema = createInsertSchema(requests).omit({ 
   id: true, 
   status: true, 
   createdAt: true 
 });
 
+export const insertDriverSchema = createInsertSchema(drivers).omit({
+  id: true,
+});
+
 // === EXPLICIT API CONTRACT TYPES ===
 export type Request = typeof requests.$inferSelect;
 export type InsertRequest = z.infer<typeof insertRequestSchema>;
+export type Driver = typeof drivers.$inferSelect;
+export type InsertDriver = z.infer<typeof insertDriverSchema>;
 
 export type CreateRequestRequest = InsertRequest;
 export type RequestResponse = Request;
