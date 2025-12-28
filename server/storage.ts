@@ -18,6 +18,9 @@ export interface IStorage {
   createDriver(driver: InsertDriver): Promise<Driver>;
   getDriver(id: number): Promise<Driver | undefined>;
   getDrivers(): Promise<Driver[]>;
+  updateDriverStatus(id: number, isOnline: boolean): Promise<Driver>;
+  updateRequestStatus(id: number, status: string, rating?: number, paymentMethod?: string): Promise<Request>;
+  refundToCustomer(driverId: number, requestId: number, amount: number): Promise<{ driver: Driver; user: any }>;
   acceptRequest(driverId: number, requestId: number): Promise<{ request: Request; driver: Driver }>;
 }
 
@@ -51,6 +54,38 @@ export class DatabaseStorage implements IStorage {
 
   async getDrivers(): Promise<Driver[]> {
     return await db.select().from(drivers);
+  }
+
+  async updateDriverStatus(id: number, isOnline: boolean): Promise<Driver> {
+    const [updated] = await db.update(drivers).set({ isOnline }).where(eq(drivers.id, id)).returning();
+    return updated;
+  }
+
+  async updateRequestStatus(id: number, status: string, rating?: number, paymentMethod?: string): Promise<Request> {
+    const [updated] = await db.update(requests).set({ status, rating, paymentMethod }).where(eq(requests.id, id)).returning();
+    return updated;
+  }
+
+  async refundToCustomer(driverId: number, requestId: number, amount: number): Promise<{ driver: Driver; user: any }> {
+    return await db.transaction(async (tx) => {
+      const [driver] = await tx.select().from(drivers).where(eq(drivers.id, driverId));
+      if (!driver) throw new Error("Driver not found");
+      
+      const [request] = await tx.select().from(requests).where(eq(requests.id, requestId));
+      if (!request) throw new Error("Request not found");
+
+      const newDriverBalance = (parseFloat(driver.walletBalance) - amount).toFixed(2);
+      const [updatedDriver] = await tx.update(drivers).set({ walletBalance: newDriverBalance }).where(eq(drivers.id, driverId)).returning();
+      
+      // For MVP, we'll assume a single user for simplicity
+      const [user] = await tx.select().from(sql`users`).limit(1);
+      const newUserBalance = (parseFloat(user.walletBalance) + amount).toFixed(2);
+      const [updatedUser] = await tx.update(sql`users`).set({ walletBalance: newUserBalance }).returning();
+      
+      await tx.update(requests).set({ isRefunded: true }).where(eq(requests.id, requestId));
+
+      return { driver: updatedDriver, user: updatedUser };
+    });
   }
 
   async acceptRequest(driverId: number, requestId: number): Promise<{ request: Request; driver: Driver }> {

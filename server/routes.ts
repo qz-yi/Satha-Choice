@@ -59,6 +59,37 @@ export async function registerRoutes(
     res.json(driver);
   });
 
+  // Update driver status
+  app.patch("/api/drivers/:id/status", async (req, res) => {
+    const driver = await storage.updateDriverStatus(Number(req.params.id), req.body.isOnline);
+    res.json(driver);
+  });
+
+  // Update request status (Rating / Payment)
+  app.patch("/api/requests/:id", async (req, res) => {
+    const request = await storage.updateRequestStatus(
+      Number(req.params.id), 
+      req.body.status, 
+      req.body.rating, 
+      req.body.paymentMethod
+    );
+    res.json(request);
+  });
+
+  // Refund to customer
+  app.post("/api/drivers/:id/refund/:requestId", async (req, res) => {
+    try {
+      const result = await storage.refundToCustomer(
+        Number(req.params.id), 
+        Number(req.params.requestId), 
+        req.body.amount
+      );
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
   // Seed data function
   async function seed() {
     const driversList = await storage.getDrivers();

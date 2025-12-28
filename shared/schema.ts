@@ -17,12 +17,22 @@ export const requests = pgTable("requests", {
   status: text("status").default("pending"),
   driverId: integer("driver_id"), // Linked to user if we had one, but keeping simple
   createdAt: timestamp("created_at").defaultNow(),
+  rating: integer("rating"),
+  paymentMethod: text("payment_method"), // 'cash', 'wallet'
+  isRefunded: boolean("is_refunded").default(sql`false`),
 });
 
 export const drivers = pgTable("drivers", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   phone: text("phone").notNull(),
+  walletBalance: decimal("wallet_balance", { precision: 10, scale: 2 }).notNull().default("0.00"),
+  isOnline: boolean("is_online").default(sql`true`),
+});
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
   walletBalance: decimal("wallet_balance", { precision: 10, scale: 2 }).notNull().default("0.00"),
 });
 
