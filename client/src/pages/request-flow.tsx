@@ -14,24 +14,116 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Extend schema to ensure fields are required in UI
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+import L from "leaflet";
+
+// Fix Leaflet icon issue
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
+function MapController({ onPickupChange }: { onPickupChange: (pos: [number, number]) => void }) {
+  const map = useMap();
+  
+  const handleCurrentLocation = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    map.locate().on("locationfound", (e) => {
+      onPickupChange([e.latlng.lat, e.latlng.lng]);
+      map.flyTo(e.latlng, map.getZoom());
+    });
+  };
+
+  return (
+    <Button 
+      type="button"
+      size="icon"
+      variant="secondary"
+      className="absolute top-2 right-2 z-[1000] shadow-md"
+      onClick={handleCurrentLocation}
+      title="موقعي الحالي"
+    >
+      <MapPin className="w-4 h-4" />
+    </Button>
+  );
+}
+
+function LocationPicker({ 
+  pickup, 
+  destination, 
+  onPickupChange, 
+  onDestinationChange 
+}: { 
+  pickup: [number, number] | null, 
+  destination: [number, number] | null,
+  onPickupChange: (pos: [number, number]) => void,
+  onDestinationChange: (pos: [number, number]) => void
+}) {
+  const [mode, setMode] = useState<"pickup" | "destination">("pickup");
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 mb-2">
+        <Button 
+          type="button"
+          variant={mode === "pickup" ? "default" : "outline"}
+          onClick={() => setMode("pickup")}
+          className="flex-1"
+        >
+          تحديد موقع التحميل
+        </Button>
+        <Button 
+          type="button"
+          variant={mode === "destination" ? "default" : "outline"}
+          onClick={() => setMode("destination")}
+          className="flex-1"
+        >
+          تحديد موقع التوصيل
+        </Button>
+      </div>
+      <div className="h-[300px] rounded-xl overflow-hidden border-2 border-border relative z-0">
+        <MapContainer center={[33.3152, 44.3661]} zoom={11} style={{ height: "100%", width: "100%" }}>
+          <MapController onPickupChange={onPickupChange} />
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          <MapEvents mode={mode} setMode={setMode} onPickupChange={onPickupChange} onDestinationChange={onDestinationChange} />
+          {pickup && <Marker position={pickup} />}
+          {destination && <Marker position={destination} />}
+        </MapContainer>
+      </div>
+    </div>
+  );
+}
+
+function MapEvents({ mode, setMode, onPickupChange, onDestinationChange }: any) {
+  useMapEvents({
+    click(e) {
+      if (mode === "pickup") {
+        onPickupChange([e.latlng.lat, e.latlng.lng]);
+        setMode("destination");
+      } else {
+        onDestinationChange([e.latlng.lat, e.latlng.lng]);
+      }
+    },
+  });
+  return null;
+}
+
 const formSchema = insertRequestSchema.extend({
   location: z.string().min(3, "يرجى تحديد موقع التحميل"),
   destination: z.string().min(3, "يرجى تحديد موقع التوصيل"),
+  pickupLat: z.number(),
+  pickupLng: z.number(),
+  destLat: z.number(),
+  destLng: z.number(),
   vehicleType: z.string().min(1, "يرجى اختيار نوع السطحة"),
   price: z.string(),
   timeMode: z.enum(["now", "later"]),
   scheduledAt: z.string().optional(),
 });
-
-type FormValues = z.infer<typeof formSchema>;
-
-const BASE_RATES = {
-  small: 15000,
-  large: 30000,
-  hydraulic: 25000
-};
-
-const KM_RATE = 2000;
 
 export default function RequestFlow() {
   const [isSuccess, setIsSuccess] = useState(false);
@@ -40,8 +132,12 @@ export default function RequestFlow() {
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      location: "",
-      destination: "",
+      location: "موقع محدد من الخريطة",
+      destination: "وجهة محددة من الخريطة",
+      pickupLat: 0,
+      pickupLng: 0,
+      destLat: 0,
+      destLng: 0,
       vehicleType: "",
       price: "",
       timeMode: "now",
@@ -49,18 +145,20 @@ export default function RequestFlow() {
   });
 
   const watchVehicle = form.watch("vehicleType");
-  const watchLocation = form.watch("location");
-  const watchDestination = form.watch("destination");
+  const watchPickup = [form.watch("pickupLat"), form.watch("pickupLng")] as [number, number];
+  const watchDest = [form.watch("destLat"), form.watch("destLng")] as [number, number];
 
   useEffect(() => {
-    if (watchVehicle && watchLocation && watchDestination) {
-      // Simulation of distance-based pricing
+    if (watchVehicle && form.getValues("pickupLat") !== 0 && form.getValues("destLat") !== 0) {
+      const p1 = L.latLng(form.getValues("pickupLat"), form.getValues("pickupLng"));
+      const p2 = L.latLng(form.getValues("destLat"), form.getValues("destLng"));
+      const distance = p1.distanceTo(p2) / 1000; // in km
+      
       const base = BASE_RATES[watchVehicle as keyof typeof BASE_RATES] || 20000;
-      const simulatedDistance = Math.floor(Math.random() * 20) + 5; // 5-25km
-      const total = base + (simulatedDistance * KM_RATE);
-      form.setValue("price", `${total.toLocaleString()} د.ع`);
+      const total = base + (distance * KM_RATE);
+      form.setValue("price", `${Math.round(total / 250) * 250} د.ع`);
     }
-  }, [watchVehicle, watchLocation, watchDestination]);
+  }, [watchVehicle, form.watch("pickupLat"), form.watch("pickupLng"), form.watch("destLat"), form.watch("destLng")]);
 
   const onSubmit = (data: FormValues) => {
     mutate(data, {
@@ -190,53 +288,45 @@ export default function RequestFlow() {
                     />
                   </div>
 
-                  <FormField
-                    control={form.control}
-                    name="location"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-lg font-bold flex items-center gap-2 mb-2">
-                          <MapPin className="w-5 h-5 text-primary" />
-                          موقع التحميل
-                        </FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Input 
-                              placeholder="حدد موقع السيارة المعطلة..." 
-                              className="h-14 pr-11 text-lg rounded-xl border-2 focus-visible:ring-primary focus-visible:border-primary transition-all bg-background"
-                              {...field} 
-                            />
-                            <MapPin className="absolute right-4 top-4 text-muted-foreground w-5 h-5" />
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                  <LocationPicker 
+                    pickup={form.getValues("pickupLat") !== 0 ? [form.watch("pickupLat"), form.watch("pickupLng")] : null}
+                    destination={form.getValues("destLat") !== 0 ? [form.watch("destLat"), form.watch("destLng")] : null}
+                    onPickupChange={(pos) => {
+                      form.setValue("pickupLat", pos[0]);
+                      form.setValue("pickupLng", pos[1]);
+                    }}
+                    onDestinationChange={(pos) => {
+                      form.setValue("destLat", pos[0]);
+                      form.setValue("destLng", pos[1]);
+                    }}
                   />
 
-                  <FormField
-                    control={form.control}
-                    name="destination"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-lg font-bold flex items-center gap-2 mb-2">
-                          <Navigation className="w-5 h-5 text-blue-500" />
-                          وجهة التوصيل
-                        </FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Input 
-                              placeholder="إلى أين تريد نقل السيارة؟" 
-                              className="h-14 pr-11 text-lg rounded-xl border-2 focus-visible:ring-primary focus-visible:border-primary transition-all bg-background"
-                              {...field} 
-                            />
-                            <Navigation className="absolute right-4 top-4 text-muted-foreground w-5 h-5" />
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sr-only">
+                    <FormField
+                      control={form.control}
+                      name="location"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>موقع التحميل</FormLabel>
+                          <FormControl>
+                            <Input {...field} readOnly />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="destination"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>وجهة التوصيل</FormLabel>
+                          <FormControl>
+                            <Input {...field} readOnly />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </CardContent>
               </Card>
 
