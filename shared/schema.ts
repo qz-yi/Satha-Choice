@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, decimal } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -7,13 +7,23 @@ export const requests = pgTable("requests", {
   id: serial("id").primaryKey(),
   vehicleType: text("vehicle_type").notNull(), // 'small', 'large', 'hydraulic'
   price: text("price").notNull(),
-  location: text("location").notNull(), // Simple text for MVP
+  location: text("location").notNull(), // Pickup address name
+  destination: text("destination").notNull(), // Destination address name
+  pickupLat: decimal("pickup_lat", { precision: 10, scale: 7 }).notNull(),
+  pickupLng: decimal("pickup_lng", { precision: 10, scale: 7 }).notNull(),
+  destinationLat: decimal("destination_lat", { precision: 10, scale: 7 }).notNull(),
+  destinationLng: decimal("destination_lng", { precision: 10, scale: 7 }).notNull(),
   status: text("status").default("pending"), // pending, confirmed, completed
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 // === BASE SCHEMAS ===
-export const insertRequestSchema = createInsertSchema(requests).omit({ 
+export const insertRequestSchema = createInsertSchema(requests, {
+  pickupLat: z.coerce.number(),
+  pickupLng: z.coerce.number(),
+  destinationLat: z.coerce.number(),
+  destinationLng: z.coerce.number(),
+}).omit({ 
   id: true, 
   status: true, 
   createdAt: true 
