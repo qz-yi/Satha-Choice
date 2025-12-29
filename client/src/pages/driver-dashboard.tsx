@@ -156,7 +156,7 @@ export default function DriverDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50/50 flex flex-col gap-6 pb-24 md:pb-8" dir="rtl">
+    <div className="min-h-screen bg-gray-50/50 flex flex-col" dir="rtl">
       {/* 1. Bright Yellow Header */}
       <header className="bg-primary shadow-lg sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 md:py-5 flex items-center justify-between">
@@ -173,7 +173,6 @@ export default function DriverDashboard() {
             >
               <LogOut className="w-6 h-6" />
             </Button>
-            {/* 2. ON/OFF Toggle in Header Context but light/dark logic */}
             <div className="flex items-center gap-2 bg-white/20 px-3 py-1.5 rounded-full">
                <span className="text-xs font-bold text-black">{isOnline ? 'متصل' : 'غير متصل'}</span>
                <button 
@@ -187,9 +186,9 @@ export default function DriverDashboard() {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 flex flex-col gap-6 max-w-3xl">
-        {/* 4. Map Section with simple border */}
-        <div className="flex-1 min-h-[500px] relative rounded-3xl overflow-hidden border-2 border-gray-200 shadow-lg bg-white">
+      <main className="flex-1 flex flex-col">
+        {/* 2. Map Section directly under header */}
+        <div className="flex-1 relative min-h-[450px] bg-white border-b-2 border-gray-100">
           <MapContainer center={currentPos} zoom={13} style={{ height: "100%", width: "100%" }}>
             <TileLayer 
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" 
@@ -218,12 +217,12 @@ export default function DriverDashboard() {
             </Button>
           </div>
 
-          {/* Active Request Overlay - Using Customer Flow Colors */}
+          {/* Active Request Overlay */}
           {activeRequest && (
             <div className="absolute bottom-6 left-6 right-6 z-[1000]">
               <Card className="bg-white border-primary border-2 shadow-2xl text-black rounded-2xl overflow-hidden">
                 <CardContent className="p-6">
-                  <div className="flex justify-between items-start mb-6">
+                  <div className="flex justify-between items-start mb-4">
                     <div>
                       <h3 className="text-black font-black text-xl mb-1 flex items-center gap-2">
                         <Truck className="w-6 h-6 text-primary" /> طلب جاري
@@ -232,16 +231,13 @@ export default function DriverDashboard() {
                         <Navigation className="w-4 h-4 text-primary" /> {activeRequest.location}
                       </p>
                     </div>
-                    <div className="bg-primary/10 text-black px-4 py-2 rounded-xl font-black text-lg border border-primary/20">
+                    <div className="bg-primary/10 text-black px-4 py-2 rounded-xl font-black text-lg">
                       {activeRequest.price}
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <Button onClick={() => completeRide('cash')} className="h-14 font-black bg-primary text-black hover:bg-primary/90 rounded-xl shadow-lg shadow-primary/20">إنهاء كاش</Button>
-                      <Button onClick={() => completeRide('wallet')} className="h-14 font-black bg-white border-2 border-gray-200 text-black hover:bg-gray-50 rounded-xl">إنهاء محفظة</Button>
-                    </div>
-                    <Button onClick={refundToCustomer} variant="ghost" className="w-full text-red-500 font-bold hover:bg-red-50 mt-2 underline">إرجاع مبلغ للزبون</Button>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button onClick={() => completeRide('cash')} className="h-14 font-black bg-primary text-black hover:bg-primary/90 rounded-xl shadow-lg shadow-primary/20">إنهاء كاش</Button>
+                    <Button onClick={() => completeRide('wallet')} className="h-14 font-black bg-white border-2 border-gray-200 text-black hover:bg-gray-50 rounded-xl">إنهاء محفظة</Button>
                   </div>
                 </CardContent>
               </Card>
@@ -268,7 +264,6 @@ export default function DriverDashboard() {
                     <div className="bg-gray-50 p-6 rounded-2xl text-black space-y-2 border border-gray-100">
                       <p className="text-primary-foreground bg-primary inline-block px-4 py-1 rounded-full font-black text-sm mb-2">{pendingRequest.price}</p>
                       <p className="text-lg font-bold">{pendingRequest.vehicleType === 'small' ? 'سطحة صغيرة' : pendingRequest.vehicleType === 'large' ? 'سطحة كبيرة' : 'سطحة هيدروليك'}</p>
-                      <p className="text-sm text-gray-400 font-medium">يبعد عنك حوالي 3.5 كم</p>
                     </div>
                     <div className="flex flex-col gap-3">
                       <Button 
@@ -292,37 +287,26 @@ export default function DriverDashboard() {
           </AnimatePresence>
         </div>
 
-        {/* 5. Separate Wallet Card - Clean White Design */}
-        <section>
-          <Card className="bg-white border border-gray-100 shadow-xl overflow-hidden rounded-3xl group">
-            <div className="bg-primary h-2 w-full" />
-            <CardContent className="p-8 flex items-center justify-between">
-              <div className="flex items-center gap-6">
-                <div className="bg-primary/10 p-4 rounded-2xl">
-                  <Wallet className="w-10 h-10 text-primary" />
-                </div>
-                <div>
-                  <p className="text-gray-400 text-sm font-black uppercase tracking-widest mb-1">رصيد المحفظة</p>
-                  <h2 className="text-4xl font-black text-black font-mono tracking-tighter">
-                    {driver ? parseFloat(driver.walletBalance).toLocaleString() : '0'} <span className="text-sm font-bold opacity-40">د.ع</span>
-                  </h2>
-                </div>
+        {/* 3. Separate Wallet Section in Footer area but inside main */}
+        <section className="bg-white border-t border-gray-100 p-6">
+          <div className="container mx-auto max-w-3xl flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="bg-primary/10 p-3 rounded-xl">
+                <Wallet className="w-8 h-8 text-primary" />
               </div>
-              <div className="hidden sm:block">
-                <Button className="bg-primary text-black font-black px-8 h-12 rounded-xl hover:bg-primary/90 shadow-lg shadow-primary/20">
-                  سحب الأرباح
-                </Button>
+              <div>
+                <p className="text-gray-400 text-xs font-black uppercase tracking-widest">رصيد المحفظة الحالي</p>
+                <h2 className="text-2xl font-black text-black font-mono">
+                  {driver ? parseFloat(driver.walletBalance).toLocaleString() : '0'} <span className="text-xs opacity-40">د.ع</span>
+                </h2>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+            <Button className="bg-primary text-black font-black px-6 h-10 rounded-xl hover:bg-primary/90">
+              سحب الأرباح
+            </Button>
+          </div>
         </section>
       </main>
-
-      {/* Footer Status Bar */}
-      <footer className="mt-auto py-6 flex items-center justify-center gap-4 text-[10px] uppercase font-black tracking-widest text-gray-300">
-        <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-red-400'}`} />
-        {isOnline ? 'Active & Ready for orders' : 'Currently Offline'}
-      </footer>
     </div>
   );
 }
