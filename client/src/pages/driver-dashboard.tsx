@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Truck, LogOut, Signal, SignalLow, Clock, MapPin, Navigation, CheckCircle, XCircle } from "lucide-react";

@@ -33,22 +33,29 @@ function MapController({ onPickupChange }: { onPickupChange: (pos: [number, numb
   const handleCurrentLocation = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    map.locate().on("locationfound", (e) => {
-      onPickupChange([e.latlng.lat, e.latlng.lng]);
-      map.flyTo(e.latlng, map.getZoom());
-    });
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition((pos) => {
+        const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        onPickupChange([latlng.lat, latlng.lng]);
+        map.flyTo(latlng, 15);
+      }, () => {
+        alert("يرجى تفعيل صلاحية الوصول للموقع.");
+      });
+    } else {
+      alert("متصفحك لا يدعم خاصية تحديد الموقع.");
+    }
   };
 
   return (
     <Button 
       type="button"
-      size="icon"
+      size="default"
       variant="secondary"
-      className="absolute top-2 right-2 z-[1000] shadow-md"
+      className="absolute top-4 left-4 z-[1000] shadow-xl bg-white hover:bg-gray-100 text-black font-bold flex items-center gap-2 px-4 h-12 rounded-full border-2 border-primary"
       onClick={handleCurrentLocation}
-      title="موقعي الحالي"
     >
-      <MapPin className="w-4 h-4" />
+      <MapPin className="w-5 h-5 text-primary" />
+      <span>تحديد موقعي</span>
     </Button>
   );
 }
@@ -70,23 +77,23 @@ function LocationPicker({
     <div className="space-y-4">
       <div className="flex gap-2 mb-2">
         <Button 
-          type="button"
-          variant={mode === "pickup" ? "default" : "outline"}
+          type="button" 
+          variant="outline"
           onClick={() => setMode("pickup")}
-          className="flex-1"
+          className={`flex-1 border-2 font-bold ${mode === "pickup" ? "bg-green-50 border-green-500 text-green-700" : "border-green-500/30 text-green-600"}`}
         >
-          تحديد موقع التحميل
+          🟢 تحديد موقع التحميل
         </Button>
         <Button 
-          type="button"
-          variant={mode === "destination" ? "default" : "outline"}
+          type="button" 
+          variant="outline"
           onClick={() => setMode("destination")}
-          className="flex-1"
+          className={`flex-1 border-2 font-bold ${mode === "destination" ? "bg-red-50 border-red-500 text-red-700" : "border-red-500/30 text-red-600"}`}
         >
-          تحديد موقع التوصيل
+          🔴 تحديد موقع التوصيل
         </Button>
       </div>
-      <div className="h-[300px] rounded-xl overflow-hidden border-2 border-border relative z-0">
+      <div className="h-[450px] rounded-xl overflow-hidden border-2 border-border relative z-0">
         <MapContainer center={[33.3152, 44.3661]} zoom={11} style={{ height: "100%", width: "100%" }}>
           <MapController onPickupChange={onPickupChange} />
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
@@ -150,7 +157,7 @@ export default function RequestFlow() {
       destLng: 0,
       vehicleType: "",
       price: "",
-      timeMode: "now",
+      timeMode: "now" as const,
     },
   });
 
@@ -372,7 +379,7 @@ export default function RequestFlow() {
               {/* Location & Time Section */}
               <Card className="border-border shadow-sm overflow-hidden">
                 <CardContent className="p-6 space-y-6">
-                  <div className="flex gap-4 mb-4">
+                  <div className="flex gap-4 mb-4 sr-only">
                     <FormField
                       control={form.control}
                       name="timeMode"
