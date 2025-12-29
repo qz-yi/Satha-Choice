@@ -188,6 +188,43 @@ export default function RequestFlow() {
   };
 
   const [driverBalance, setDriverBalance] = useState<string | null>(null);
+  const [activeRequest, setActiveRequest] = useState<any>(null);
+  const [rating, setRating] = useState(0);
+
+  useEffect(() => {
+    // Polling for request status updates
+    const interval = setInterval(() => {
+      fetch("/api/requests")
+        .then(res => res.json())
+        .then(data => {
+          const current = data.find((r: any) => r.status === "confirmed" || r.status === "completed");
+          if (current) {
+            setActiveRequest(current);
+            if (current.status === "completed" && !current.rating) {
+              // Show rating modal logic would go here
+            }
+          }
+        })
+        .catch(console.error);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const submitRating = async (stars: number) => {
+    if (!activeRequest) return;
+    try {
+      await apiRequest("PATCH", `/api/requests/${activeRequest.id}`, { 
+        status: "rated", 
+        rating: stars 
+      });
+      setActiveRequest(null);
+      toast({ title: "شكراً لتقييمك!", description: "تم إرسال تقييمك بنجاح." });
+    } catch (error) {
+      toast({ variant: "destructive", title: "خطأ", description: "فشل إرسال التقييم" });
+    }
+  };
+
   useEffect(() => {
     fetch("/api/drivers/1")
       .then(res => res.json())
@@ -237,6 +274,47 @@ export default function RequestFlow() {
 
   return (
     <div className="min-h-screen bg-gray-50/50 pb-24 md:pb-0" dir="rtl">
+      {/* Rating Overlay */}
+      <AnimatePresence>
+        {activeRequest && activeRequest.status === "completed" && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          >
+            <Card className="w-full max-w-sm border-2 border-primary shadow-2xl text-center">
+              <CardContent className="pt-8 pb-8 px-6 space-y-6">
+                <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
+                  <Truck className="w-10 h-10 text-primary" />
+                </div>
+                <h2 className="text-2xl font-bold">تقييم الخدمة</h2>
+                <p className="text-muted-foreground">كيف كانت تجربتك مع السائق؟</p>
+                
+                <div className="flex justify-center gap-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      onClick={() => setRating(star)}
+                      className={`text-4xl transition-transform active:scale-90 ${rating >= star ? 'text-yellow-400' : 'text-gray-300'}`}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+
+                <Button 
+                  onClick={() => submitRating(rating)}
+                  disabled={rating === 0}
+                  className="w-full h-12 text-lg font-bold rounded-xl mt-4"
+                >
+                  إرسال التقييم
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Driver Balance Info (Simulating Driver View) */}
       {driverBalance !== null && (
         <div className="bg-orange-50 border-b border-orange-200 px-4 py-2 flex justify-between items-center text-sm">

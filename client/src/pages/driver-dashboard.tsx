@@ -1,10 +1,29 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Truck, LogOut, Signal, SignalLow, Clock, MapPin, Navigation, CheckCircle, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { motion, AnimatePresence } from "framer-motion";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+// Fix Leaflet icon issue
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
+function MapController({ center }: { center: [number, number] }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(center, 15);
+  }, [center, map]);
+  return null;
+}
 
 export default function DriverDashboard() {
   const [isOnline, setIsOnline] = useState(true);
@@ -12,6 +31,7 @@ export default function DriverDashboard() {
   const [activeRequest, setActiveRequest] = useState<any>(null);
   const [pendingRequest, setPendingRequest] = useState<any>(null);
   const [countdown, setCountdown] = useState(30);
+  const [currentPos, setCurrentPos] = useState<[number, number]>([33.3152, 44.3661]);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -22,6 +42,13 @@ export default function DriverDashboard() {
         setIsOnline(data.isOnline);
       })
       .catch(console.error);
+
+    // Get current location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition((pos) => {
+        setCurrentPos([pos.coords.latitude, pos.coords.longitude]);
+      });
+    }
 
     // Polling for new requests
     const interval = setInterval(() => {
@@ -41,6 +68,18 @@ export default function DriverDashboard() {
 
     return () => clearInterval(interval);
   }, [isOnline, activeRequest, pendingRequest]);
+
+  const updateLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition((pos) => {
+        const newPos: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+        setCurrentPos(newPos);
+        toast({ title: "تم تحديث الموقع", description: "تم تحديد موقعك الحالي بنجاح." });
+      }, () => {
+        toast({ variant: "destructive", title: "خطأ", description: "يرجى تفعيل صلاحية الوصول للموقع." });
+      });
+    }
+  };
 
   useEffect(() => {
     let timer: any;
@@ -92,6 +131,27 @@ export default function DriverDashboard() {
       toast({ title: "تم إنهاء الرحلة", description: "شكراً لك، تم تحديث الحالة بنجاح" });
     } catch (error) {
       toast({ variant: "destructive", title: "خطأ", description: "فشل إنهاء الرحلة" });
+    }
+  };
+
+  const refundToCustomer = async () => {
+    if (!activeRequest || !driver) return;
+    try {
+      // For MVP, we'll allow refunding a fixed amount (e.g., 5000 IQD)
+      const amount = 5000;
+      await apiRequest("POST", `/api/drivers/${driver.id}/refund/${activeRequest.id}`, { amount });
+      
+      // Refresh driver balance
+      const res = await fetch(`/api/drivers/${driver.id}`);
+      const data = await res.json();
+      setDriver(data);
+      
+      toast({ 
+        title: "تم استرداد المبلغ", 
+        description: `تم تحويل ${amount.toLocaleString()} د.ع إلى محفظة الزبون.` 
+      });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "خطأ", description: error.message });
     }
   };
 
@@ -154,23 +214,48 @@ export default function DriverDashboard() {
 
         {/* Active Ride View */}
         {activeRequest && (
-          <Card className="border-primary border-2 shadow-lg">
+          <Card className="border-primary border-2 shadow-lg overflow-hidden">
             <CardHeader className="bg-primary/10 border-b">
               <CardTitle className="text-center text-lg">رحلة جارية الآن</CardTitle>
             </CardHeader>
-            <CardContent className="p-6 space-y-6">
-              <div className="h-48 bg-muted rounded-xl flex items-center justify-center border-2 border-dashed border-muted-foreground/20">
-                <div className="text-center">
-                  <Navigation className="w-8 h-8 mx-auto text-primary mb-2 animate-bounce" />
-                  <p className="text-sm font-medium">نظام الملاحة (Route Map)</p>
-                  <p className="text-xs text-muted-foreground">جاري التوجيه إلى: {activeRequest.location}</p>
+            <CardContent className="p-0 space-y-0">
+              <div className="h-64 relative z-0">
+                <MapContainer center={currentPos} zoom={15} style={{ height: "100%", width: "100%" }}>
+                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                  <MapController center={currentPos} />
+                  <Marker position={currentPos}>
+                    <Popup>موقعك الحالي</Popup>
+                  </Marker>
+                  {activeRequest.pickupLat && (
+                    <Marker position={[parseFloat(activeRequest.pickupLat), parseFloat(activeRequest.pickupLng)]}>
+                      <Popup>موقع الزبون (نقطة التحميل)</Popup>
+                    </Marker>
+                  )}
+                </MapContainer>
+                <Button 
+                  onClick={updateLocation}
+                  size="icon"
+                  className="absolute bottom-4 right-4 z-[1000] rounded-full shadow-lg"
+                  variant="secondary"
+                >
+                  <MapPin className="w-5 h-5" />
+                </Button>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium flex items-center gap-2">
+                    <Navigation className="w-4 h-4 text-primary animate-pulse" />
+                    جاري التوجيه إلى: {activeRequest.location}
+                  </p>
                 </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <Button onClick={() => completeRide('cash')} className="h-14 font-bold bg-green-600">إنهاء (دفع نقدي)</Button>
+                  <Button onClick={() => completeRide('wallet')} className="h-14 font-bold bg-blue-600">إنهاء (من المحفظة)</Button>
+                </div>
+                <Button onClick={refundToCustomer} variant="outline" className="w-full text-orange-600 border-orange-200">إرجاع مبلغ للزبون</Button>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <Button onClick={() => completeRide('cash')} className="h-14 font-bold bg-green-600">إنهاء (دفع نقدي)</Button>
-                <Button onClick={() => completeRide('wallet')} className="h-14 font-bold bg-blue-600">إنهاء (من المحفظة)</Button>
-              </div>
-              <Button variant="outline" className="w-full text-orange-600 border-orange-200">إرجاع مبلغ للزبون</Button>
             </CardContent>
           </Card>
         )}
