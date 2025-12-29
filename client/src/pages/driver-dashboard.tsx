@@ -244,38 +244,44 @@ export default function DriverDashboard() {
             </div>
           )}
 
-          {/* New Request Popup (Centered on Map) */}
+          {/* New Request Popup (Floating Glassmorphism Card) */}
           <AnimatePresence>
             {pendingRequest && (
               <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                className="absolute inset-0 z-[1001] flex items-center justify-center p-4 bg-black/40 backdrop-blur-md"
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="absolute inset-x-4 top-1/2 -translate-y-1/2 z-[1001] flex items-center justify-center pointer-events-none"
               >
-                <Card className="w-full max-w-sm bg-white border-4 border-primary shadow-2xl rounded-3xl">
-                  <CardContent className="p-8 space-y-6 text-center">
+                <Card className="w-full max-w-[320px] bg-white/80 backdrop-blur-md border-2 border-primary/30 shadow-[0_20px_50px_rgba(0,0,0,0.15)] rounded-[25px] pointer-events-auto overflow-hidden">
+                  <CardContent className="p-6 space-y-4 text-center">
                     <div className="flex justify-center">
-                      <div className="bg-primary/10 p-5 rounded-full">
-                        <Truck className="w-12 h-12 text-primary animate-bounce" />
+                      <div className="bg-primary/20 p-3 rounded-full">
+                        <Truck className="w-8 h-8 text-primary animate-pulse" />
                       </div>
                     </div>
-                    <h2 className="text-3xl font-black text-black italic tracking-tighter">طلب جديد قريب!</h2>
-                    <div className="bg-gray-50 p-6 rounded-2xl text-black space-y-2 border border-gray-100">
-                      <p className="text-primary-foreground bg-primary inline-block px-4 py-1 rounded-full font-black text-sm mb-2">{pendingRequest.price}</p>
-                      <p className="text-lg font-bold">{pendingRequest.vehicleType === 'small' ? 'سطحة صغيرة' : pendingRequest.vehicleType === 'large' ? 'سطحة كبيرة' : 'سطحة هيدروليك'}</p>
+                    
+                    <div className="space-y-1">
+                      <h2 className="text-xl font-black text-black tracking-tight">طلب جديد قريب!</h2>
+                      <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">يبعد عنك 3.5 كم تقريباً</p>
                     </div>
-                    <div className="flex flex-col gap-3">
+
+                    <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10">
+                      <p className="text-2xl font-black text-black font-mono">{pendingRequest.price}</p>
+                      <p className="text-sm font-bold text-gray-600">{pendingRequest.vehicleType === 'small' ? 'سطحة صغيرة' : pendingRequest.vehicleType === 'large' ? 'سطحة كبيرة' : 'سطحة هيدروليك'}</p>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
                       <Button 
                         onClick={acceptRequest} 
-                        className="h-16 bg-primary hover:bg-primary/90 text-black text-2xl font-black rounded-2xl shadow-xl shadow-primary/20"
+                        className="h-14 bg-primary hover:bg-primary/90 text-black text-xl font-black rounded-2xl shadow-lg shadow-primary/20 transition-all active:scale-95"
                       >
                         قـبـول ({countdown})
                       </Button>
                       <Button 
                         onClick={() => setPendingRequest(null)} 
                         variant="ghost" 
-                        className="text-gray-400 hover:text-red-500 font-bold"
+                        className="text-red-500 hover:text-red-600 font-bold h-10 hover:bg-red-50"
                       >
                         تجاهل الطلب
                       </Button>
