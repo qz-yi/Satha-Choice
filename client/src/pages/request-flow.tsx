@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { insertRequestSchema, VEHICLE_OPTIONS } from "@shared/schema";
+import { insertRequestSchema, VEHICLE_OPTIONS, type InsertRequest } from "@shared/schema";
 import { useCreateRequest } from "@/hooks/use-requests";
 import { VehicleCard } from "@/components/vehicle-card";
 import { MapPin, Loader2, Phone, CalendarCheck, Truck, Clock, Navigation, ArrowLeftRight } from "lucide-react";
@@ -13,8 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-// Extend schema to ensure fields are required in UI
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -141,10 +141,13 @@ const BASE_RATES = {
 
 const KM_RATE = 2000;
 
+type FormValues = z.infer<typeof formSchema>;
+
 export default function RequestFlow() {
   const [isSuccess, setIsSuccess] = useState(false);
   const { mutate, isPending } = useCreateRequest();
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
