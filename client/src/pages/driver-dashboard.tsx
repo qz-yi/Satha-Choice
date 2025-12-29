@@ -33,6 +33,7 @@ export default function DriverDashboard() {
   const [countdown, setCountdown] = useState(30);
   const [currentPos, setCurrentPos] = useState<[number, number]>([33.3152, 44.3661]);
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   useEffect(() => {
     fetch("/api/drivers/1")
@@ -157,10 +158,26 @@ export default function DriverDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50/50 p-4 md:p-8" dir="rtl">
-      <header className="max-w-md mx-auto mb-8 flex items-center justify-between">
+      <header className="max-w-md mx-auto mb-8 flex items-center justify-between bg-[#212121] text-[#fbc02d] p-4 rounded-xl shadow-lg">
         <div className="flex items-center gap-3">
-          <Truck className="w-8 h-8 text-primary" />
-          <h1 className="text-2xl font-bold">لوحة تحكم السائق</h1>
+          <Truck className="w-8 h-8" />
+          <h1 className="text-xl font-bold">لوحة السائق</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => setLocation("/")}
+            className="text-[#fbc02d] hover:bg-white/10"
+          >
+            <LogOut className="w-5 h-5" />
+          </Button>
+          <div 
+            onClick={toggleStatus}
+            className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors ${isOnline ? 'bg-[#fbc02d]' : 'bg-gray-600'}`}
+          >
+            <div className={`bg-white w-4 h-4 rounded-full transition-transform ${isOnline ? 'translate-x-6' : 'translate-x-0'}`} />
+          </div>
         </div>
       </header>
 
@@ -169,42 +186,47 @@ export default function DriverDashboard() {
         <AnimatePresence>
           {pendingRequest && (
             <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+              initial={{ opacity: 0, y: 100 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 100 }}
+              className="fixed bottom-0 left-0 right-0 z-50 p-4"
             >
-              <Card className="w-full max-w-sm border-2 border-primary shadow-2xl">
-                <CardHeader className="bg-primary p-4 text-center">
-                  <CardTitle className="text-black flex items-center justify-center gap-2">
-                    <Clock className="w-5 h-5 animate-spin" />
-                    طلب جديد متاح! ({countdown})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-6 space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex justify-between border-b pb-2">
+              <Card className="w-full max-w-md mx-auto border-none shadow-2xl rounded-t-[30px] overflow-hidden">
+                <CardContent className="p-6 space-y-6">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-green-600 text-lg">طلب جديد قريب!</span>
+                    <span className="bg-gray-100 px-3 py-1 rounded-lg text-sm font-bold">3.5 كم</span>
+                  </div>
+                  
+                  <div className="space-y-3 bg-gray-50 p-4 rounded-2xl">
+                    <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">نوع السطحة:</span>
                       <span className="font-bold">{pendingRequest.vehicleType === 'small' ? 'سطحة صغيرة' : pendingRequest.vehicleType === 'large' ? 'سطحة كبيرة' : 'سطحة هيدروليك'}</span>
                     </div>
-                    <div className="flex justify-between border-b pb-2">
+                    <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">السعر:</span>
                       <span className="font-bold text-green-600">{pendingRequest.price}</span>
                     </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 text-sm">
-                        <MapPin className="w-4 h-4 text-primary" />
-                        <span className="font-medium">من: {pendingRequest.location}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <Navigation className="w-4 h-4 text-red-500" />
-                        <span className="font-medium">إلى: {pendingRequest.destination || 'غير محدد'}</span>
-                      </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Clock className="w-3 h-3" />
+                      <span>ينتهي العرض خلال {countdown} ثانية</span>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 pt-2">
-                    <Button onClick={acceptRequest} className="bg-green-600 hover:bg-green-700 h-12 text-lg">قبول</Button>
-                    <Button onClick={() => setPendingRequest(null)} variant="outline" className="h-12 text-lg border-red-200 text-red-600">تجاهل</Button>
+
+                  <div className="space-y-3">
+                    <Button 
+                      onClick={acceptRequest} 
+                      className="w-full h-14 bg-green-600 hover:bg-green-700 text-white text-xl font-bold rounded-2xl shadow-lg"
+                    >
+                      قـبـول الـطـلـب
+                    </Button>
+                    <Button 
+                      onClick={() => setPendingRequest(null)} 
+                      variant="ghost" 
+                      className="w-full text-red-500 font-bold hover:bg-red-50"
+                    >
+                      تجاهل
+                    </Button>
                   </div>
                 </CardContent>
               </Card>

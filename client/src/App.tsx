@@ -5,12 +5,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import RequestFlow from "@/pages/request-flow";
 import DriverDashboard from "@/pages/driver-dashboard";
+import LandingPage from "@/pages/landing-page";
 import NotFound from "@/pages/not-found";
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={RequestFlow} />
+      <Route path="/" component={LandingPage} />
+      <Route path="/request" component={RequestFlow} />
       <Route path="/driver" component={DriverDashboard} />
       <Route component={NotFound} />
     </Switch>

@@ -136,6 +136,7 @@ const KM_RATE = 2000;
 export default function RequestFlow() {
   const [isSuccess, setIsSuccess] = useState(false);
   const { mutate, isPending } = useCreateRequest();
+  const [, setLocation] = useLocation();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
