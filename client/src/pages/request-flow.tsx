@@ -187,6 +187,7 @@ export default function RequestFlow() {
       pickupLng: data.pickupLng.toString(),
       destLat: data.destLat.toString(),
       destLng: data.destLng.toString(),
+      scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
     };
     mutate(formattedData, {
       onSuccess: () => setIsSuccess(true),
