@@ -188,28 +188,8 @@ export default function DriverDashboard() {
       </header>
 
       <main className="container mx-auto px-4 flex flex-col gap-6 max-w-3xl">
-        {/* 3. Centered Large ON/OFF Toggle Card */}
-        <div className="flex justify-center -mt-10 relative z-50">
-          <Card className="bg-white border-2 border-primary shadow-xl p-6 w-full max-w-sm rounded-3xl">
-            <div className="flex flex-col items-center gap-4">
-              <span className={`text-xl font-black tracking-tight ${isOnline ? 'text-black' : 'text-gray-400'}`}>
-                {isOnline ? "أنت متصل ومتاح للطلبات" : "أنت حالياً غير متصل"}
-              </span>
-              <button 
-                onClick={toggleStatus}
-                className={`relative inline-flex h-16 w-32 items-center rounded-full transition-all duration-300 focus:outline-none shadow-inner border-4 border-gray-100 ${isOnline ? 'bg-primary' : 'bg-gray-200'}`}
-              >
-                <span className={`inline-block h-10 w-10 transform rounded-full bg-white shadow-xl transition-transform duration-300 ${isOnline ? '-translate-x-18' : '-translate-x-2'}`} />
-                <span className={`absolute ${isOnline ? 'right-5 text-black' : 'left-5 text-gray-500'} font-black text-lg uppercase`}>
-                  {isOnline ? 'ON' : 'OFF'}
-                </span>
-              </button>
-            </div>
-          </Card>
-        </div>
-
         {/* 4. Map Section with simple border */}
-        <div className="flex-1 min-h-[450px] relative rounded-3xl overflow-hidden border-2 border-gray-200 shadow-lg bg-white">
+        <div className="flex-1 min-h-[500px] relative rounded-3xl overflow-hidden border-2 border-gray-200 shadow-lg bg-white">
           <MapContainer center={currentPos} zoom={13} style={{ height: "100%", width: "100%" }}>
             <TileLayer 
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" 
