@@ -5,8 +5,9 @@ import { z } from "zod";
 import { insertRequestSchema, VEHICLE_OPTIONS } from "@shared/schema";
 import { useCreateRequest } from "@/hooks/use-requests";
 import { VehicleCard } from "@/components/vehicle-card";
-import { MapPin, Loader2, Phone, CalendarCheck, Truck, Clock, Navigation } from "lucide-react";
+import { MapPin, Loader2, Phone, CalendarCheck, Truck, Clock, Navigation, ArrowLeftRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useLocation } from "wouter";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -327,6 +328,14 @@ export default function RequestFlow() {
       <header className="bg-primary shadow-lg sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 md:py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => setLocation("/")}
+              className="text-black hover:bg-black/10"
+            >
+              <ArrowLeftRight className="w-5 h-5" />
+            </Button>
             <div className="bg-black/10 p-2 rounded-lg">
               <Truck className="w-6 h-6 text-black" />
             </div>
