@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Truck, User, ArrowLeftRight } from "lucide-react";
 import { motion } from "framer-motion";
@@ -10,7 +10,7 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-gray-50/50 flex flex-col items-center justify-center p-4 md:p-8" dir="rtl">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="max-w-md w-full space-y-8"
@@ -24,9 +24,10 @@ export default function LandingPage() {
         </div>
 
         <div className="grid gap-6">
+          {/* زر أنا زبون - تم تصحيح المسار لـ /request */}
           <Card 
             className="hover:border-primary cursor-pointer transition-all hover:shadow-xl group overflow-hidden border-2"
-            onClick={() => setLocation("/")}
+            onClick={() => setLocation("/request")}
           >
             <CardContent className="p-8 flex items-center gap-6">
               <div className="bg-blue-50 p-4 rounded-xl group-hover:bg-primary transition-colors">
@@ -39,6 +40,7 @@ export default function LandingPage() {
             </CardContent>
           </Card>
 
+          {/* زر أنا سائق - المسار الصحيح /driver */}
           <Card 
             className="hover:border-primary cursor-pointer transition-all hover:shadow-xl group overflow-hidden border-2"
             onClick={() => setLocation("/driver")}

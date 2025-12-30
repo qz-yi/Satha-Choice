@@ -11,9 +11,16 @@ import NotFound from "@/pages/not-found";
 function Router() {
   return (
     <Switch>
+      {/* واجهة الزبون الرئيسية */}
       <Route path="/" component={LandingPage} />
+      
+      {/* صفحة طلب السطحة */}
       <Route path="/request" component={RequestFlow} />
+      
+      {/* واجهة السائق */}
       <Route path="/driver" component={DriverDashboard} />
+      
+      {/* صفحة الخطأ */}
       <Route component={NotFound} />
     </Switch>
   );
