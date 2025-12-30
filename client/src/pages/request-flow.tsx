@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -6,21 +6,21 @@ import { insertRequestSchema, VEHICLE_OPTIONS } from "@shared/schema";
 import { useCreateRequest } from "@/hooks/use-requests";
 import { VehicleCard } from "@/components/vehicle-card";
 import { 
-  MapPin, ArrowRight, Check, Search, Loader2, X, Menu, 
+  MapPin, Check, Search, Loader2, X, Menu, 
   User, MessageSquare, History, Gift, Settings, HelpCircle, Wallet 
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Form, FormField, FormItem } from "@/components/ui/form";
+import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"; // تأكد من وجود هذا المكون
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { MapContainer, TileLayer, useMapEvents, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
-// إعدادات أيقونات الخريطة
+// --- Leaflet Icon Fix ---
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -40,21 +40,32 @@ const formSchema = insertRequestSchema.extend({
   timeMode: z.enum(["now", "later"]),
 });
 
-// مكون روابط القائمة الجانبية (بنفس ستايل تكسي بلي)
-function SidebarLink({ icon, label, extra, color = "text-blue-600" }: { icon: any, label: string, extra?: string, color?: string }) {
-  return (
-    <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 active:bg-gray-100 transition-colors rounded-2xl group text-right">
-      <div className="flex items-center gap-4">
-        <div className={`${color} group-active:scale-90 transition-transform`}>{icon}</div>
-        <span className="text-[15px] font-bold text-gray-800">{label}</span>
-      </div>
-      {extra && <span className="text-xs font-black text-gray-400">{extra}</span>}
-    </button>
-  );
-}
+type FormValues = z.infer<typeof formSchema>;
 
-// مكون البحث المنبثق
-function SearchOverlay({ isOpen, onClose, onSelect }: { isOpen: boolean, onClose: () => void, onSelect: (lat: number, lng: number) => void }) {
+// --- Sub-components ---
+
+const SidebarLink = memo(({ icon, label, extra, color = "text-blue-600" }: { 
+  icon: React.ReactNode; 
+  label: string; 
+  extra?: string; 
+  color?: string; 
+}) => (
+  <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 active:bg-gray-100 transition-colors rounded-2xl group text-right">
+    <div className="flex items-center gap-4">
+      <div className={`${color} group-active:scale-90 transition-transform`}>{icon}</div>
+      <span className="text-[15px] font-bold text-gray-800">{label}</span>
+    </div>
+    {extra && <span className="text-xs font-black text-gray-400">{extra}</span>}
+  </button>
+));
+
+SidebarLink.displayName = "SidebarLink";
+
+const SearchOverlay = memo(({ isOpen, onClose, onSelect }: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  onSelect: (lat: number, lng: number) => void; 
+}) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -112,23 +123,32 @@ function SearchOverlay({ isOpen, onClose, onSelect }: { isOpen: boolean, onClose
       )}
     </AnimatePresence>
   );
-}
+});
 
-function CenterPinHandler({ onLocationChange }: { onLocationChange: (latlng: L.LatLng) => void }) {
+SearchOverlay.displayName = "SearchOverlay";
+
+const CenterPinHandler = memo(({ onLocationChange }: { onLocationChange: (latlng: L.LatLng) => void }) => {
   const map = useMap();
   useMapEvents({ moveend: () => onLocationChange(map.getCenter()) });
   return null;
-}
+});
+
+CenterPinHandler.displayName = "CenterPinHandler";
+
+// --- Main Component ---
 
 export default function RequestFlow() {
+  // 1. State & Location
   const [step, setStep] = useState<"pickup" | "dropoff" | "vehicle">("pickup");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  
   const { mutate, isPending } = useCreateRequest();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   
-  const form = useForm<z.infer<typeof formSchema>>({
+  // 2. Form Setup
+  const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       location: "موقع محدد", destination: "وجهة محددة",
@@ -137,37 +157,69 @@ export default function RequestFlow() {
     },
   });
 
-  const handleNextStep = () => {
+  // 3. Callbacks & Handlers
+  const handleNextStep = useCallback(() => {
     if (step === "pickup") {
       setStep("dropoff");
       toast({ title: "تم التحديد", description: "الآن حدد وجهة التوصيل" });
-    } else { setStep("vehicle"); }
-  };
+    } else { 
+      setStep("vehicle"); 
+    }
+  }, [step, toast]);
 
-  const onSubmit = (data: z.infer<typeof formSchema>) => {
+  const onSubmit = useCallback((data: FormValues) => {
     mutate({
       ...data,
       pickupLat: data.pickupLat.toString(), pickupLng: data.pickupLng.toString(),
       destLat: data.destLat.toString(), destLng: data.destLng.toString(),
     }, { onSuccess: () => setIsSuccess(true) });
-  };
+  }, [mutate]);
 
+  const handleLocationUpdate = useCallback((latlng: L.LatLng) => {
+    if (step === "pickup") { 
+      form.setValue("pickupLat", latlng.lat); 
+      form.setValue("pickupLng", latlng.lng); 
+    } else { 
+      form.setValue("destLat", latlng.lat); 
+      form.setValue("destLng", latlng.lng); 
+    }
+  }, [step, form]);
+
+  const handleSearchSelect = useCallback((lat: number, lng: number) => {
+    if (step === "pickup") { 
+      form.setValue("pickupLat", lat); 
+      form.setValue("pickupLng", lng); 
+    } else { 
+      form.setValue("destLat", lat); 
+      form.setValue("destLng", lng); 
+    }
+  }, [step, form]);
+
+  // 4. Success View
   if (isSuccess) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-4 text-right" dir="rtl">
         <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="text-center space-y-6">
-          <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto"><Check className="w-12 h-12 text-green-600" /></div>
+          <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+            <Check className="w-12 h-12 text-green-600" />
+          </div>
           <h2 className="text-3xl font-black text-black">تم إرسال طلبك!</h2>
-          <Button onClick={() => window.location.reload()} className="w-full h-14 bg-black text-white rounded-2xl font-bold px-12 italic tracking-tighter shadow-2xl">العودة للرئيسية</Button>
+          <Button 
+            onClick={() => window.location.reload()} 
+            className="w-full h-14 bg-black text-white rounded-2xl font-bold px-12 italic tracking-tighter shadow-2xl"
+          >
+            العودة للرئيسية
+          </Button>
         </motion.div>
       </div>
     );
   }
 
+  // 5. Main Render
   return (
     <div className="h-screen w-full bg-white flex flex-col overflow-hidden relative" dir="rtl">
       
-      {/* Header المطور مع القائمة الجانبية */}
+      {/* Dynamic Header */}
       <header className="absolute top-0 inset-x-0 z-[1010] p-4 flex items-center gap-2">
         <Sheet>
           <SheetTrigger asChild>
@@ -181,7 +233,6 @@ export default function RequestFlow() {
           
           <SheetContent side="right" className="w-[85%] sm:w-[350px] p-0 border-l-0 rounded-l-[30px] overflow-hidden">
             <div className="flex flex-col h-full bg-white text-right" dir="rtl">
-              {/* Profile Section */}
               <div className="p-6 pt-12 border-b border-gray-50 bg-gradient-to-b from-gray-50 to-white">
                 <div className="flex items-center gap-4 mb-4">
                    <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center border-2 border-white shadow-md">
@@ -194,7 +245,6 @@ export default function RequestFlow() {
                 </div>
               </div>
 
-              {/* Menu Links */}
               <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
                 <SidebarLink icon={<MessageSquare className="w-5 h-5" />} label="الرسائل" color="text-blue-500" />
                 <SidebarLink icon={<MapPin className="w-5 h-5" />} label="العناوين المفضلة" color="text-indigo-600" />
@@ -202,9 +252,7 @@ export default function RequestFlow() {
                 <SidebarLink icon={<Gift className="w-5 h-5" />} label="قسائم الخصومات والجوائز" color="text-blue-400" />
                 <SidebarLink icon={<Settings className="w-5 h-5" />} label="الإعدادات" color="text-gray-600" />
                 <SidebarLink icon={<HelpCircle className="w-5 h-5" />} label="مساعدة" color="text-sky-500" />
-                
                 <div className="border-t border-gray-100 my-4" />
-                
                 <SidebarLink 
                   icon={<Wallet className="w-5 h-5" />} 
                   label="تعبئة الرصيد" 
@@ -214,7 +262,6 @@ export default function RequestFlow() {
                 <SidebarLink icon={<Gift className="w-5 h-5" />} label="رحلة مجانية" color="text-purple-500" />
               </div>
 
-              {/* Footer Banner */}
               <div className="p-6">
                 <div className="bg-blue-600 rounded-3xl p-6 text-white relative overflow-hidden shadow-xl shadow-blue-200">
                   <h3 className="text-lg font-black italic relative z-10">SATHA PRO</h3>
@@ -244,7 +291,7 @@ export default function RequestFlow() {
         </div>
       </header>
 
-      {/* الخريطة والتحكم */}
+      {/* Map & Viewport Controls */}
       {(step === "pickup" || step === "dropoff") && (
         <div className="flex-1 relative">
           <MapContainer center={[33.3152, 44.3661]} zoom={15} style={{ height: "100%", width: "100%" }} zoomControl={false}>
@@ -252,15 +299,9 @@ export default function RequestFlow() {
             <SearchOverlay 
               isOpen={isSearchOpen} 
               onClose={() => setIsSearchOpen(false)} 
-              onSelect={(lat, lng) => {
-                if (step === "pickup") { form.setValue("pickupLat", lat); form.setValue("pickupLng", lng); }
-                else { form.setValue("destLat", lat); form.setValue("destLng", lng); }
-              }} 
+              onSelect={handleSearchSelect} 
             />
-            <CenterPinHandler onLocationChange={(latlng) => {
-              if (step === "pickup") { form.setValue("pickupLat", latlng.lat); form.setValue("pickupLng", latlng.lng); }
-              else { form.setValue("destLat", latlng.lat); form.setValue("destLng", latlng.lng); }
-            }} />
+            <CenterPinHandler onLocationChange={handleLocationUpdate} />
           </MapContainer>
 
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[1000]">
@@ -275,7 +316,7 @@ export default function RequestFlow() {
         </div>
       )}
 
-      {/* اختيار السطحة */}
+      {/* Vehicle Selection Step */}
       {step === "vehicle" && (
         <div className="flex-1 overflow-y-auto p-4 pt-24 bg-gray-50">
           <Form {...form}>
@@ -285,7 +326,10 @@ export default function RequestFlow() {
                   key={option.id}
                   {...option}
                   isSelected={form.watch("vehicleType") === option.id}
-                  onSelect={() => { form.setValue("vehicleType", option.id); form.setValue("price", option.price); }}
+                  onSelect={() => { 
+                    form.setValue("vehicleType", option.id); 
+                    form.setValue("price", option.price); 
+                  }}
                 />
               ))}
             </form>
@@ -293,12 +337,14 @@ export default function RequestFlow() {
         </div>
       )}
 
-      {/* Footer */}
+      {/* Action Footer */}
       <footer className="bg-white p-6 rounded-t-[40px] shadow-[0_-15px_50px_rgba(0,0,0,0.1)] z-[1010] border-t border-gray-50">
         <Button 
           onClick={step === "vehicle" ? form.handleSubmit(onSubmit) : handleNextStep}
           disabled={isPending || (step === "vehicle" && !form.watch("vehicleType"))}
-          className={`w-full h-16 rounded-[22px] font-black text-xl shadow-xl active:scale-95 transition-all ${step === "vehicle" ? "bg-[#FFD700] text-black shadow-[#FFD700]/20" : "bg-black text-white"}`}
+          className={`w-full h-16 rounded-[22px] font-black text-xl shadow-xl active:scale-95 transition-all ${
+            step === "vehicle" ? "bg-[#FFD700] text-black shadow-[#FFD700]/20" : "bg-black text-white"
+          }`}
         >
           {step === "vehicle" ? (isPending ? "جاري الحجز..." : "تأكيد وحجز") : `تأكيد الموقع`}
         </Button>

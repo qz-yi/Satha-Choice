@@ -1,15 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Truck, LogOut, MapPin, Navigation, Wallet, BellRing, X, Phone, CheckCircle2, CreditCard, Banknote, User, MessageSquare } from "lucide-react";
+import { 
+  Truck, LogOut, MapPin, Navigation, Wallet, BellRing, X, 
+  Phone, CheckCircle2, CreditCard, Banknote, User, MessageSquare 
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { MapContainer, TileLayer, Marker } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// إصلاح أيقونات الخريطة
+// --- Leaflet Icon Fix ---
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -17,17 +20,93 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
+// --- Sub-components ---
+
+const DashboardHeader = memo(({ isOnline, onToggleStatus, onLogout }: { 
+  isOnline: boolean; 
+  onToggleStatus: () => void; 
+  onLogout: () => void; 
+}) => (
+  <header className="bg-[#FFD700] p-4 flex justify-between items-center shadow-lg z-[1001]">
+    <div className="flex items-center gap-4">
+      <Button variant="ghost" size="icon" onClick={onLogout} className="text-black">
+        <LogOut className="w-6 h-6" />
+      </Button>
+      <div className="flex items-center gap-2 bg-black/5 px-3 py-1 rounded-full">
+        <span className="text-[10px] font-bold text-black">{isOnline ? "متصل" : "غير متصل"}</span>
+        <div 
+          onClick={onToggleStatus} 
+          className={`relative w-12 h-6 rounded-full cursor-pointer transition-colors duration-300 ${isOnline ? 'bg-green-500' : 'bg-gray-400'}`}
+        >
+          <motion.div 
+            animate={{ x: isOnline ? -26 : -2 }} 
+            className="absolute top-1 right-1 w-4 h-4 bg-white rounded-full shadow-md" 
+          />
+        </div>
+      </div>
+    </div>
+    <div className="flex items-center gap-2 font-black italic text-black">
+      <span className="text-xl tracking-tighter">SATHA PRO</span>
+      <Truck className="w-7 h-7" />
+    </div>
+  </header>
+));
+
+DashboardHeader.displayName = "DashboardHeader";
+
+const MapView = memo(({ center }: { center: [number, number] }) => (
+  <div className="flex-1 relative">
+    <MapContainer center={center} zoom={13} style={{ height: "100%", width: "100%" }}>
+      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      <Marker position={center} />
+    </MapContainer>
+  </div>
+));
+
+MapView.displayName = "MapView";
+
+const WalletSection = memo(({ onWithdraw }: { onWithdraw: () => void }) => (
+  <section className="bg-white p-6 rounded-t-[35px] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] border-t border-gray-50 z-[1001]">
+    <div className="flex justify-between items-center">
+      <div className="flex items-center gap-4 text-right">
+        <div className="bg-yellow-400/20 p-3 rounded-2xl text-[#FFD700]">
+          <Wallet className="w-7 h-7" />
+        </div>
+        <div>
+          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">الرصيد</p>
+          <h3 className="text-2xl font-black text-black leading-none">
+            50,000 <span className="text-xs italic text-gray-500 font-medium">د.ع</span>
+          </h3>
+        </div>
+      </div>
+      <Button 
+        onClick={onWithdraw}
+        className="bg-black text-white hover:bg-gray-800 rounded-2xl h-12 px-8 font-black text-sm shadow-lg"
+      >
+        سحب الأرباح
+      </Button>
+    </div>
+  </section>
+));
+
+WalletSection.displayName = "WalletSection";
+
+// --- Main Component ---
+
 export default function DriverDashboard() {
+  // 1. State Management
   const [isOnline, setIsOnline] = useState(false);
   const [activeRequest, setActiveRequest] = useState<any>(null);
   const [pendingRequest, setPendingRequest] = useState<any>(null);
   const [orderStage, setOrderStage] = useState<"heading_to_pickup" | "arrived_pickup" | "heading_to_dropoff" | "payment">("heading_to_pickup");
   const [countdown, setCountdown] = useState(30);
+  
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
+  // 2. Effects
   useEffect(() => {
-    let timer: any;
+    let timer: NodeJS.Timeout;
     if (isOnline && !activeRequest && !pendingRequest) {
       timer = setTimeout(() => {
         setPendingRequest({
@@ -44,6 +123,13 @@ export default function DriverDashboard() {
     return () => clearTimeout(timer);
   }, [isOnline, activeRequest, pendingRequest]);
 
+  // 3. Handlers
+  const handleToggleStatus = useCallback(() => setIsOnline(prev => !prev), []);
+  const handleLogout = useCallback(() => setLocation("/"), [setLocation]);
+  const handleWithdraw = useCallback(() => {
+    toast({ title: "طلب سحب", description: "جاري معالجة طلب سحب الأرباح" });
+  }, [toast]);
+
   const acceptOrder = () => {
     setActiveRequest(pendingRequest);
     setPendingRequest(null);
@@ -57,43 +143,36 @@ export default function DriverDashboard() {
     toast({ title: "اكتملت العملية", description: "تم استلام المبلغ بنجاح" });
   };
 
+  const advanceStage = () => {
+    if (orderStage === "heading_to_pickup") setOrderStage("arrived_pickup");
+    else if (orderStage === "arrived_pickup") setOrderStage("heading_to_dropoff");
+    else setOrderStage("payment");
+  };
+
+  // 4. Render
   return (
     <div className="h-screen w-full bg-white flex flex-col overflow-hidden relative" dir="rtl">
       
       <AnimatePresence>
-        {/* الهيدر يختفي فقط عند وجود طلب نشط لإعطاء مساحة للخريطة */}
         {!activeRequest && (
-          <motion.header 
+          <motion.div
             initial={{ y: -100 }} animate={{ y: 0 }} exit={{ y: -100 }}
-            className="bg-[#FFD700] p-4 flex justify-between items-center shadow-lg z-[1001]"
+            className="z-[1001]"
           >
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="text-black">
-                <LogOut className="w-6 h-6" />
-              </Button>
-              <div className="flex items-center gap-2 bg-black/5 px-3 py-1 rounded-full">
-                <span className="text-[10px] font-bold text-black">{isOnline ? "متصل" : "غير متصل"}</span>
-                <div onClick={() => setIsOnline(!isOnline)} className={`relative w-12 h-6 rounded-full cursor-pointer transition-colors duration-300 ${isOnline ? 'bg-green-500' : 'bg-gray-400'}`}>
-                  <motion.div animate={{ x: isOnline ? -26 : -2 }} className="absolute top-1 right-1 w-4 h-4 bg-white rounded-full shadow-md" />
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 font-black italic text-black">
-              <span className="text-xl tracking-tighter">SATHA PRO</span>
-              <Truck className="w-7 h-7" />
-            </div>
-          </motion.header>
+            <DashboardHeader 
+              isOnline={isOnline} 
+              onToggleStatus={handleToggleStatus} 
+              onLogout={handleLogout} 
+            />
+          </motion.div>
         )}
       </AnimatePresence>
 
       <div className="flex-1 relative">
-        <MapContainer center={[33.3152, 44.3661]} zoom={13} style={{ height: "100%", width: "100%" }}>
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          <Marker position={[33.3152, 44.3661]} />
-        </MapContainer>
+        <MapView center={[33.3152, 44.3661]} />
 
         <AnimatePresence>
-          {/* طلب جديد - التصميم الأصلي المطور */}
+          {/* New Request Popup */}
           {pendingRequest && (
             <motion.div 
               initial={{ y: 200, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 200, opacity: 0 }}
@@ -126,7 +205,7 @@ export default function DriverDashboard() {
             </motion.div>
           )}
 
-          {/* واجهة الرحلة العصرية - بنفس ستايل واجهة الزبون */}
+          {/* Trip Interface */}
           {activeRequest && orderStage !== "payment" && (
             <motion.div 
               initial={{ y: 300 }} animate={{ y: 0 }} exit={{ y: 300 }}
@@ -157,7 +236,7 @@ export default function DriverDashboard() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <Button size="icon" className="w-12 h-12 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 border-none">
+                    <Button size="icon" variant="ghost" className="w-12 h-12 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 border-none">
                       <MessageSquare className="w-5 h-5" />
                     </Button>
                     <Button size="icon" className="w-12 h-12 rounded-2xl bg-green-500 hover:bg-green-600 text-white shadow-lg active:scale-90 transition-transform">
@@ -167,11 +246,7 @@ export default function DriverDashboard() {
                 </div>
 
                 <Button 
-                  onClick={() => {
-                    if(orderStage === "heading_to_pickup") setOrderStage("arrived_pickup");
-                    else if(orderStage === "arrived_pickup") setOrderStage("heading_to_dropoff");
-                    else setOrderStage("payment");
-                  }}
+                  onClick={advanceStage}
                   className={`w-full h-16 rounded-[22px] font-black text-xl shadow-xl transition-all active:scale-95 ${
                     orderStage === "heading_to_pickup" ? "bg-black text-white" :
                     orderStage === "arrived_pickup" ? "bg-[#FFD700] text-black" : "bg-green-600 text-white"
@@ -185,7 +260,7 @@ export default function DriverDashboard() {
             </motion.div>
           )}
 
-          {/* نافذة الدفع */}
+          {/* Payment Modal */}
           {orderStage === "payment" && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 bg-black/80 backdrop-blur-sm z-[2000] flex items-center justify-center p-6 text-center">
               <Card className="w-full max-w-sm rounded-[40px] bg-white p-8 border-4 border-[#FFD700] shadow-3xl">
@@ -211,23 +286,13 @@ export default function DriverDashboard() {
         </AnimatePresence>
       </div>
 
-      {/* المحفظة - تختفي أثناء الرحلة */}
       <AnimatePresence>
         {!activeRequest && (
           <motion.div 
             initial={{ y: 100 }} animate={{ y: 0 }} exit={{ y: 100 }}
-            className="bg-white p-6 rounded-t-[35px] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] border-t border-gray-50 z-[1001]"
+            className="z-[1001]"
           >
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-4 text-right">
-                <div className="bg-yellow-400/20 p-3 rounded-2xl text-[#FFD700]"><Wallet className="w-7 h-7" /></div>
-                <div>
-                  <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">الرصيد</p>
-                  <h3 className="text-2xl font-black text-black leading-none">50,000 <span className="text-xs italic text-gray-500 font-medium">د.ع</span></h3>
-                </div>
-              </div>
-              <Button className="bg-black text-white hover:bg-gray-800 rounded-2xl h-12 px-8 font-black text-sm shadow-lg">سحب الأرباح</Button>
-            </div>
+            <WalletSection onWithdraw={handleWithdraw} />
           </motion.div>
         )}
       </AnimatePresence>
