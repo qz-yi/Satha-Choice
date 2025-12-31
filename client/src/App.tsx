@@ -9,7 +9,7 @@ import LandingPage from "@/pages/landing-page";
 import NotFound from "@/pages/not-found";
 import { useState, useEffect } from "react";
 import { SplashScreen } from "@/components/splash-screen";
-
+import DriverTracking from "@/pages/driver-tracking";
 function Router() {
   return (
     <Switch>
@@ -18,6 +18,8 @@ function Router() {
       
       {/* صفحة طلب السطحة */}
       <Route path="/request" component={RequestFlow} />
+ {/* صفحة تتبع السطحة */}
+<Route path="/track/:id" component={DriverTracking} />
       
       {/* واجهة السائق */}
       <Route path="/driver" component={DriverDashboard} />
