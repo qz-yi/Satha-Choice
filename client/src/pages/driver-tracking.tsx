@@ -1,85 +1,158 @@
-import React, { memo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import { Phone } from "lucide-react"; // تأكد من استيراد الأيقونة
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect, useCallback, memo } from "react";
+import { useLocation } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Truck, LogOut, Wallet, X, Phone, User, Navigation } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { motion, AnimatePresence } from "framer-motion";
+import { MapContainer, TileLayer, Marker } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
-// 1. تعريف الأيقونة البرتقالية لـ Satha Choice
-const orangeIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
-  iconShadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
+// 1. إصلاح رابط الأيقونات (تم التصحيح هنا)
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker.png", // تم تصحيح الامتداد
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-// 2. مكون الخريطة
-const DriverMap = memo(({ driverLocation, userLocation }: any) => {
-  return (
-    <MapContainer center={userLocation} zoom={13} style={{ height: "400px", width: "100%", borderRadius: "15px" }}>
-      <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-        attribution='&copy; OpenStreetMap contributors'
-      />
-      <Marker position={userLocation}>
-        <Popup>موقعك الحالي</Popup>
-      </Marker>
-      <Marker position={driverLocation} icon={orangeIcon}>
-        <Popup>موقع السطحة</Popup>
-      </Marker>
-    </MapContainer>
-  );
-});
+// --- مكون التبديل بتصميم عريض ومنظم ---
+const StatusToggle = memo(({ isOnline, onToggle }: any) => (
+  <div 
+    onClick={onToggle}
+    className={`relative w-28 h-9 rounded-full p-1 cursor-pointer transition-all duration-500 shadow-inner flex items-center ${
+      isOnline ? 'bg-green-500' : 'bg-slate-300'
+    }`}
+  >
+    <div className="absolute inset-0 flex items-center justify-between px-3 pointer-events-none font-black text-[9px]">
+      <span className={isOnline ? 'text-white' : 'opacity-0'}>متصل</span>
+      <span className={!isOnline ? 'text-slate-600' : 'opacity-0'}>أوفلاين</span>
+    </div>
+    <motion.div
+      animate={{ x: isOnline ? 72 : 0 }}
+      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+      className="w-7 h-7 bg-white rounded-full shadow-lg z-10"
+    />
+  </div>
+));
 
-// 3. واجهة التتبع الرئيسية
-export default function DriverTracking({ params }: { params: { id: string } }) {
-  // جلب بيانات الطلب والسائق حياً من قاعدة البيانات
-  const { data: request, isLoading } = useQuery({
-    queryKey: [`/api/requests/${params.id}`],
+export default function DriverDashboard() {
+  const queryClient = useQueryClient();
+  const [isOnline, setIsOnline] = useState(false);
+  const [activeRequest, setActiveRequest] = useState<any>(null);
+  const [orderStage, setOrderStage] = useState<"heading" | "arrived" | "dropped">("heading");
+  const [countdown, setCountdown] = useState(30);
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
+
+  const { data: requests } = useQuery({
+    queryKey: ["/api/requests"],
+    enabled: isOnline && !activeRequest,
+    refetchInterval: 2000,
   });
 
-  if (isLoading) return <div className="p-10 text-center text-white">جاري تحميل بيانات السائق...</div>;
+  const pendingRequest = requests?.find((r: any) => r.status === "pending");
 
-  // استخراج البيانات (إذا لم تتوفر، نستخدم قيم افتراضية مؤقتاً)
-  const driver = request?.driver;
-  const userLoc: [number, number] = [33.3152, 44.3661]; 
-  const driverLoc: [number, number] = [
-    Number(driver?.lat) || 33.3252, 
-    Number(driver?.lng) || 44.3761
-  ];
+  // تفعيل القبول الفوري الحقيقي
+  const acceptMutation = useMutation({
+    mutationFn: async (req: any) => req,
+    onSuccess: (data) => {
+      setActiveRequest(data);
+      setOrderStage("heading");
+      toast({ title: "تم القبول فورا" });
+    }
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async (id: number) => {
+      queryClient.setQueryData(["/api/requests"], (old: any) => 
+        old?.filter((r: any) => r.id !== id)
+      );
+      return id;
+    },
+    onSuccess: () => {
+      setCountdown(30);
+      toast({ title: "تم التجاهل" });
+    }
+  });
+
+  useEffect(() => {
+    let timer: any;
+    if (pendingRequest && countdown > 0) {
+      timer = setInterval(() => setCountdown(c => c - 1), 1000);
+    } else if (countdown === 0 && pendingRequest) {
+      rejectMutation.mutate(pendingRequest.id);
+    }
+    return () => clearInterval(timer);
+  }, [pendingRequest, countdown]);
 
   return (
-    <div className="p-4 bg-zinc-950 min-h-screen text-white" dir="rtl">
-      <h1 className="text-xl font-bold mb-4 text-yellow-500">تتبع طلبك #{params.id}</h1>
-      
-      <DriverMap userLocation={userLoc} driverLocation={driverLoc} />
+    <div className="h-screen w-full bg-slate-50 flex flex-col overflow-hidden relative" dir="rtl">
+      {!activeRequest && (
+        <header className="bg-[#FFD700] px-4 py-4 flex justify-between items-center shadow-md z-[1001]">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="text-black"><LogOut /></Button>
+            <StatusToggle isOnline={isOnline} onToggle={() => setIsOnline(!isOnline)} />
+          </div>
+          <div className="font-black italic text-black flex items-center gap-2">
+            <span className="text-lg">SATHA PRO</span>
+            <Truck />
+          </div>
+        </header>
+      )}
 
-      <div className="mt-4 p-4 bg-zinc-900 rounded-lg border border-zinc-800">
-        <div className="flex justify-between mb-6">
-          <div>
-            <p className="text-zinc-400 text-sm">السائق:</p>
-            <p className="font-bold text-white text-lg">{driver?.name || "جاري البحث..."}</p>
-          </div>
-          <div className="text-left">
-            <p className="text-zinc-400 text-sm">الوصول خلال:</p>
-            <p className="font-bold text-yellow-500 text-lg">{request?.estimatedArrival || "12 دقيقة"}</p>
-          </div>
+      <div className="flex-1 relative">
+        <div className="absolute inset-0 z-0">
+          <MapContainer center={[33.3152, 44.3661]} zoom={13} style={{ height: "100%", width: "100%" }} zoomControl={false}>
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <Marker position={[33.3152, 44.3661]} />
+          </MapContainer>
         </div>
 
-        <button 
-          onClick={() => window.location.href = `tel:${driver?.phone || "07700000000"}`}
-          className="w-full h-14 bg-green-500 text-white rounded-2xl font-black text-lg shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2 mb-4"
-        >
-          <Phone className="w-5 h-5" />
-          الاتصال بالكابتن الآن
-        </button>
+        <AnimatePresence>
+          {isOnline && pendingRequest && !activeRequest && (
+            <motion.div initial={{ y: 200 }} animate={{ y: 0 }} exit={{ y: 200 }} className="absolute inset-x-4 bottom-28 z-[1000]">
+              <Card className="rounded-[35px] border-none shadow-2xl bg-white overflow-hidden p-6 relative">
+                <button onClick={() => rejectMutation.mutate(pendingRequest.id)} className="absolute top-4 left-4 p-2 bg-slate-100 rounded-full text-slate-400"><X size={18}/></button>
+                <div className="text-right mt-2">
+                  <h2 className="text-3xl font-black text-black">{pendingRequest.price} <span className="text-sm font-normal text-slate-400">د.ع</span></h2>
+                  <p className="text-slate-500 font-bold text-xs mt-1">{pendingRequest.pickupAddress}</p>
+                </div>
+                <Button onClick={() => acceptMutation.mutate(pendingRequest)} className="w-full h-14 mt-6 bg-[#FFD700] text-black font-black rounded-2xl text-xl shadow-lg border-b-4 border-black/10">
+                  قبول الطلب ({countdown})
+                </Button>
+              </Card>
+            </motion.div>
+          )}
 
-        <div className="p-3 bg-orange-500/10 rounded-xl border border-orange-500/20 text-center">
-          <p className="text-orange-500 text-sm font-bold">يتم تحديث الموقع بشكل حي ومباشر 📡</p>
-        </div>
+          {activeRequest && (
+            <motion.div initial={{ y: 300 }} animate={{ y: 0 }} className="absolute inset-x-0 bottom-0 z-[1005] bg-white rounded-t-[40px] shadow-2xl p-6 border-t border-gray-100">
+               <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-6" />
+               <Button 
+                onClick={() => {
+                  if (orderStage === "heading") setOrderStage("arrived");
+                  else if (orderStage === "arrived") setOrderStage("dropped");
+                  else { setActiveRequest(null); toast({ title: "تم بنجاح" }); }
+                }} 
+                className="w-full h-16 rounded-2xl bg-black text-white font-black text-xl shadow-xl active:scale-95"
+              >
+                {orderStage === "heading" ? "أنا في الموقع" : orderStage === "arrived" ? "تم التحميل" : "إنهاء المهمة"}
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
+      {!activeRequest && (
+        <footer className="bg-white p-6 rounded-t-[35px] shadow-2xl border-t z-[1001] flex justify-between items-center">
+          <div className="text-right">
+            <p className="text-[10px] text-gray-400 font-black">الأرباح</p>
+            <h3 className="text-xl font-black">50,000 د.ع</h3>
+          </div>
+          <Button className="bg-black text-white rounded-xl px-8 font-black">سحب</Button>
+        </footer>
+      )}
     </div>
   );
 }
