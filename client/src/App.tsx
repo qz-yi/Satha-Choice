@@ -3,35 +3,49 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useState, useEffect } from "react";
+
+// استيراد الصفحات الموجودة مسبقاً
 import RequestFlow from "@/pages/request-flow";
 import DriverDashboard from "@/pages/driver-dashboard";
 import LandingPage from "@/pages/landing-page";
 import NotFound from "@/pages/not-found";
-import { useState, useEffect } from "react";
-import { SplashScreen } from "@/components/splash-screen";
 import DriverTracking from "@/pages/driver-tracking";
+import { SplashScreen } from "@/components/splash-screen";
+
+// ✅ التصحيح النهائي: استخدام حروف صغيرة وشرطة لتطابق أسماء ملفاتك في المجلد
+import AdminLogin from "@/pages/admin-login"; 
+import AdminDashboard from "@/pages/admin-dashboard";
+
 function Router() {
   return (
     <Switch>
-      {/* واجهة الزبون الرئيسية */}
+      {/* واجهة الزبون والترحيب */}
       <Route path="/" component={LandingPage} />
-      
-      {/* صفحة طلب السطحة */}
+
+      {/* صفحة طلب السطحة وتحديد الموقع */}
       <Route path="/request" component={RequestFlow} />
- {/* صفحة تتبع السطحة */}
-<Route path="/track/:id" component={DriverTracking} />
-      
-      {/* واجهة السائق */}
+
+      {/* صفحة تتبع السطحة (للزبون) */}
+      <Route path="/track/:id" component={DriverTracking} />
+
+      {/* واجهة السائق (Dashboard) */}
       <Route path="/driver" component={DriverDashboard} />
-      
-      {/* صفحة الخطأ */}
+
+      {/* بوابة دخول الإدارة */}
+      <Route path="/admin-login" component={AdminLogin} />
+
+      {/* لوحة التحكم المركزية للمدير (الرابط السري) */}
+      <Route path="/satha-control-center-2026" component={AdminDashboard} />
+
+      {/* صفحة الخطأ 404 */}
       <Route component={NotFound} />
     </Switch>
   );
 }
 
-function App() {
-    const [showSplash, setShowSplash] = useState(true);
+export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -50,7 +64,4 @@ function App() {
       </TooltipProvider>
     </QueryClientProvider>
   );
-  
 }
-
-export default App;
