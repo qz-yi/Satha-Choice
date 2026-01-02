@@ -13,9 +13,10 @@ import NotFound from "@/pages/not-found";
 import DriverTracking from "@/pages/driver-tracking";
 import { SplashScreen } from "@/components/splash-screen";
 
-// ✅ التصحيح النهائي: استخدام حروف صغيرة وشرطة لتطابق أسماء ملفاتك في المجلد
+// ✅ استيراد الصفحات الجديدة والمسؤول
 import AdminLogin from "@/pages/admin-login"; 
 import AdminDashboard from "@/pages/admin-dashboard";
+import DriverSignup from "@/pages/driver-signup"; // 👈 أضفنا صفحة التسجيل الجديدة هنا
 
 function Router() {
   return (
@@ -31,6 +32,9 @@ function Router() {
 
       {/* واجهة السائق (Dashboard) */}
       <Route path="/driver" component={DriverDashboard} />
+
+      {/* واجهة تسجيل سائق جديد ✅ */}
+      <Route path="/driver-signup" component={DriverSignup} />
 
       {/* بوابة دخول الإدارة */}
       <Route path="/admin-login" component={AdminLogin} />
