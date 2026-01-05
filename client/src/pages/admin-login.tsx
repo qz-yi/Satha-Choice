@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { ShieldCheck, Lock, ArrowLeft, Eye, EyeOff, ChevronLeft, AlertCircle, Fingerprint } from "lucide-react";
+import { ShieldCheck, Lock, ArrowLeft, Eye, EyeOff, AlertCircle, Fingerprint } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ export default function AdminLogin() {
   const [error, setError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const ADMIN_PASS = "SATHA2026"; // الرمز السري للدخول
+  const ADMIN_PASS = "SATHA2026"; // الرمز السري المستخرج
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,4 +65,4 @@ export default function AdminLogin() {
       </motion.div>
     </div>
   );
-}
+} // ✅ تم إصلاح إغلاق الدالة هنا

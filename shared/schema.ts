@@ -30,12 +30,12 @@ export const drivers = pgTable("drivers", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   phone: text("phone").notNull().unique(),
-  city: text("city").notNull(), // المدينة
-  vehicleType: text("vehicle_type").notNull(), // نوع السطحة المختارة
-  plateNumber: text("plate_number").notNull(), // رقم اللوحة
+  city: text("city").notNull(), 
+  vehicleType: text("vehicle_type").notNull(), 
+  plateNumber: text("plate_number").notNull(), 
   walletBalance: decimal("wallet_balance", { precision: 10, scale: 2 }).notNull().default("0.00"),
   isOnline: boolean("is_online").default(sql`false`),
-  status: text("status").notNull().default("pending"), // حالة الحساب: pending, approved, rejected
+  status: text("status").notNull().default("pending"), 
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -45,15 +45,21 @@ export const users = pgTable("users", {
   walletBalance: decimal("wallet_balance", { precision: 10, scale: 2 }).notNull().default("0.00"),
 });
 
-// === BASE SCHEMAS (للتحقق من البيانات) ===
+// === BASE SCHEMAS ===
 export const insertRequestSchema = createInsertSchema(requests).omit({ 
   id: true, 
   status: true, 
   createdAt: true 
 });
 
-// مخطط إدخال بيانات السائق (يستخدم في صفحة التسجيل)
-export const insertDriverSchema = createInsertSchema(drivers).omit({
+// مخطط إدخال بيانات السائق - تم تعديله ليكون أكثر مرونة مع النصوص العربية
+export const insertDriverSchema = createInsertSchema(drivers, {
+  name: z.string().min(2, "الاسم مطلوب"),
+  phone: z.string().min(10, "رقم الهاتف غير صحيح"),
+  city: z.string().min(2, "يرجى إدخال المدينة"), // يقبل "بابل" وأي نص عربي
+  plateNumber: z.string().min(2, "رقم اللوحة مطلوب"), // يقبل أرقام وحروف
+  vehicleType: z.string().min(1, "يرجى اختيار نوع السطحة"),
+}).omit({
   id: true,
   walletBalance: true,
   isOnline: true,
@@ -67,7 +73,6 @@ export type InsertRequest = z.infer<typeof insertRequestSchema>;
 export type Driver = typeof drivers.$inferSelect;
 export type InsertDriver = z.infer<typeof insertDriverSchema>;
 
-// الثوابت لضمان تطابق البيانات بين الواجهة والسيرفر
 export const VEHICLE_OPTIONS = [
   { id: "small", label: "سطحة صغيرة", price: "25,000 د.ع", priceValue: 25000, description: "Small Flatbed" },
   { id: "large", label: "سطحة كبيرة (لوري)", price: "50,000 د.ع", priceValue: 50000, description: "Large Flatbed" },

@@ -5,7 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useState, useEffect } from "react";
 
-// استيراد الصفحات الموجودة مسبقاً
+// استيراد الصفحات الموجودة مسبقاً (دون تغيير)
 import RequestFlow from "@/pages/request-flow";
 import DriverDashboard from "@/pages/driver-dashboard";
 import LandingPage from "@/pages/landing-page";
@@ -16,12 +16,12 @@ import { SplashScreen } from "@/components/splash-screen";
 // ✅ استيراد الصفحات الجديدة والمسؤول
 import AdminLogin from "@/pages/admin-login"; 
 import AdminDashboard from "@/pages/admin-dashboard";
-import DriverSignup from "@/pages/driver-signup"; // 👈 أضفنا صفحة التسجيل الجديدة هنا
+import DriverSignup from "@/pages/driver-signup"; 
 
 function Router() {
   return (
     <Switch>
-      {/* واجهة الزبون والترحيب */}
+      {/* واجهة الزبون هي الأساس */}
       <Route path="/" component={LandingPage} />
 
       {/* صفحة طلب السطحة وتحديد الموقع */}
@@ -30,7 +30,7 @@ function Router() {
       {/* صفحة تتبع السطحة (للزبون) */}
       <Route path="/track/:id" component={DriverTracking} />
 
-      {/* واجهة السائق (Dashboard) */}
+      {/* واجهة السائق (التي أضفنا لها ميزة التحديث التلقائي) */}
       <Route path="/driver" component={DriverDashboard} />
 
       {/* واجهة تسجيل سائق جديد ✅ */}
@@ -39,7 +39,7 @@ function Router() {
       {/* بوابة دخول الإدارة */}
       <Route path="/admin-login" component={AdminLogin} />
 
-      {/* لوحة التحكم المركزية للمدير (الرابط السري) */}
+      {/* لوحة التحكم المركزية للمدير (الرابط السري 2026) */}
       <Route path="/satha-control-center-2026" component={AdminDashboard} />
 
       {/* صفحة الخطأ 404 */}
@@ -52,15 +52,17 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
+    // تقليل وقت الـ Splash قليلاً لتحسين تجربة المستخدم (اختياري)
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, 4000);
+    }, 3000); 
     return () => clearTimeout(timer);
   }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
+        {/* dir="rtl" لضمان توافق الواجهة العربية بالكامل */}
         <div dir="rtl" className="font-sans antialiased min-h-screen bg-background text-foreground">
           {showSplash ? <SplashScreen /> : <Router />}
           <Toaster />

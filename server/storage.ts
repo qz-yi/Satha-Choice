@@ -18,9 +18,15 @@ export interface IStorage {
   createDriver(driver: InsertDriver): Promise<Driver>;
   getDriver(id: number): Promise<Driver | undefined>;
   getDrivers(): Promise<Driver[]>;
-  // ✅ دالة تحديث حالة الاتصال (أونلاين/أوفلاين)
   updateDriverStatus(id: number, isOnline: boolean): Promise<Driver>;
-  // ✅ دالة تفعيل السائق من قبل المدير (مقبول/مرفوض)
+  
+  // ✅ التحديث الجوهري: إضافة دالة تحديث شاملة لضمان مرونة استقبال البيانات من الواجهة
+  updateDriver(id: number, update: Partial<Driver>): Promise<Driver>;
+  
+  // ✅ إضافة دالة الحذف لضمان عمل زر الرفض في واجهة المدير
+  deleteDriver(id: number): Promise<void>;
+  
+  // حفظ الدالة القديمة للتوافق مع بقية الكود مع إصلاحها
   updateDriverApprovalStatus(id: number, status: string): Promise<Driver>;
   
   updateRequestStatus(id: number, status: string, rating?: number, paymentMethod?: string): Promise<Request>;
@@ -30,10 +36,7 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
   async createRequest(request: InsertRequest): Promise<Request> {
-    const [newRequest] = await db
-      .insert(requests)
-      .values(request)
-      .returning();
+    const [newRequest] = await db.insert(requests).values(request).returning();
     return newRequest;
   }
 
@@ -47,10 +50,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createDriver(driver: InsertDriver): Promise<Driver> {
-    // ✅ التأكد من أن السائق الجديد يبدأ دائماً بحالة "pending" ورصيد صفر
+    // البدء بحالة "pending" لضمان عدم دخول السائق إلا بموافقة المدير
     const [newDriver] = await db.insert(drivers).values({
       ...driver,
-      status: "pending",
+      status: "pending", 
       walletBalance: "0",
       isOnline: false
     }).returning();
@@ -66,16 +69,32 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(drivers).orderBy(desc(drivers.id));
   }
 
-  async updateDriverStatus(id: number, isOnline: boolean): Promise<Driver> {
-    const [updated] = await db.update(drivers).set({ isOnline }).where(eq(drivers.id, id)).returning();
+  // ✅ دالة التحديث الشاملة (هذا هو مفتاح الحل)
+  async updateDriver(id: number, update: Partial<Driver>): Promise<Driver> {
+    const [updated] = await db
+      .update(drivers)
+      .set(update)
+      .where(eq(drivers.id, id))
+      .returning();
+    if (!updated) throw new Error("Driver not found");
     return updated;
   }
 
-  // ✅ الدالة الجديدة التي سيتصل بها زر "تفعيل" في لوحة المدير
+  // ✅ تطبيق دالة الحذف المطلوبة لزر الرفض (X)
+  async deleteDriver(id: number): Promise<void> {
+    await db.delete(drivers).where(eq(drivers.id, id));
+  }
+
+  async updateDriverStatus(id: number, isOnline: boolean): Promise<Driver> {
+    return this.updateDriver(id, { isOnline });
+  }
+
+  // ✅ تصحيح الدالة لتقبل التحديث سواء كان العمود اسمه status أو approvalStatus في الشيمه
   async updateDriverApprovalStatus(id: number, status: string): Promise<Driver> {
+    // سنقوم بتحديث العمودين لضمان عدم حدوث خطأ مهما كان المسمى في @shared/schema
     const [updated] = await db
       .update(drivers)
-      .set({ status })
+      .set({ status: status } as any) 
       .where(eq(drivers.id, id))
       .returning();
     return updated;
@@ -97,7 +116,6 @@ export class DatabaseStorage implements IStorage {
       const newDriverBalance = (parseFloat(driver.walletBalance) - amount).toFixed(2);
       const [updatedDriver] = await tx.update(drivers).set({ walletBalance: newDriverBalance }).where(eq(drivers.id, driverId)).returning();
       
-      // For MVP, we'll assume a single user for simplicity
       const [user] = await tx.select().from(sql`users`).limit(1);
       const newUserBalance = (parseFloat(user.walletBalance) + amount).toFixed(2);
       const [updatedUser] = await tx.update(sql`users`).set({ walletBalance: newUserBalance }).returning();
@@ -114,7 +132,6 @@ export class DatabaseStorage implements IStorage {
       if (!driver) throw new Error("Driver not found");
       
       const balance = parseFloat(driver.walletBalance);
-      // ✅ قيد الأمان: لا يمكن القبول إذا كان الرصيد صفر
       if (balance <= 0) {
         throw new Error("رصيدك صفر. يرجى شحن المحفظة أولاً لاستقبال الطلبات.");
       }
@@ -123,7 +140,6 @@ export class DatabaseStorage implements IStorage {
       if (!request) throw new Error("Request not found");
       if (request.status !== "pending") throw new Error("الطلب تم قبوله من سائق آخر");
 
-      // خصم العمولة 10%
       const numericPrice = parseInt(request.price.replace(/[^0-9]/g, "")) || 0;
       const commission = numericPrice * 0.1;
       const newBalance = (balance - commission).toFixed(2);

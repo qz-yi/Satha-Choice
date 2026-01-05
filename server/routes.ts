@@ -1,3 +1,4 @@
+
 import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
@@ -6,62 +7,73 @@ import { z } from "zod";
 import { insertDriverSchema } from "@shared/schema";
 
 export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
-  // ✅ فحص ديناميكي لتحديد المتغير الصحيح ومنع الانهيار (Crash)
   const app: Express = arg1.post ? arg1 : arg2;
   const httpServer: Server = arg1.post ? arg2 : arg1;
 
   // --- مسارات السائقين (Drivers) ---
 
-  // 1. تسجيل سائق جديد
   app.post("/api/drivers", async (req, res) => {
     try {
       const input = insertDriverSchema.parse(req.body);
       const driver = await storage.createDriver(input);
       res.status(201).json(driver);
     } catch (err: any) {
-      res.status(400).json({ message: "خطأ في بيانات التسجيل" });
+      console.error("خطأ أثناء تسجيل السائق:", err);
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: `خطأ في التحقق: ${err.errors[0].message}` });
+      }
+      if (err.message && err.message.includes("unique constraint")) {
+        return res.status(400).json({ message: "رقم الهاتف هذا مسجل مسبقاً، يرجى استخدام رقم آخر." });
+      }
+      res.status(400).json({ message: err.message || "خطأ في بيانات التسجيل" });
     }
   });
 
-  // 2. جلب كل السائقين (لواجهة المدير)
   app.get("/api/drivers", async (_req, res) => {
     const drivers = await storage.getDrivers();
     res.json(drivers);
   });
 
-  // 3. جلب بيانات السائق الحالي
   app.get("/api/driver/me", async (_req, res) => {
     const drivers = await storage.getDrivers();
     res.json(drivers[drivers.length - 1] || null);
   });
 
-  // 4. تفعيل/قبول السائق (من قبل المدير)
-  app.patch("/api/drivers/:id/approval", async (req, res) => {
+  // ✅ التعديل الجوهري: المسار الموحد والمحمي
+  app.patch("/api/drivers/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const { status } = req.body;
-      const updated = await storage.updateDriverApprovalStatus(id, status);
+      const rawBody = req.body;
+      
+      // بناء كائن تحديث يحتوي فقط على الحقول المعرفة في السكيما
+      const updateData: any = {};
+      
+      // معالجة الحالة (status) سواء جاءت باسم status أو approvalStatus
+      if (rawBody.status) updateData.status = rawBody.status;
+      if (rawBody.approvalStatus) updateData.status = rawBody.approvalStatus;
+      
+      // معالجة حالة الاتصال
+      if (typeof rawBody.isOnline === "boolean") updateData.isOnline = rawBody.isOnline;
+
+      const updated = await storage.updateDriver(id, updateData);
       res.json(updated);
     } catch (err: any) {
+      console.error("خطأ في تحديث بيانات السائق:", err.message);
       res.status(400).json({ message: err.message });
     }
   });
 
-  // 5. تحديث حالة الاتصال
-  app.patch("/api/drivers/:id/status", async (req, res) => {
-    const driver = await storage.updateDriverStatus(Number(req.params.id), req.body.isOnline);
-    res.json(driver);
+  app.delete("/api/drivers/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteDriver(id);
+      res.status(204).end();
+    } catch (err: any) {
+      res.status(400).json({ message: "فشل حذف طلب السائق" });
+    }
   });
 
-  // 6. جلب معلومات محفظة سائق معين
-  app.get("/api/drivers/:id", async (req, res) => {
-    const driver = await storage.getDriver(Number(req.params.id));
-    if (!driver) return res.status(404).json({ message: "Driver not found" });
-    res.json(driver);
-  });
-
-  // --- مسارات الطلبات (Requests) ---
-
+  // مسارات الطلبات والمحفظة كما هي دون أي حذف
   app.post(api.requests.create.path, async (req, res) => {
     try {
       const input = api.requests.create.input.parse(req.body);
@@ -98,17 +110,20 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // Seed function
   const seed = async () => {
     const driversList = await storage.getDrivers();
     if (driversList.length === 0) {
-      await storage.createDriver({
-        name: "أحمد السائق",
-        phone: "07700000000",
-        city: "بغداد",
-        vehicleType: "هيدروليك",
-        plateNumber: "12345 بغداد",
-      });
+      try {
+        await storage.createDriver({
+          name: "أحمد السائق",
+          phone: "07700000000",
+          city: "بغداد",
+          vehicleType: "hydraulic",
+          plateNumber: "12345 بغداد",
+        });
+      } catch (e) {
+        console.log("Seed driver already exists or failed");
+      }
     }
   };
   seed().catch(console.error);

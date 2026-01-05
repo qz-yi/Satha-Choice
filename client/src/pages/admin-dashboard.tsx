@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Driver, Request } from "@shared/schema";
+import { Driver, Request, VEHICLE_OPTIONS } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 
 export default function AdminDashboard() {
@@ -20,39 +20,61 @@ export default function AdminDashboard() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  // 1. جلب السائقين الحقيقيين من قاعدة البيانات
   const { data: allDrivers = [], isLoading: loadingDrivers } = useQuery<Driver[]>({ 
     queryKey: ["/api/drivers"] 
   });
 
-  // 2. جلب الطلبات النشطة للإحصائيات
   const { data: allRequests = [] } = useQuery<Request[]>({ 
     queryKey: ["/api/requests"] 
   });
 
-  // 3. ✅ إصلاح وظيفة الموافقة على السائق (تحديث المسار ليتوافق مع السيرفر)
+  // ✅ تم التوحيد إلى status
   const approveMutation = useMutation({
     mutationFn: async (id: number) => {
-      // تم تعديل المسار هنا إلى /approval ليطابق ما في routes.ts
-      await apiRequest("PATCH", `/api/drivers/${id}/approval`, { status: "approved" });
+      return await apiRequest("PATCH", `/api/drivers/${id}`, { 
+        status: "approved" 
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/drivers"] });
       toast({ 
         title: "تم تفعيل الكابتن بنجاح", 
-        description: "يمكن للسائق الآن الدخول وبدء استقبال الطلبات.",
+        description: "تم تحديث حالة السائق؛ سيختفي من قائمة الانتظار الآن.",
+      });
+    },
+    onError: () => {
+      toast({ 
+        variant: "destructive",
+        title: "فشل التفعيل", 
+        description: "تأكد من اتصال السيرفر بشكل صحيح.",
       });
     }
   });
 
-  // تصفية السائقين (الذين بانتظار الموافقة فقط)
-  const pendingDrivers = allDrivers.filter(d => d.status === "pending");
-  const filteredPending = pendingDrivers.filter(d => 
-    d.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    d.phone.includes(searchQuery)
+  const rejectMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/drivers/${id}`); 
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/drivers"] });
+      toast({ 
+        variant: "destructive",
+        title: "تم رفض الطلب", 
+        description: "تم حذف بيانات السائق نهائياً.",
+      });
+    }
+  });
+
+  // ✅ تم التوحيد هنا أيضاً ليعمل الفلتر بشكل صحيح
+  const pendingDrivers = allDrivers.filter(d => 
+    !d.status || d.status === "pending"
   );
 
-  // إحصائيات حقيقية من قاعدة البيانات
+  const filteredPending = pendingDrivers.filter(d => 
+    (d.name?.toLowerCase() || "").includes(searchQuery.toLowerCase()) || 
+    (d.phone || "").includes(searchQuery)
+  );
+
   const stats = [
     { label: "سائقين متصلين", value: allDrivers.filter(d => d.isOnline).length.toString(), icon: <Activity className="text-green-500" />, color: "bg-green-50" },
     { label: "طلبات نشطة", value: allRequests.filter(r => r.status === "pending").length.toString(), icon: <Truck className="text-orange-500" />, color: "bg-orange-50" },
@@ -61,8 +83,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-[#F3F4F6] font-sans" dir="rtl">
-      
-      {/* Sidebar */}
       <aside className={`${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} md:translate-x-0 fixed md:relative z-[5000] w-72 h-full bg-slate-950 text-white flex flex-col p-6 shadow-2xl transition-transform duration-500 ease-in-out`}>
         <div className="flex items-center justify-between mb-12">
           <div className="flex items-center gap-3">
@@ -147,7 +167,7 @@ export default function AdminDashboard() {
                                 <div className="absolute top-0 left-0 w-2 h-full bg-orange-500" />
                                 <div className="flex gap-4 mb-6">
                                     <div className="w-14 h-14 bg-orange-50 rounded-2xl flex items-center justify-center text-xl text-orange-500 font-bold uppercase">
-                                      {driver.name.charAt(0)}
+                                      {driver.name ? driver.name.charAt(0) : "?"}
                                     </div>
                                     <div>
                                         <h4 className="font-black text-lg text-slate-800 mb-1">{driver.name}</h4>
@@ -158,11 +178,17 @@ export default function AdminDashboard() {
                                 <div className="space-y-3 mb-8">
                                     <div className="flex justify-between items-center text-sm p-3 bg-gray-50 rounded-2xl">
                                         <span className="text-gray-400 font-bold">نوع السطحة</span>
-                                        <span className="font-black text-slate-700 italic">{driver.vehicleType}</span>
+                                        <span className="font-black text-slate-700 italic">
+                                          {VEHICLE_OPTIONS.find(v => v.id === driver.vehicleType)?.label || driver.vehicleType}
+                                        </span>
                                     </div>
                                     <div className="flex justify-between items-center text-sm p-3 bg-gray-50 rounded-2xl">
                                         <span className="text-gray-400 font-bold">رقم الهاتف</span>
                                         <span className="font-black text-slate-700 italic">{driver.phone}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-sm p-3 bg-gray-50 rounded-2xl">
+                                        <span className="text-gray-400 font-bold">رقم اللوحة</span>
+                                        <span className="font-black text-slate-700 italic">{driver.plateNumber}</span>
                                     </div>
                                 </div>
 
@@ -172,10 +198,21 @@ export default function AdminDashboard() {
                                       disabled={approveMutation.isPending}
                                       className="flex-1 bg-orange-500 hover:bg-black text-white rounded-[20px] font-black h-14 transition-all gap-2"
                                     >
-                                        <CheckCircle2 className="w-5 h-5" /> {approveMutation.isPending ? "جاري التفعيل..." : "تفعيل"}
+                                        {approveMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+                                        {approveMutation.isPending ? "جاري التفعيل..." : "تفعيل"}
                                     </Button>
-                                    <Button variant="ghost" className="w-14 h-14 bg-red-50 text-red-500 rounded-[20px] hover:bg-red-500 hover:text-white transition-all">
-                                        <XCircle className="w-6 h-6" />
+                                    
+                                    <Button 
+                                      onClick={() => {
+                                        if(window.confirm("هل أنت متأكد من حذف هذا الطلب؟ لا يمكن التراجع.")) {
+                                          rejectMutation.mutate(driver.id);
+                                        }
+                                      }}
+                                      disabled={rejectMutation.isPending}
+                                      variant="ghost" 
+                                      className="w-14 h-14 bg-red-50 text-red-500 rounded-[20px] hover:bg-red-500 hover:text-white transition-all"
+                                    >
+                                        {rejectMutation.isPending ? <Loader2 className="w-6 h-6 animate-spin" /> : <XCircle className="w-6 h-6" />}
                                     </Button>
                                 </div>
                             </motion.div>
