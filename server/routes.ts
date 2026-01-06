@@ -103,18 +103,19 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // 6. حذف طلب السائق (الرفض) - كما هو بدون تغيير
+  // 6. حذف طلب السائق (الرفض أو حذف الحساب)
   app.delete("/api/drivers/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       await storage.deleteDriver(id);
       res.status(204).end();
     } catch (err: any) {
-      res.status(400).json({ message: "فشل حذف طلب السائق" });
+      console.error("خطأ في حذف السائق:", err);
+      res.status(400).json({ message: "فشل حذف حساب السائق" });
     }
   });
 
-  // --- مسارات الطلبات (Requests) --- كما هي بدون أي اختصار
+  // --- مسارات الطلبات (Requests) ---
 
   app.post(api.requests.create.path, async (req, res) => {
     try {
@@ -138,9 +139,13 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  app.get(api.requests.list.path, async (_req, res) => {
-    const requests = await storage.getRequests();
-    res.json(requests);
+  app.get("/api/requests", async (_req, res) => {
+    try {
+      const requests = await storage.getRequests();
+      res.json(requests);
+    } catch (err) {
+      res.status(500).json({ message: "فشل في جلب قائمة الطلبات" });
+    }
   });
 
   app.post("/api/drivers/:id/refund/:requestId", async (req, res) => {
@@ -152,7 +157,32 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // دالة بذر البيانات (Seed) - محدثة لتشمل كلمة مرور افتراضية
+  // ✅ 7. مسارات تحويل الطلب والمرجوع (Admin Controls)
+  
+  // تحويل الطلب لسائق محدد
+  app.post("/api/admin/requests/:requestId/assign", async (req, res) => {
+    try {
+      const requestId = parseInt(req.params.requestId);
+      const { driverId } = req.body;
+      const updated = await storage.assignRequestToDriver(requestId, driverId);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: "فشل في تحويل الطلب للسائق" });
+    }
+  });
+
+  // المرجوع (إلغاء تعيين السائق وإعادة الطلب للانتظار)
+  app.post("/api/admin/requests/:requestId/cancel-assignment", async (req, res) => {
+    try {
+      const requestId = parseInt(req.params.requestId);
+      const updated = await storage.cancelRequestAssignment(requestId);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: "فشل في إلغاء تعيين السائق" });
+    }
+  });
+
+  // دالة بذر البيانات (Seed)
   const seed = async () => {
     const driversList = await storage.getDrivers();
     if (driversList.length === 0) {
@@ -160,7 +190,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         await storage.createDriver({
           name: "أحمد السائق",
           phone: "07700000000",
-          password: "password123", // ✅ أضفنا كلمة مرور للسيد
+          password: "password123",
           city: "بغداد",
           vehicleType: "hydraulic",
           plateNumber: "12345 بغداد",

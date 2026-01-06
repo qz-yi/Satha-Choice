@@ -15,6 +15,9 @@ export interface IStorage {
   createRequest(request: InsertRequest): Promise<Request>;
   getRequests(): Promise<Request[]>;
   getRequest(id: number): Promise<Request | undefined>;
+  // إضافات جديدة للمسؤول (Admin)
+  assignRequestToDriver(requestId: number, driverId: number): Promise<Request>;
+  cancelRequestAssignment(requestId: number): Promise<Request>;
   
   // --- السائقين والمحفظة ---
   createDriver(driver: InsertDriver): Promise<Driver>;
@@ -46,6 +49,34 @@ export class DatabaseStorage implements IStorage {
   async getRequest(id: number): Promise<Request | undefined> {
     const [request] = await db.select().from(requests).where(eq(requests.id, id));
     return request;
+  }
+
+  // --- دوال التحكم المباشر (Admin Control) ---
+  
+  async assignRequestToDriver(requestId: number, driverId: number): Promise<Request> {
+    const [updated] = await db
+      .update(requests)
+      .set({ 
+        driverId: driverId,
+        status: "confirmed" 
+      })
+      .where(eq(requests.id, requestId))
+      .returning();
+    if (!updated) throw new Error("Request not found");
+    return updated;
+  }
+
+  async cancelRequestAssignment(requestId: number): Promise<Request> {
+    const [updated] = await db
+      .update(requests)
+      .set({ 
+        driverId: null,
+        status: "pending"
+      })
+      .where(eq(requests.id, requestId))
+      .returning();
+    if (!updated) throw new Error("Request not found");
+    return updated;
   }
 
   // 2. إدارة السائقين
