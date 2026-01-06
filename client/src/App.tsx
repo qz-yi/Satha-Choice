@@ -16,7 +16,8 @@ import { SplashScreen } from "@/components/splash-screen";
 // ✅ استيراد الصفحات الجديدة والمسؤول
 import AdminLogin from "@/pages/admin-login"; 
 import AdminDashboard from "@/pages/admin-dashboard";
-import DriverSignup from "@/pages/driver-signup"; 
+// ✅ تم تغيير المسمى هنا ليشمل (التسجيل + تسجيل الدخول) الذي صنعناه مؤخراً
+import DriverAuth from "@/pages/driver-signup"; 
 
 function Router() {
   return (
@@ -30,11 +31,11 @@ function Router() {
       {/* صفحة تتبع السطحة (للزبون) */}
       <Route path="/track/:id" component={DriverTracking} />
 
-      {/* واجهة السائق (التي أضفنا لها ميزة التحديث التلقائي) */}
+      {/* واجهة السائق (لوحة التحكم الداخلية) */}
       <Route path="/driver" component={DriverDashboard} />
 
-      {/* واجهة تسجيل سائق جديد ✅ */}
-      <Route path="/driver-signup" component={DriverSignup} />
+      {/* ✅ الواجهة الجديدة: واجهة تسجيل الدخول أو إنشاء حساب للسائق */}
+      <Route path="/driver-signup" component={DriverAuth} />
 
       {/* بوابة دخول الإدارة */}
       <Route path="/admin-login" component={AdminLogin} />
@@ -52,7 +53,6 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
-    // تقليل وقت الـ Splash قليلاً لتحسين تجربة المستخدم (اختياري)
     const timer = setTimeout(() => {
       setShowSplash(false);
     }, 3000); 
@@ -62,7 +62,6 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        {/* dir="rtl" لضمان توافق الواجهة العربية بالكامل */}
         <div dir="rtl" className="font-sans antialiased min-h-screen bg-background text-foreground">
           {showSplash ? <SplashScreen /> : <Router />}
           <Toaster />

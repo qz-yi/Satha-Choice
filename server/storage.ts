@@ -2,39 +2,38 @@ import { db } from "./db";
 import {
   requests,
   drivers,
+  users, // تأكدت من وجودها هنا
   type InsertRequest,
   type Request,
   type Driver,
   type InsertDriver,
 } from "@shared/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and } from "drizzle-orm";
 
 export interface IStorage {
+  // --- طلبات الزبائن ---
   createRequest(request: InsertRequest): Promise<Request>;
   getRequests(): Promise<Request[]>;
   getRequest(id: number): Promise<Request | undefined>;
   
-  // Driver & Wallet methods
+  // --- السائقين والمحفظة ---
   createDriver(driver: InsertDriver): Promise<Driver>;
   getDriver(id: number): Promise<Driver | undefined>;
+  getDriverByPhone(phone: string): Promise<Driver | undefined>; // ميزة الدخول الجديدة
   getDrivers(): Promise<Driver[]>;
   updateDriverStatus(id: number, isOnline: boolean): Promise<Driver>;
-  
-  // ✅ التحديث الجوهري: إضافة دالة تحديث شاملة لضمان مرونة استقبال البيانات من الواجهة
   updateDriver(id: number, update: Partial<Driver>): Promise<Driver>;
-  
-  // ✅ إضافة دالة الحذف لضمان عمل زر الرفض في واجهة المدير
   deleteDriver(id: number): Promise<void>;
-  
-  // حفظ الدالة القديمة للتوافق مع بقية الكود مع إصلاحها
   updateDriverApprovalStatus(id: number, status: string): Promise<Driver>;
   
+  // --- منطق الرحلات والماليات ---
   updateRequestStatus(id: number, status: string, rating?: number, paymentMethod?: string): Promise<Request>;
   refundToCustomer(driverId: number, requestId: number, amount: number): Promise<{ driver: Driver; user: any }>;
   acceptRequest(driverId: number, requestId: number): Promise<{ request: Request; driver: Driver }>;
 }
 
 export class DatabaseStorage implements IStorage {
+  // 1. إدارة الطلبات
   async createRequest(request: InsertRequest): Promise<Request> {
     const [newRequest] = await db.insert(requests).values(request).returning();
     return newRequest;
@@ -49,12 +48,12 @@ export class DatabaseStorage implements IStorage {
     return request;
   }
 
+  // 2. إدارة السائقين
   async createDriver(driver: InsertDriver): Promise<Driver> {
-    // البدء بحالة "pending" لضمان عدم دخول السائق إلا بموافقة المدير
     const [newDriver] = await db.insert(drivers).values({
       ...driver,
       status: "pending", 
-      walletBalance: "0",
+      walletBalance: "0.00",
       isOnline: false
     }).returning();
     return newDriver;
@@ -65,11 +64,16 @@ export class DatabaseStorage implements IStorage {
     return driver;
   }
 
+  async getDriverByPhone(phone: string): Promise<Driver | undefined> {
+    const [driver] = await db.select().from(drivers).where(eq(drivers.phone, phone));
+    return driver;
+  }
+
   async getDrivers(): Promise<Driver[]> {
     return await db.select().from(drivers).orderBy(desc(drivers.id));
   }
 
-  // ✅ دالة التحديث الشاملة (هذا هو مفتاح الحل)
+  // 3. التحديث والحذف (التي أصلحناها سابقاً)
   async updateDriver(id: number, update: Partial<Driver>): Promise<Driver> {
     const [updated] = await db
       .update(drivers)
@@ -80,7 +84,6 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  // ✅ تطبيق دالة الحذف المطلوبة لزر الرفض (X)
   async deleteDriver(id: number): Promise<void> {
     await db.delete(drivers).where(eq(drivers.id, id));
   }
@@ -89,9 +92,7 @@ export class DatabaseStorage implements IStorage {
     return this.updateDriver(id, { isOnline });
   }
 
-  // ✅ تصحيح الدالة لتقبل التحديث سواء كان العمود اسمه status أو approvalStatus في الشيمه
   async updateDriverApprovalStatus(id: number, status: string): Promise<Driver> {
-    // سنقوم بتحديث العمودين لضمان عدم حدوث خطأ مهما كان المسمى في @shared/schema
     const [updated] = await db
       .update(drivers)
       .set({ status: status } as any) 
@@ -100,11 +101,13 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  // 4. منطق الرحلات (الذي تطلب عدم حذفه)
   async updateRequestStatus(id: number, status: string, rating?: number, paymentMethod?: string): Promise<Request> {
     const [updated] = await db.update(requests).set({ status, rating, paymentMethod }).where(eq(requests.id, id)).returning();
     return updated;
   }
 
+  // 5. استرجاع الأموال (Transaction)
   async refundToCustomer(driverId: number, requestId: number, amount: number): Promise<{ driver: Driver; user: any }> {
     return await db.transaction(async (tx) => {
       const [driver] = await tx.select().from(drivers).where(eq(drivers.id, driverId));
@@ -116,9 +119,9 @@ export class DatabaseStorage implements IStorage {
       const newDriverBalance = (parseFloat(driver.walletBalance) - amount).toFixed(2);
       const [updatedDriver] = await tx.update(drivers).set({ walletBalance: newDriverBalance }).where(eq(drivers.id, driverId)).returning();
       
-      const [user] = await tx.select().from(sql`users`).limit(1);
+      const [user] = await tx.select().from(users).limit(1);
       const newUserBalance = (parseFloat(user.walletBalance) + amount).toFixed(2);
-      const [updatedUser] = await tx.update(sql`users`).set({ walletBalance: newUserBalance }).returning();
+      const [updatedUser] = await tx.update(users).set({ walletBalance: newUserBalance }).returning();
       
       await tx.update(requests).set({ isRefunded: true }).where(eq(requests.id, requestId));
 
@@ -126,6 +129,7 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  // 6. قبول الطلب وخصم العمولات (Logic كامل)
   async acceptRequest(driverId: number, requestId: number): Promise<{ request: Request; driver: Driver }> {
     return await db.transaction(async (tx) => {
       const [driver] = await tx.select().from(drivers).where(eq(drivers.id, driverId));
@@ -141,7 +145,7 @@ export class DatabaseStorage implements IStorage {
       if (request.status !== "pending") throw new Error("الطلب تم قبوله من سائق آخر");
 
       const numericPrice = parseInt(request.price.replace(/[^0-9]/g, "")) || 0;
-      const commission = numericPrice * 0.1;
+      const commission = numericPrice * 0.1; // عمولة 10%
       const newBalance = (balance - commission).toFixed(2);
 
       const [updatedDriver] = await tx

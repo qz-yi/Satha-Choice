@@ -44,7 +44,7 @@ export default function LandingPage() {
              >
                 <Truck className="w-12 h-12 text-white" />
              </motion.div>
-             {/* جعل أيقونة الدرع تفتح لوحة المدير سرداً لسهولة وصولك كمدير */}
+             {/* أيقونة الدرع تفتح لوحة المدير */}
              <div 
                 onClick={() => setLocation("/admin-login")}
                 className="absolute -bottom-2 -right-2 bg-black text-white p-1.5 rounded-xl border-4 border-[#F3F4F6] cursor-pointer hover:bg-orange-600 transition-colors"
@@ -86,7 +86,7 @@ export default function LandingPage() {
             </Card>
           </motion.div>
 
-          {/* كرت السائق - تم توجيهه لصفحة التسجيل الجديدة ✅ */}
+          {/* كرت السائق ✅ تم التحديث للمسار الجديد */}
           <motion.div 
             variants={itemVariants}
             whileHover={{ scale: 1.02 }}
@@ -100,7 +100,7 @@ export default function LandingPage() {
                 </div>
                 <div className="flex-1 text-right">
                   <h2 className="text-2xl font-black text-white mb-1 leading-none">أنا سائق</h2>
-                  <p className="text-white/40 font-bold text-[10px] uppercase tracking-widest">انضم لأسطول سطحة</p>
+                  <p className="text-white/40 font-bold text-[10px] uppercase tracking-widest">تسجيل دخول أو انضمام</p>
                 </div>
                 <div className="bg-white/5 p-2 rounded-full">
                    <ChevronLeft className="w-5 h-5 text-white/20 group-hover:text-orange-50 transition-colors" />
@@ -132,7 +132,7 @@ export default function LandingPage() {
         <motion.div variants={itemVariants} className="text-center">
             <button className="text-gray-400 font-black text-xs hover:text-orange-500 transition-colors flex items-center justify-center gap-2 mx-auto px-4 py-2">
                 <Globe className="w-3 h-3" />
-                <span>العربية (العراق)</span>
+                <span>العربية (العراق) | 2026</span>
             </button>
         </motion.div>
       </motion.div>

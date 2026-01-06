@@ -25,11 +25,12 @@ export const requests = pgTable("requests", {
   isRefunded: boolean("is_refunded").default(sql`false`),
 });
 
-// جدول السائقين المطور (الملف الشخصي الكامل)
+// جدول السائقين المطور - ✅ تم إضافة حقل كلمة المرور
 export const drivers = pgTable("drivers", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   phone: text("phone").notNull().unique(),
+  password: text("password").notNull(), // ✅ الحقل الجديد
   city: text("city").notNull(), 
   vehicleType: text("vehicle_type").notNull(), 
   plateNumber: text("plate_number").notNull(), 
@@ -52,12 +53,13 @@ export const insertRequestSchema = createInsertSchema(requests).omit({
   createdAt: true 
 });
 
-// مخطط إدخال بيانات السائق - تم تعديله ليكون أكثر مرونة مع النصوص العربية
+// ✅ مخطط إدخال بيانات السائق - تم تضمين كلمة المرور في التحقق
 export const insertDriverSchema = createInsertSchema(drivers, {
   name: z.string().min(2, "الاسم مطلوب"),
   phone: z.string().min(10, "رقم الهاتف غير صحيح"),
-  city: z.string().min(2, "يرجى إدخال المدينة"), // يقبل "بابل" وأي نص عربي
-  plateNumber: z.string().min(2, "رقم اللوحة مطلوب"), // يقبل أرقام وحروف
+  password: z.string().min(6, "كلمة المرور يجب أن لا تقل عن 6 رموز"), // ✅ شرط كلمة المرور
+  city: z.string().min(2, "يرجى إدخال المدينة"),
+  plateNumber: z.string().min(2, "رقم اللوحة مطلوب"),
   vehicleType: z.string().min(1, "يرجى اختيار نوع السطحة"),
 }).omit({
   id: true,
@@ -65,6 +67,12 @@ export const insertDriverSchema = createInsertSchema(drivers, {
   isOnline: true,
   status: true,
   createdAt: true
+});
+
+// ✅ مخطط خاص بتسجيل الدخول (Login)
+export const loginSchema = z.object({
+  phone: z.string().min(10, "رقم الهاتف غير صحيح"),
+  password: z.string().min(6, "كلمة المرور قصيرة جداً"),
 });
 
 // === EXPLICIT API CONTRACT TYPES ===

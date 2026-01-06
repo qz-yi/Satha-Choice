@@ -28,7 +28,7 @@ export default function AdminDashboard() {
     queryKey: ["/api/requests"] 
   });
 
-  // ✅ تم التوحيد إلى status
+  // ✅ الإصلاح: التأكد من إرسال status للمسار الموحد /api/drivers/:id
   const approveMutation = useMutation({
     mutationFn: async (id: number) => {
       return await apiRequest("PATCH", `/api/drivers/${id}`, { 
@@ -36,6 +36,7 @@ export default function AdminDashboard() {
       });
     },
     onSuccess: () => {
+      // تحديث فوري للبيانات في الواجهة ليختفي الطلب فوراً
       queryClient.invalidateQueries({ queryKey: ["/api/drivers"] });
       toast({ 
         title: "تم تفعيل الكابتن بنجاح", 
@@ -65,7 +66,7 @@ export default function AdminDashboard() {
     }
   });
 
-  // ✅ تم التوحيد هنا أيضاً ليعمل الفلتر بشكل صحيح
+  // ✅ الإصلاح: فلترة السائقين بناءً على حقل status الموحد
   const pendingDrivers = allDrivers.filter(d => 
     !d.status || d.status === "pending"
   );
@@ -83,6 +84,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-[#F3F4F6] font-sans" dir="rtl">
+      {/* Sidebar - لم يتم تغيير أي شيء في التصميم */}
       <aside className={`${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} md:translate-x-0 fixed md:relative z-[5000] w-72 h-full bg-slate-950 text-white flex flex-col p-6 shadow-2xl transition-transform duration-500 ease-in-out`}>
         <div className="flex items-center justify-between mb-12">
           <div className="flex items-center gap-3">
@@ -135,6 +137,7 @@ export default function AdminDashboard() {
         </header>
 
         <div className="flex-1 p-6 md:p-10 overflow-y-auto">
+          {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
               {stats.map((stat, i) => (
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={i} className="bg-white p-6 rounded-[32px] shadow-sm flex items-center justify-between hover:shadow-md transition-all">

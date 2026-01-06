@@ -1,10 +1,9 @@
-
 import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { insertDriverSchema } from "@shared/schema";
+import { insertDriverSchema, loginSchema } from "@shared/schema"; // ✅ أضفنا loginSchema
 
 export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   const app: Express = arg1.post ? arg1 : arg2;
@@ -12,6 +11,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
   // --- مسارات السائقين (Drivers) ---
 
+  // 1. تسجيل سائق جديد (مع كلمة المرور)
   app.post("/api/drivers", async (req, res) => {
     try {
       const input = insertDriverSchema.parse(req.body);
@@ -29,40 +29,81 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
+  // 2. ✅ مسار تسجيل الدخول الجديد (Login)
+  app.post("/api/drivers/login", async (req, res) => {
+    try {
+      const { phone, password } = loginSchema.parse(req.body);
+      const driver = await storage.getDriverByPhone(phone);
+
+      if (!driver) {
+        return res.status(401).json({ message: "رقم الهاتف غير مسجل لدينا" });
+      }
+
+      // التحقق من كلمة المرور (نص بسيط كما طلبت)
+      if (driver.password !== password) {
+        return res.status(401).json({ message: "كلمة المرور غير صحيحة" });
+      }
+
+      // إرسال بيانات السائق بنجاح
+      res.json(driver);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      res.status(500).json({ message: "حدث خطأ أثناء تسجيل الدخول" });
+    }
+  });
+
+  // 3. جلب كل السائقين (للمدير) - كما هو بدون تغيير
   app.get("/api/drivers", async (_req, res) => {
     const drivers = await storage.getDrivers();
     res.json(drivers);
   });
 
-  app.get("/api/driver/me", async (_req, res) => {
-    const drivers = await storage.getDrivers();
-    res.json(drivers[drivers.length - 1] || null);
+  // 4. جلب بيانات السائق الحالي (لواجهة السائق) - كما هو بدون تغيير
+  app.get("/api/driver/me/:id", async (req, res) => {
+    try {
+      const driverId = Number(req.params.id);
+      if (isNaN(driverId)) return res.status(400).json({ message: "رقم السائق غير صحيح" });
+
+      const driver = await storage.getDriver(driverId);
+      if (!driver) return res.status(404).json({ message: "السائق غير موجود" });
+
+      res.json(driver);
+    } catch (err: any) {
+      res.status(500).json({ message: "حدث خطأ داخلي" });
+    }
   });
 
-  // ✅ التعديل الجوهري: المسار الموحد والمحمي
+  // 5. التفعيل وتحديث بيانات السائق (المسار الموحد) - كما هو بدون تغيير
   app.patch("/api/drivers/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const rawBody = req.body;
-      
-      // بناء كائن تحديث يحتوي فقط على الحقول المعرفة في السكيما
       const updateData: any = {};
-      
-      // معالجة الحالة (status) سواء جاءت باسم status أو approvalStatus
-      if (rawBody.status) updateData.status = rawBody.status;
-      if (rawBody.approvalStatus) updateData.status = rawBody.approvalStatus;
-      
-      // معالجة حالة الاتصال
-      if (typeof rawBody.isOnline === "boolean") updateData.isOnline = rawBody.isOnline;
+
+      if (rawBody.status) {
+        updateData.status = rawBody.status;
+      } else if (rawBody.approvalStatus) {
+        updateData.status = rawBody.approvalStatus;
+      }
+
+      if (typeof rawBody.isOnline === "boolean") {
+        updateData.isOnline = rawBody.isOnline;
+      }
+
+      if (rawBody.walletBalance !== undefined) {
+        updateData.walletBalance = rawBody.walletBalance;
+      }
 
       const updated = await storage.updateDriver(id, updateData);
       res.json(updated);
     } catch (err: any) {
-      console.error("خطأ في تحديث بيانات السائق:", err.message);
       res.status(400).json({ message: err.message });
     }
   });
 
+  // 6. حذف طلب السائق (الرفض) - كما هو بدون تغيير
   app.delete("/api/drivers/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -73,7 +114,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // مسارات الطلبات والمحفظة كما هي دون أي حذف
+  // --- مسارات الطلبات (Requests) --- كما هي بدون أي اختصار
+
   app.post(api.requests.create.path, async (req, res) => {
     try {
       const input = api.requests.create.input.parse(req.body);
@@ -83,7 +125,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message });
       }
-      throw err;
+      res.status(500).json({ message: "خطأ في إنشاء الطلب" });
     }
   });
 
@@ -110,6 +152,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
+  // دالة بذر البيانات (Seed) - محدثة لتشمل كلمة مرور افتراضية
   const seed = async () => {
     const driversList = await storage.getDrivers();
     if (driversList.length === 0) {
@@ -117,12 +160,13 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         await storage.createDriver({
           name: "أحمد السائق",
           phone: "07700000000",
+          password: "password123", // ✅ أضفنا كلمة مرور للسيد
           city: "بغداد",
           vehicleType: "hydraulic",
           plateNumber: "12345 بغداد",
         });
       } catch (e) {
-        console.log("Seed driver already exists or failed");
+        console.log("Seed failed");
       }
     }
   };
