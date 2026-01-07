@@ -3,7 +3,7 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { insertDriverSchema, loginSchema } from "@shared/schema"; // ✅ أضفنا loginSchema
+import { insertDriverSchema, loginSchema } from "@shared/schema"; 
 
 export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   const app: Express = arg1.post ? arg1 : arg2;
@@ -11,7 +11,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
   // --- مسارات السائقين (Drivers) ---
 
-  // 1. تسجيل سائق جديد (مع كلمة المرور)
+  // 1. تسجيل سائق جديد
   app.post("/api/drivers", async (req, res) => {
     try {
       const input = insertDriverSchema.parse(req.body);
@@ -29,7 +29,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // 2. ✅ مسار تسجيل الدخول الجديد (Login)
+  // 2. تسجيل الدخول
   app.post("/api/drivers/login", async (req, res) => {
     try {
       const { phone, password } = loginSchema.parse(req.body);
@@ -39,12 +39,10 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         return res.status(401).json({ message: "رقم الهاتف غير مسجل لدينا" });
       }
 
-      // التحقق من كلمة المرور (نص بسيط كما طلبت)
       if (driver.password !== password) {
         return res.status(401).json({ message: "كلمة المرور غير صحيحة" });
       }
 
-      // إرسال بيانات السائق بنجاح
       res.json(driver);
     } catch (err: any) {
       if (err instanceof z.ZodError) {
@@ -54,13 +52,30 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // 3. جلب كل السائقين (للمدير) - كما هو بدون تغيير
+  // ✅ التعديل الجديد: مسار تحديث الموقع الذكي للسائق (يستخدمه التتبع الموفر للبطارية)
+  app.patch("/api/drivers/:id/location", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { lat, lng } = req.body;
+
+      if (isNaN(id) || lat === undefined || lng === undefined) {
+        return res.status(400).json({ message: "بيانات الموقع غير مكتملة" });
+      }
+
+      const updatedDriver = await storage.updateDriverLocation(id, lat, lng);
+      res.json(updatedDriver);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // 3. جلب كل السائقين
   app.get("/api/drivers", async (_req, res) => {
     const drivers = await storage.getDrivers();
     res.json(drivers);
   });
 
-  // 4. جلب بيانات السائق الحالي (لواجهة السائق) - كما هو بدون تغيير
+  // 4. جلب بيانات السائق الحالي
   app.get("/api/driver/me/:id", async (req, res) => {
     try {
       const driverId = Number(req.params.id);
@@ -75,7 +90,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // 5. التفعيل وتحديث بيانات السائق (المسار الموحد) - كما هو بدون تغيير
+  // 5. التفعيل وتحديث بيانات السائق
   app.patch("/api/drivers/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -103,7 +118,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // 6. حذف طلب السائق (الرفض أو حذف الحساب)
+  // 6. حذف حساب السائق
   app.delete("/api/drivers/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -157,9 +172,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // ✅ 7. مسارات تحويل الطلب والمرجوع (Admin Controls)
+  // 7. مسارات تحويل الطلب والمرجوع (Admin Controls)
   
-  // تحويل الطلب لسائق محدد
   app.post("/api/admin/requests/:requestId/assign", async (req, res) => {
     try {
       const requestId = parseInt(req.params.requestId);
@@ -171,7 +185,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // المرجوع (إلغاء تعيين السائق وإعادة الطلب للانتظار)
   app.post("/api/admin/requests/:requestId/cancel-assignment", async (req, res) => {
     try {
       const requestId = parseInt(req.params.requestId);

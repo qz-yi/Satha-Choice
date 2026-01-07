@@ -25,12 +25,12 @@ export const requests = pgTable("requests", {
   isRefunded: boolean("is_refunded").default(sql`false`),
 });
 
-// جدول السائقين المطور - ✅ تم إضافة حقل كلمة المرور
+// جدول السائقين المطور
 export const drivers = pgTable("drivers", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   phone: text("phone").notNull().unique(),
-  password: text("password").notNull(), // ✅ الحقل الجديد
+  password: text("password").notNull(), 
   city: text("city").notNull(), 
   vehicleType: text("vehicle_type").notNull(), 
   plateNumber: text("plate_number").notNull(), 
@@ -38,6 +38,9 @@ export const drivers = pgTable("drivers", {
   isOnline: boolean("is_online").default(sql`false`),
   status: text("status").notNull().default("pending"), 
   createdAt: timestamp("created_at").defaultNow(),
+  // ✅ الحقول الجديدة المضافة لدعم التتبع الذكي
+  currentLat: text("current_lat"),
+  currentLng: text("current_lng"),
 });
 
 export const users = pgTable("users", {
@@ -53,11 +56,11 @@ export const insertRequestSchema = createInsertSchema(requests).omit({
   createdAt: true 
 });
 
-// ✅ مخطط إدخال بيانات السائق - تم تضمين كلمة المرور في التحقق
+// مخطط إدخال بيانات السائق
 export const insertDriverSchema = createInsertSchema(drivers, {
   name: z.string().min(2, "الاسم مطلوب"),
   phone: z.string().min(10, "رقم الهاتف غير صحيح"),
-  password: z.string().min(6, "كلمة المرور يجب أن لا تقل عن 6 رموز"), // ✅ شرط كلمة المرور
+  password: z.string().min(6, "كلمة المرور يجب أن لا تقل عن 6 رموز"),
   city: z.string().min(2, "يرجى إدخال المدينة"),
   plateNumber: z.string().min(2, "رقم اللوحة مطلوب"),
   vehicleType: z.string().min(1, "يرجى اختيار نوع السطحة"),
@@ -66,10 +69,12 @@ export const insertDriverSchema = createInsertSchema(drivers, {
   walletBalance: true,
   isOnline: true,
   status: true,
-  createdAt: true
+  createdAt: true,
+  currentLat: true, // استبعادها من نموذج التسجيل
+  currentLng: true  // استبعادها من نموذج التسجيل
 });
 
-// ✅ مخطط خاص بتسجيل الدخول (Login)
+// مخطط خاص بتسجيل الدخول (Login)
 export const loginSchema = z.object({
   phone: z.string().min(10, "رقم الهاتف غير صحيح"),
   password: z.string().min(6, "كلمة المرور قصيرة جداً"),

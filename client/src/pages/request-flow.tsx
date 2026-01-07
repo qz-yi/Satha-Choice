@@ -70,6 +70,7 @@ export default function RequestFlow() {
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
   
   const { mutate, isPending } = useCreateRequest();
+  const [, setLocation] = useLocation();
   
   const [formData, setFormData] = useState({
     location: "", destination: "",
@@ -167,7 +168,7 @@ export default function RequestFlow() {
             <h2 className="text-4xl font-black text-gray-900 italic tracking-tighter">تم الإرسال!</h2>
             <p className="text-gray-400 font-bold">طلبك الآن متاح لجميع السائقين القريبين</p>
         </div>
-        <Button onClick={() => setViewState("tracking")} className="w-full h-16 bg-black text-white rounded-[24px] font-black text-xl shadow-2xl">تتبع الرحلة</Button>
+        <Button onClick={() => setLocation("/tracking")} className="w-full h-16 bg-black text-white rounded-[24px] font-black text-xl shadow-2xl">تتبع الرحلة</Button>
       </motion.div>
     </div>
   );

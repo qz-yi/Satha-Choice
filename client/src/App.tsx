@@ -29,6 +29,7 @@ function Router() {
       <Route path="/request" component={RequestFlow} />
 
       {/* صفحة تتبع السطحة (للزبون) */}
+      <Route path="/tracking" component={DriverTracking} />
       <Route path="/track/:id" component={DriverTracking} />
 
       {/* واجهة السائق (لوحة التحكم الداخلية) */}
