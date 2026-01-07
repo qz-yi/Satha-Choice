@@ -2,7 +2,7 @@ import { db } from "./db";
 import {
   requests,
   drivers,
-  users, 
+  users, // تأكدت من وجودها هنا
   type InsertRequest,
   type Request,
   type Driver,
@@ -15,21 +15,19 @@ export interface IStorage {
   createRequest(request: InsertRequest): Promise<Request>;
   getRequests(): Promise<Request[]>;
   getRequest(id: number): Promise<Request | undefined>;
+  // إضافات جديدة للمسؤول (Admin)
   assignRequestToDriver(requestId: number, driverId: number): Promise<Request>;
   cancelRequestAssignment(requestId: number): Promise<Request>;
   
   // --- السائقين والمحفظة ---
   createDriver(driver: InsertDriver): Promise<Driver>;
   getDriver(id: number): Promise<Driver | undefined>;
-  getDriverByPhone(phone: string): Promise<Driver | undefined>;
+  getDriverByPhone(phone: string): Promise<Driver | undefined>; // ميزة الدخول الجديدة
   getDrivers(): Promise<Driver[]>;
   updateDriverStatus(id: number, isOnline: boolean): Promise<Driver>;
   updateDriver(id: number, update: Partial<Driver>): Promise<Driver>;
   deleteDriver(id: number): Promise<void>;
   updateDriverApprovalStatus(id: number, status: string): Promise<Driver>;
-  
-  // ✅ التعديل الجديد: وظيفة تحديث الإحداثيات (الموقع)
-  updateDriverLocation(id: number, lat: number, lng: number): Promise<Driver>;
   
   // --- منطق الرحلات والماليات ---
   updateRequestStatus(id: number, status: string, rating?: number, paymentMethod?: string): Promise<Request>;
@@ -53,6 +51,8 @@ export class DatabaseStorage implements IStorage {
     return request;
   }
 
+  // --- دوال التحكم المباشر (Admin Control) ---
+  
   async assignRequestToDriver(requestId: number, driverId: number): Promise<Request> {
     const [updated] = await db
       .update(requests)
@@ -104,24 +104,11 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(drivers).orderBy(desc(drivers.id));
   }
 
+  // 3. التحديث والحذف (التي أصلحناها سابقاً)
   async updateDriver(id: number, update: Partial<Driver>): Promise<Driver> {
     const [updated] = await db
       .update(drivers)
       .set(update)
-      .where(eq(drivers.id, id))
-      .returning();
-    if (!updated) throw new Error("Driver not found");
-    return updated;
-  }
-
-  // ✅ التعديل الجديد: تنفيذ تحديث الموقع في قاعدة البيانات
-  async updateDriverLocation(id: number, lat: number, lng: number): Promise<Driver> {
-    const [updated] = await db
-      .update(drivers)
-      .set({ 
-        currentLat: lat.toString(), 
-        currentLng: lng.toString() 
-      } as any)
       .where(eq(drivers.id, id))
       .returning();
     if (!updated) throw new Error("Driver not found");
@@ -145,13 +132,13 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  // 4. منطق الرحلات
+  // 4. منطق الرحلات (الذي تطلب عدم حذفه)
   async updateRequestStatus(id: number, status: string, rating?: number, paymentMethod?: string): Promise<Request> {
     const [updated] = await db.update(requests).set({ status, rating, paymentMethod }).where(eq(requests.id, id)).returning();
     return updated;
   }
 
-  // 5. استرجاع الأموال
+  // 5. استرجاع الأموال (Transaction)
   async refundToCustomer(driverId: number, requestId: number, amount: number): Promise<{ driver: Driver; user: any }> {
     return await db.transaction(async (tx) => {
       const [driver] = await tx.select().from(drivers).where(eq(drivers.id, driverId));
@@ -173,7 +160,7 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  // 6. قبول الطلب وخصم العمولات
+  // 6. قبول الطلب وخصم العمولات (Logic كامل)
   async acceptRequest(driverId: number, requestId: number): Promise<{ request: Request; driver: Driver }> {
     return await db.transaction(async (tx) => {
       const [driver] = await tx.select().from(drivers).where(eq(drivers.id, driverId));
@@ -189,7 +176,7 @@ export class DatabaseStorage implements IStorage {
       if (request.status !== "pending") throw new Error("الطلب تم قبوله من سائق آخر");
 
       const numericPrice = parseInt(request.price.replace(/[^0-9]/g, "")) || 0;
-      const commission = numericPrice * 0.1; 
+      const commission = numericPrice * 0.1; // عمولة 10%
       const newBalance = (balance - commission).toFixed(2);
 
       const [updatedDriver] = await tx
