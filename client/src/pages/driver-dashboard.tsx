@@ -8,14 +8,27 @@ import {
   Loader2, ShieldAlert
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapContainer, TileLayer, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, useMap, Marker, Popup } from "react-leaflet"; 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { io } from "socket.io-client";
 import { useQuery } from "@tanstack/react-query";
 import { Driver } from "@shared/schema";
-import { apiRequest, queryClient } from "@/lib/queryClient"; // ✅ أضفنا هذه للاستخدام في التحديث
-import { useToast } from "@/hooks/use-toast"; // ✅ أضفنا التوست للتنبيه
+import { apiRequest, queryClient } from "@/lib/queryClient"; 
+import { useToast } from "@/hooks/use-toast"; 
+
+// --- وظيفة توليد الأيقونة البرتقالية مع خاصية الدوران ---
+const getOrangeArrowIcon = (rotation: number) => L.divIcon({
+  html: `
+    <div style="transform: rotate(${rotation}deg); transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); filter: drop-shadow(0px 3px 5px rgba(0,0,0,0.3));">
+      <svg width="45" height="45" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M50 5L92 90L50 72L8 90L50 5Z" fill="#f97316" stroke="white" stroke-width="2" stroke-linejoin="round"/>
+      </svg>
+    </div>`,
+  className: "", 
+  iconSize: [45, 45],
+  iconAnchor: [22.5, 22.5], 
+});
 
 const socket = io();
 
@@ -26,7 +39,7 @@ const MapViewHandler = ({ center }: { center: [number, number] }) => {
   return null;
 };
 
-// --- Sidebar (هوية برتقالية كما في تصميمك المفضل) ---
+// --- Sidebar (كما هو في كودك تماماً دون أي تغيير) ---
 const Sidebar = ({ isOpen, onClose, driverData, onLogout }: any) => (
   <>
     <AnimatePresence>
@@ -81,31 +94,54 @@ export default function DriverDashboard() {
   const [orderStage, setOrderStage] = useState<any>("heading_to_pickup");
   const [notification, setNotification] = useState({ show: false, message: "", type: "success" as any });
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false); // ✅ حالة جديدة للتحميل أثناء التبديل
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  const [currentCoords, setCurrentCoords] = useState<[number, number] | null>(null);
+  const [heading, setHeading] = useState(0); // إضافة حالة تخزين اتجاه الحركة
 
   const currentId = localStorage.getItem("currentDriverId");
 
   const { data: driverInfo, isLoading, refetch } = useQuery<Driver>({ 
     queryKey: [currentId ? `/api/driver/me/${currentId}` : "/api/driver/me"],
-    refetchInterval: 3000, // زيادة طفيفة لتقليل الضغط
+    refetchInterval: 3000, 
   });
 
-  // ✅ الإصلاح الجوهري: دالة تبديل الحالة ON/OFF مع الربط بالسيرفر
+  useEffect(() => {
+    if (!driverInfo?.isOnline || !("geolocation" in navigator)) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude, heading: deviceHeading } = pos.coords;
+        setCurrentCoords([latitude, longitude]);
+        
+        // تحديث اتجاه السهم إذا كانت القيمة متاحة من الـ GPS
+        if (deviceHeading !== null && deviceHeading !== undefined) {
+          setHeading(deviceHeading);
+        }
+
+        apiRequest("PATCH", `/api/drivers/${driverInfo.id}/location`, {
+          lat: latitude.toString(),
+          lng: longitude.toString(),
+          heading: deviceHeading?.toString() || "0"
+        }).catch(() => {});
+      },
+      (err) => console.error(err),
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [driverInfo?.isOnline, driverInfo?.id]);
+
   const toggleOnlineStatus = async () => {
     if (!driverInfo || isUpdatingStatus) return;
-    
     setIsUpdatingStatus(true);
     try {
       const newOnlineStatus = !driverInfo.isOnline;
-      
       const res = await apiRequest("PATCH", `/api/drivers/${driverInfo.id}`, {
         isOnline: newOnlineStatus
       });
-
       if (res.ok) {
-        await refetch(); // تحديث البيانات فوراً
+        await refetch();
         setNotification({ 
           show: true, 
           message: newOnlineStatus ? "أنت الآن متصل وتستقبل الطلبات" : "تم قطع الاتصال، أنت أوفلاين الآن", 
@@ -117,7 +153,7 @@ export default function DriverDashboard() {
       toast({
         variant: "destructive",
         title: "خطأ في الشبكة",
-        description: "تعذر تحديث حالتك، يرجى المحاولة لاحقاً"
+        description: "تعذر تحديث حالتك"
       });
     } finally {
       setIsUpdatingStatus(false);
@@ -135,7 +171,6 @@ export default function DriverDashboard() {
   };
 
   useEffect(() => {
-    // الاعتماد على الحالة القادمة من السيرفر (driverInfo.isOnline)
     if (driverInfo?.isOnline && driverInfo?.status === "approved") {
       socket.on("receive_request", (data: any) => {
         if (!activeOrder) {
@@ -182,7 +217,6 @@ export default function DriverDashboard() {
           setLocation("/");
       }} />
 
-      {/* --- Header احترافي --- */}
       <header className="bg-white px-5 py-4 flex justify-between items-center shadow-sm z-[1000] border-b border-gray-100">
         <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)} className="bg-gray-50 rounded-xl">
           <Menu className="w-6 h-6 text-gray-700" />
@@ -192,7 +226,6 @@ export default function DriverDashboard() {
           SATHA <Truck className="w-7 h-7 text-orange-500" />
         </div>
 
-        {/* ✅ تم تعديل الزر ليعمل بالدالة الجديدة toggleOnlineStatus */}
         <div 
           onClick={toggleOnlineStatus} 
           className={`flex items-center gap-2 px-4 py-2 rounded-full cursor-pointer transition-all duration-300 border ${isUpdatingStatus ? 'opacity-50' : ''} ${driverInfo.isOnline ? 'bg-orange-500 border-orange-400 shadow-lg shadow-orange-100' : 'bg-gray-100 border-gray-200'}`}
@@ -210,15 +243,26 @@ export default function DriverDashboard() {
 
       <div className="flex-1 relative flex flex-col">
         
-        {/* الخريطة */}
         <div className={`absolute inset-0 z-0 transition-all duration-1000 ${driverInfo.isOnline ? 'opacity-100' : 'opacity-40 grayscale'}`}>
           <MapContainer center={[33.3152, 44.3661]} zoom={13} style={{ height: "100%", width: "100%" }} zoomControl={false}>
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            <MapViewHandler center={[33.3152, 44.3661]} />
+            
+            {/* ✅ استخدام الأيقونة البرتقالية مع خاصية الدوران المباشر */}
+            {currentCoords && (
+              <Marker position={currentCoords} icon={getOrangeArrowIcon(heading)}>
+                <Popup>
+                   <div className="text-right font-black font-sans">
+                      أنت هنا كابتن {driverInfo.name} <br/>
+                      <span className="text-orange-500 text-[10px]">جاري تتبع موقعك المباشر</span>
+                   </div>
+                </Popup>
+              </Marker>
+            )}
+
+            <MapViewHandler center={currentCoords || [33.3152, 44.3661]} />
           </MapContainer>
         </div>
 
-        {/* إحصائيات علوية */}
         {!activeOrder && driverInfo.isOnline && (
            <div className="relative z-10 p-4 grid grid-cols-2 gap-4 pointer-events-none">
                 <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white/90 backdrop-blur-md p-4 rounded-[28px] shadow-xl border border-white">
@@ -234,7 +278,6 @@ export default function DriverDashboard() {
            </div>
         )}
 
-        {/* لوحة الطلبات */}
         <AnimatePresence>
           {driverInfo.isOnline && !activeOrder && (
             <motion.div 
@@ -291,7 +334,6 @@ export default function DriverDashboard() {
           )}
         </AnimatePresence>
 
-        {/* واجهة الرحلة والنشاط (لم تتغير) */}
         {activeOrder && orderStage !== "payment" && (
           <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} className="absolute inset-x-0 bottom-0 z-[1300] bg-white rounded-t-[45px] p-8 shadow-2xl border-t-4 border-orange-500">
             <div className="flex items-center justify-between mb-8">
@@ -310,13 +352,12 @@ export default function DriverDashboard() {
                 if (orderStage === "heading_to_pickup") setOrderStage("arrived_pickup");
                 else if (orderStage === "arrived_pickup") setOrderStage("heading_to_dropoff");
                 else setOrderStage("payment");
-            }} className="w-full h-18 bg-black hover:bg-orange-600 text-white rounded-[26px] font-black text-xl shadow-xl transition-all py-4">
+            }} className="w-full h-18 bg-black hover:bg-orange-600 text-white rounded-[26px] font-black text-xl shadow-xl py-4">
               {orderStage === "heading_to_pickup" ? "وصلت لموقع الزبون" : orderStage === "arrived_pickup" ? "تأكيد رفع السيارة" : "إتمام الرحلة"}
             </Button>
           </motion.div>
         )}
 
-        {/* واجهة الدفع (لم تتغير) */}
         {activeOrder && orderStage === "payment" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 z-[5000] bg-white flex flex-col items-center justify-center p-8 text-center">
              <div className="w-28 h-28 bg-orange-50 rounded-full flex items-center justify-center mb-8 border-4 border-white shadow-2xl shadow-orange-100"><CheckCircle2 className="w-14 h-14 text-orange-500" /></div>
@@ -328,7 +369,6 @@ export default function DriverDashboard() {
 
       </div>
       
-      {/* إشعارات */}
       <AnimatePresence>
         {notification.show && (
           <motion.div initial={{ y: -100 }} animate={{ y: 20 }} exit={{ y: -100 }} className="fixed top-0 left-0 right-0 z-[6000] flex justify-center px-6">
