@@ -23,6 +23,7 @@ export const requests = pgTable("requests", {
   rating: integer("rating"),
   paymentMethod: text("payment_method"),
   isRefunded: boolean("is_refunded").default(sql`false`),
+  customerPhone: text("customer_phone"), // تم إضافته لإصلاح خطأ الإدارة
 });
 
 // جدول السائقين المطور

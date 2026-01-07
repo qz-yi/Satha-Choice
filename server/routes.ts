@@ -52,7 +52,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // ✅ التعديل الجديد: مسار تحديث الموقع الذكي للسائق (يستخدمه التتبع الموفر للبطارية)
+  // ✅ التعديل الجديد: مسار تحديث الموقع الذكي للسائق
   app.patch("/api/drivers/:id/location", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -69,13 +69,13 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // 3. جلب كل السائقين
+  // جلب كل السائقين
   app.get("/api/drivers", async (_req, res) => {
     const drivers = await storage.getDrivers();
     res.json(drivers);
   });
 
-  // 4. جلب بيانات السائق الحالي
+  // جلب بيانات السائق الحالي
   app.get("/api/driver/me/:id", async (req, res) => {
     try {
       const driverId = Number(req.params.id);
@@ -90,42 +90,36 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // 5. التفعيل وتحديث بيانات السائق
-  app.patch("/api/drivers/:id", async (req, res) => {
+  // تحديث حالة السائق
+  app.patch("/api/drivers/:id/status", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const rawBody = req.body;
-      const updateData: any = {};
-
-      if (rawBody.status) {
-        updateData.status = rawBody.status;
-      } else if (rawBody.approvalStatus) {
-        updateData.status = rawBody.approvalStatus;
-      }
-
-      if (typeof rawBody.isOnline === "boolean") {
-        updateData.isOnline = rawBody.isOnline;
-      }
-
-      if (rawBody.walletBalance !== undefined) {
-        updateData.walletBalance = rawBody.walletBalance;
-      }
-
-      const updated = await storage.updateDriver(id, updateData);
+      const { isOnline } = req.body;
+      const updated = await storage.updateDriverStatus(id, isOnline);
       res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
     }
   });
 
-  // 6. حذف حساب السائق
+  // تحديث بيانات السائق (Admin/General)
+  app.patch("/api/drivers/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updated = await storage.updateDriver(id, req.body);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // حذف السائق
   app.delete("/api/drivers/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       await storage.deleteDriver(id);
       res.status(204).end();
     } catch (err: any) {
-      console.error("خطأ في حذف السائق:", err);
       res.status(400).json({ message: "فشل حذف حساب السائق" });
     }
   });
@@ -145,10 +139,21 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  app.post("/api/drivers/:id/accept/:requestId", async (req, res) => {
+  app.post("/api/requests/:requestId/accept", async (req, res) => {
     try {
-      const result = await storage.acceptRequest(Number(req.params.id), Number(req.params.requestId));
-      res.json(result);
+      const { driverId } = req.body;
+      const result = await storage.acceptRequest(Number(driverId), Number(req.params.requestId));
+      res.json(result.request);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/requests/:requestId/status", async (req, res) => {
+    try {
+      const { status, stage } = req.body;
+      const updated = await storage.updateRequestStatus(Number(req.params.requestId), status);
+      res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
     }
@@ -163,17 +168,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  app.post("/api/drivers/:id/refund/:requestId", async (req, res) => {
-    try {
-      const result = await storage.refundToCustomer(Number(req.params.id), Number(req.params.requestId), req.body.amount);
-      res.json(result);
-    } catch (err: any) {
-      res.status(400).json({ message: err.message });
-    }
-  });
-
-  // 7. مسارات تحويل الطلب والمرجوع (Admin Controls)
-  
   app.post("/api/admin/requests/:requestId/assign", async (req, res) => {
     try {
       const requestId = parseInt(req.params.requestId);
@@ -182,16 +176,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: "فشل في تحويل الطلب للسائق" });
-    }
-  });
-
-  app.post("/api/admin/requests/:requestId/cancel-assignment", async (req, res) => {
-    try {
-      const requestId = parseInt(req.params.requestId);
-      const updated = await storage.cancelRequestAssignment(requestId);
-      res.json(updated);
-    } catch (err: any) {
-      res.status(400).json({ message: "فشل في إلغاء تعيين السائق" });
     }
   });
 
@@ -205,7 +189,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
           phone: "07700000000",
           password: "password123",
           city: "بغداد",
-          vehicleType: "hydraulic",
+          vehicleType: "small",
           plateNumber: "12345 بغداد",
         });
       } catch (e) {

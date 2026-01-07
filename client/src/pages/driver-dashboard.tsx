@@ -154,7 +154,9 @@ export default function DriverDashboard() {
       setAvailableRequests(allRequests.filter(r => r.status === "pending"));
       new Audio("https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3").play().catch(() => {});
     }
-  }, [allRequests, driverInfo, lastNotifiedId, activeOrder]);  const handleAcceptRequest = async (requestId: number) => {
+  }, [allRequests, driverInfo, lastNotifiedId, activeOrder]);
+
+  const handleAcceptRequest = async (requestId: number) => {
     setIsRefreshing(true);
     try {
       const res = await apiRequest("POST", `/api/requests/${requestId}/accept`, { driverId: driverInfo?.id });
