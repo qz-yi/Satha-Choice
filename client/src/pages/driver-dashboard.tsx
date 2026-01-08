@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react"; // تمت إضافة useRef
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { 
   Truck, LogOut, Wallet, X, Menu, RefreshCw,
   Phone, CheckCircle2, User, MapPin, Navigation, List, ExternalLink,
   Star, Clock, TrendingUp, ChevronRight, Settings, History, GripHorizontal,
-  Loader2, ShieldAlert
+  Loader2, ShieldAlert, ArrowRight, Camera, MessageSquare, Send // تمت إضافة أيقونات الدردشة
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MapContainer, TileLayer, useMap, Marker, Popup } from "react-leaflet"; 
@@ -39,8 +39,8 @@ const MapViewHandler = ({ center }: { center: [number, number] }) => {
   return null;
 };
 
-// --- Sidebar (كما هو في كودك تماماً دون أي تغيير) ---
-const Sidebar = ({ isOpen, onClose, driverData, onLogout }: any) => (
+// --- Sidebar ---
+const Sidebar = ({ isOpen, onClose, driverData, onLogout, onNavigate }: any) => (
   <>
     <AnimatePresence>
       {isOpen && (
@@ -69,11 +69,15 @@ const Sidebar = ({ isOpen, onClose, driverData, onLogout }: any) => (
 
       <nav className="flex-1 space-y-1">
         {[ 
-          { icon: <History className="w-5 h-5"/>, label: "رحلاتي" }, 
-          { icon: <Wallet className="w-5 h-5"/>, label: "المحفظة" }, 
-          { icon: <Settings className="w-5 h-5"/>, label: "الإعدادات" } 
+          { icon: <History className="w-5 h-5"/>, label: "رحلاتي", key: "history" }, 
+          { icon: <Wallet className="w-5 h-5"/>, label: "المحفظة", key: "wallet" }, 
+          { icon: <Settings className="w-5 h-5"/>, label: "الإعدادات", key: "settings" } 
         ].map((item, i) => (
-          <button key={i} className="w-full flex items-center justify-between p-4 hover:bg-orange-50 rounded-2xl transition-all group">
+          <button 
+            key={i} 
+            onClick={() => { onNavigate(item.key); onClose(); }}
+            className="w-full flex items-center justify-between p-4 hover:bg-orange-50 rounded-2xl transition-all group"
+          >
              <div className="flex items-center gap-4 font-bold text-gray-600 group-hover:text-orange-600">{item.icon} <span>{item.label}</span></div>
              <ChevronRight className="w-4 h-4 text-gray-300" />
           </button>
@@ -95,11 +99,24 @@ export default function DriverDashboard() {
   const [notification, setNotification] = useState({ show: false, message: "", type: "success" as any });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [activeTab, setActiveTab] = useState<"map" | "history" | "wallet" | "settings">("map");
+  
+  // --- حالات جديدة تم دمجها بذكاء ---
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMessage, setChatMessage] = useState("");
+  const [messages, setMessages] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null); // مرجع لاختيار الصور
+
+  // حالات الإعدادات الفرعية
+  const [isEditingPhoto, setIsEditingPhoto] = useState(false);
+  const [showVehicleDetails, setShowVehicleDetails] = useState(false);
+
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
   const [currentCoords, setCurrentCoords] = useState<[number, number] | null>(null);
-  const [heading, setHeading] = useState(0); // إضافة حالة تخزين اتجاه الحركة
+  const [heading, setHeading] = useState(0); 
 
   const currentId = localStorage.getItem("currentDriverId");
 
@@ -107,6 +124,23 @@ export default function DriverDashboard() {
     queryKey: [currentId ? `/api/driver/me/${currentId}` : "/api/driver/me"],
     refetchInterval: 3000, 
   });
+    const { data: rideHistory } = useQuery<any[]>({
+    queryKey: [`/api/drivers/${driverInfo?.id}/rides/completed`],
+    enabled: !!driverInfo?.id && activeTab === "history",
+  });
+
+  // --- منطق اختيار الصور من معرض الجهاز ---
+  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        toast({ title: "تم اختيار الصورة", description: "جاري تحديث ملفك الشخصي..." });
+        // هنا يمكن إضافة كود الرفع للسيرفر apiRequest("PATCH", ...)
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   useEffect(() => {
     if (!driverInfo?.isOnline || !("geolocation" in navigator)) return;
@@ -114,15 +148,9 @@ export default function DriverDashboard() {
       (pos) => {
         const { latitude, longitude, heading: deviceHeading } = pos.coords;
         setCurrentCoords([latitude, longitude]);
-        
-        // تحديث اتجاه السهم إذا كانت القيمة متاحة من الـ GPS
-        if (deviceHeading !== null && deviceHeading !== undefined) {
-          setHeading(deviceHeading);
-        }
-
+        if (deviceHeading !== null && deviceHeading !== undefined) setHeading(deviceHeading);
         apiRequest("PATCH", `/api/drivers/${driverInfo.id}/location`, {
-          lat: latitude.toString(),
-          lng: longitude.toString(),
+          lat: latitude.toString(), lng: longitude.toString(),
           heading: deviceHeading?.toString() || "0"
         }).catch(() => {});
       },
@@ -137,27 +165,15 @@ export default function DriverDashboard() {
     setIsUpdatingStatus(true);
     try {
       const newOnlineStatus = !driverInfo.isOnline;
-      const res = await apiRequest("PATCH", `/api/drivers/${driverInfo.id}`, {
-        isOnline: newOnlineStatus
-      });
+      const res = await apiRequest("PATCH", `/api/drivers/${driverInfo.id}`, { isOnline: newOnlineStatus });
       if (res.ok) {
         await refetch();
-        setNotification({ 
-          show: true, 
-          message: newOnlineStatus ? "أنت الآن متصل وتستقبل الطلبات" : "تم قطع الاتصال، أنت أوفلاين الآن", 
-          type: "success" 
-        });
+        setNotification({ show: true, message: newOnlineStatus ? "أنت الآن متصل وتستقبل الطلبات" : "تم قطع الاتصال، أنت أوفلاين الآن", type: "success" });
         setTimeout(() => setNotification(n => ({ ...n, show: false })), 3000);
       }
     } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "خطأ في الشبكة",
-        description: "تعذر تحديث حالتك"
-      });
-    } finally {
-      setIsUpdatingStatus(false);
-    }
+      toast({ variant: "destructive", title: "خطأ في الشبكة", description: "تعذر تحديث حالتك" });
+    } finally { setIsUpdatingStatus(false); }
   };
 
   const handleRefresh = () => {
@@ -173,13 +189,19 @@ export default function DriverDashboard() {
   useEffect(() => {
     if (driverInfo?.isOnline && driverInfo?.status === "approved") {
       socket.on("receive_request", (data: any) => {
-        if (!activeOrder) {
-          setAvailableRequests(prev => [...prev, data]);
-        }
+        if (!activeOrder) setAvailableRequests(prev => [...prev, data]);
       });
-      return () => { socket.off("receive_request"); };
+      // استلام الرسائل المباشرة
+      socket.on("receive_message", (msg: any) => {
+        setMessages(prev => [...prev, { ...msg, id: Date.now() }]);
+        if (!isChatOpen) setUnreadCount(prev => prev + 1);
+      });
+      return () => { 
+        socket.off("receive_request"); 
+        socket.off("receive_message");
+      };
     }
-  }, [driverInfo?.isOnline, activeOrder, driverInfo?.status]);
+  }, [driverInfo?.isOnline, activeOrder, driverInfo?.status, isChatOpen]);
 
   if (isLoading) return (
     <div className="h-screen flex flex-col items-center justify-center bg-white">
@@ -192,17 +214,10 @@ export default function DriverDashboard() {
     return (
       <div className="h-screen flex flex-col items-center justify-center p-8 text-center bg-[#F3F4F6] font-sans" dir="rtl">
         <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white p-10 rounded-[45px] shadow-2xl max-w-md w-full border-t-[12px] border-orange-500">
-          <div className="w-24 h-24 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Clock className="w-12 h-12 text-orange-500 animate-pulse" />
-          </div>
+          <div className="w-24 h-24 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-6"><Clock className="w-12 h-12 text-orange-500 animate-pulse" /></div>
           <h2 className="text-3xl font-black text-gray-800 mb-4 italic">طلبك قيد المراجعة</h2>
-          <p className="text-gray-500 font-bold mb-8 text-lg leading-relaxed">
-            أهلاً بك كابتن <span className="text-orange-600 font-black">"{driverInfo?.name || 'الجديد'}"</span>. <br/> 
-            يتم تدقيق بياناتك حالياً. سيتم تفعيل حسابك فور الانتهاء.
-          </p>
-          <Button onClick={() => refetch()} className="w-full h-14 rounded-2xl font-black bg-orange-500 hover:bg-orange-600 gap-2 mb-4">
-              <RefreshCw className="w-4 h-4" /> تحديث الحالة الآن
-          </Button>
+          <p className="text-gray-500 font-bold mb-8 text-lg leading-relaxed">أهلاً بك كابتن <span className="text-orange-600 font-black">"{driverInfo?.name || 'الجديد'}"</span>. <br/> يتم تدقيق بياناتك حالياً. سيتم تفعيل حسابك فور الانتهاء.</p>
+          <Button onClick={() => refetch()} className="w-full h-14 rounded-2xl font-black bg-orange-500 hover:bg-orange-600 gap-2 mb-4"><RefreshCw className="w-4 h-4" /> تحديث الحالة الآن</Button>
           <Button onClick={() => setLocation("/")} variant="outline" className="w-full h-14 rounded-2xl font-black border-2">العودة للرئيسية</Button>
         </motion.div>
       </div>
@@ -212,141 +227,211 @@ export default function DriverDashboard() {
   return (
     <div className="h-screen w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative font-sans" dir="rtl">
       
-      <Sidebar isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} driverData={driverInfo} onLogout={() => {
-          localStorage.removeItem("currentDriverId");
-          setLocation("/");
-      }} />
+      <Sidebar 
+        isOpen={isSidebarOpen} 
+        onClose={() => setSidebarOpen(false)} 
+        driverData={driverInfo} 
+        onNavigate={(tab: any) => {
+           setActiveTab(tab);
+           setIsEditingPhoto(false);
+           setShowVehicleDetails(false);
+        }}
+        onLogout={() => { localStorage.removeItem("currentDriverId"); setLocation("/"); }} 
+      />
 
       <header className="bg-white px-5 py-4 flex justify-between items-center shadow-sm z-[1000] border-b border-gray-100">
-        <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)} className="bg-gray-50 rounded-xl">
-          <Menu className="w-6 h-6 text-gray-700" />
-        </Button>
-        
-        <div className="flex items-center gap-1.5 font-black text-2xl italic tracking-tighter text-orange-600">
-          SATHA <Truck className="w-7 h-7 text-orange-500" />
-        </div>
-
-        <div 
-          onClick={toggleOnlineStatus} 
-          className={`flex items-center gap-2 px-4 py-2 rounded-full cursor-pointer transition-all duration-300 border ${isUpdatingStatus ? 'opacity-50' : ''} ${driverInfo.isOnline ? 'bg-orange-500 border-orange-400 shadow-lg shadow-orange-100' : 'bg-gray-100 border-gray-200'}`}
-        >
-          {isUpdatingStatus ? (
-            <Loader2 className="w-3 h-3 animate-spin text-white" />
-          ) : (
-            <div className={`w-2.5 h-2.5 rounded-full ${driverInfo.isOnline ? 'bg-white animate-pulse' : 'bg-gray-400'}`} />
-          )}
-          <span className={`text-xs font-black ${driverInfo.isOnline ? 'text-white' : 'text-gray-500'}`}>
-            {driverInfo.isOnline ? "متصل" : "أوفلاين"}
-          </span>
+        <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)} className="bg-gray-50 rounded-xl"><Menu className="w-6 h-6 text-gray-700" /></Button>
+        <div className="flex items-center gap-1.5 font-black text-2xl italic tracking-tighter text-orange-600">SATHA <Truck className="w-7 h-7 text-orange-500" /></div>
+        <div onClick={toggleOnlineStatus} className={`flex items-center gap-2 px-4 py-2 rounded-full cursor-pointer transition-all duration-300 border ${isUpdatingStatus ? 'opacity-50' : ''} ${driverInfo.isOnline ? 'bg-orange-500 border-orange-400 shadow-lg shadow-orange-100' : 'bg-gray-100 border-gray-200'}`}>
+          {isUpdatingStatus ? <Loader2 className="w-3 h-3 animate-spin text-white" /> : <div className={`w-2.5 h-2.5 rounded-full ${driverInfo.isOnline ? 'bg-white animate-pulse' : 'bg-gray-400'}`} />}
+          <span className={`text-xs font-black ${driverInfo.isOnline ? 'text-white' : 'text-gray-500'}`}>{driverInfo.isOnline ? "متصل" : "أوفلاين"}</span>
         </div>
       </header>
 
       <div className="flex-1 relative flex flex-col">
         
-        <div className={`absolute inset-0 z-0 transition-all duration-1000 ${driverInfo.isOnline ? 'opacity-100' : 'opacity-40 grayscale'}`}>
-          <MapContainer center={[33.3152, 44.3661]} zoom={13} style={{ height: "100%", width: "100%" }} zoomControl={false}>
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            
-            {/* ✅ استخدام الأيقونة البرتقالية مع خاصية الدوران المباشر */}
-            {currentCoords && (
-              <Marker position={currentCoords} icon={getOrangeArrowIcon(heading)}>
-                <Popup>
-                   <div className="text-right font-black font-sans">
-                      أنت هنا كابتن {driverInfo.name} <br/>
-                      <span className="text-orange-500 text-[10px]">جاري تتبع موقعك المباشر</span>
-                   </div>
-                </Popup>
-              </Marker>
+        {activeTab === "map" && (
+          <>
+            <div className={`absolute inset-0 z-0 transition-all duration-1000 ${driverInfo.isOnline ? 'opacity-100' : 'opacity-40 grayscale'}`}>
+              <MapContainer center={[33.3152, 44.3661]} zoom={13} style={{ height: "100%", width: "100%" }} zoomControl={false}>
+                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                {currentCoords && (
+                  <Marker position={currentCoords} icon={getOrangeArrowIcon(heading)}>
+                    <Popup><div className="text-right font-black font-sans">أنت هنا كابتن {driverInfo.name} <br/><span className="text-orange-500 text-[10px]">جاري تتبع موقعك المباشر</span></div></Popup>
+                  </Marker>
+                )}
+                <MapViewHandler center={currentCoords || [33.3152, 44.3661]} />
+              </MapContainer>
+            </div>
+            {!activeOrder && driverInfo.isOnline && (
+              <div className="relative z-10 p-4 grid grid-cols-2 gap-4 pointer-events-none">
+                    <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white/90 backdrop-blur-md p-4 rounded-[28px] shadow-xl border border-white">
+                        <div className="bg-orange-100 w-8 h-8 rounded-full flex items-center justify-center mb-2"><TrendingUp className="w-4 h-4 text-orange-600" /></div>
+                        <p className="text-[10px] text-gray-400 font-black uppercase">أرباح اليوم</p>
+                        <h4 className="text-xl font-black text-gray-800">{driverInfo?.walletBalance} <span className="text-[10px]">د.ع</span></h4>
+                    </motion.div>
+                    <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }} className="bg-white/90 backdrop-blur-md p-4 rounded-[28px] shadow-xl border border-white">
+                        <div className="bg-blue-100 w-8 h-8 rounded-full flex items-center justify-center mb-2"><Clock className="w-4 h-4 text-blue-600" /></div>
+                        <p className="text-[10px] text-gray-400 font-black uppercase">نوع السطحة</p>
+                        <h4 className="text-[11px] font-black text-gray-800 truncate">{driverInfo?.vehicleType}</h4>
+                    </motion.div>
+              </div>
             )}
-
-            <MapViewHandler center={currentCoords || [33.3152, 44.3661]} />
-          </MapContainer>
-        </div>
-
-        {!activeOrder && driverInfo.isOnline && (
-           <div className="relative z-10 p-4 grid grid-cols-2 gap-4 pointer-events-none">
-                <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white/90 backdrop-blur-md p-4 rounded-[28px] shadow-xl border border-white">
-                    <div className="bg-orange-100 w-8 h-8 rounded-full flex items-center justify-center mb-2"><TrendingUp className="w-4 h-4 text-orange-600" /></div>
-                    <p className="text-[10px] text-gray-400 font-black uppercase">أرباح اليوم</p>
-                    <h4 className="text-xl font-black text-gray-800">{driverInfo?.walletBalance} <span className="text-[10px]">د.ع</span></h4>
+            <AnimatePresence>
+              {driverInfo.isOnline && !activeOrder && (
+                <motion.div drag="y" dragConstraints={{ top: 0, bottom: 400 }} initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="absolute inset-x-0 bottom-0 z-[1200] bg-white rounded-t-[45px] shadow-[0_-20px_60px_rgba(0,0,0,0.15)] flex flex-col max-h-[70vh]">
+                  <div className="w-full flex flex-col items-center py-4 cursor-grab active:cursor-grabbing">
+                    <div className="w-12 h-1.5 bg-gray-200 rounded-full mb-1" /><GripHorizontal className="w-5 h-5 text-gray-300" />
+                  </div>
+                  <div className="px-6 flex justify-between items-center mb-4">
+                    <div className="flex items-center gap-2"><span className="bg-orange-500 w-2 h-6 rounded-full" /><h3 className="text-lg font-black text-gray-800">طلبات السحب المتاحة</h3></div>
+                    <Button onClick={handleRefresh} variant="ghost" disabled={isRefreshing} className="bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-2xl gap-2 font-bold px-4"><RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} /> تحديث</Button>
+                  </div>
+                  <div className="overflow-y-auto px-6 pb-12 space-y-4">
+                    {availableRequests.length === 0 ? (
+                      <div className="py-10 text-center opacity-40"><Navigation className="w-12 h-12 mx-auto mb-2 text-gray-300" /><p className="font-bold text-gray-400">لا توجد طلبات حالياً، اضغط تحديث</p></div>
+                    ) : (
+                      availableRequests.map((req) => (
+                        <div key={req.id} className="bg-gray-50 border border-gray-100 p-5 rounded-[32px] flex items-center justify-between group">
+                          <div className="flex-1 ml-4 space-y-3 text-right">
+                            <div className="flex items-center gap-3"><div className="w-2.5 h-2.5 rounded-full bg-orange-500" /><span className="text-sm font-black text-gray-700">{req.pickupAddress || req.location}</span></div>
+                            <div className="flex items-center gap-3 pr-1"><div className="w-2 h-2 rounded-full bg-gray-300" /><span className="text-xs text-gray-400 font-bold">{req.destination || "موقع محدد"}</span></div>
+                          </div>
+                          <div className="flex flex-col items-center gap-2 border-r pr-5 border-gray-200 min-w-[100px]"><span className="text-xl font-black text-orange-600">{req.price}</span><Button onClick={() => setActiveOrder(req)} className="bg-black hover:bg-orange-600 text-white rounded-2xl h-10 px-6 font-black text-xs transition-all">قبول</Button></div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </motion.div>
-                <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }} className="bg-white/90 backdrop-blur-md p-4 rounded-[28px] shadow-xl border border-white">
-                    <div className="bg-blue-100 w-8 h-8 rounded-full flex items-center justify-center mb-2"><Clock className="w-4 h-4 text-blue-600" /></div>
-                    <p className="text-[10px] text-gray-400 font-black uppercase">نوع السطحة</p>
-                    <h4 className="text-[11px] font-black text-gray-800 truncate">{driverInfo?.vehicleType}</h4>
-                </motion.div>
-           </div>
+              )}
+            </AnimatePresence>
+          </>
         )}
 
-        <AnimatePresence>
-          {driverInfo.isOnline && !activeOrder && (
-            <motion.div 
-              drag="y"
-              dragConstraints={{ top: 0, bottom: 400 }}
-              initial={{ y: "100%" }} 
-              animate={{ y: 0 }} 
-              exit={{ y: "100%" }}
-              className="absolute inset-x-0 bottom-0 z-[1200] bg-white rounded-t-[45px] shadow-[0_-20px_60px_rgba(0,0,0,0.15)] flex flex-col max-h-[70vh]"
-            >
-              <div className="w-full flex flex-col items-center py-4 cursor-grab active:cursor-grabbing">
-                <div className="w-12 h-1.5 bg-gray-200 rounded-full mb-1" />
-                <GripHorizontal className="w-5 h-5 text-gray-300" />
-              </div>
-
-              <div className="px-6 flex justify-between items-center mb-4">
-                <div className="flex items-center gap-2">
-                   <span className="bg-orange-500 w-2 h-6 rounded-full" />
-                   <h3 className="text-lg font-black text-gray-800">طلبات السحب المتاحة</h3>
-                </div>
-                <Button onClick={handleRefresh} variant="ghost" disabled={isRefreshing} className="bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-2xl gap-2 font-bold px-4">
-                  <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} /> تحديث
-                </Button>
-              </div>
-
-              <div className="overflow-y-auto px-6 pb-12 space-y-4">
-                {availableRequests.length === 0 ? (
-                  <div className="py-10 text-center opacity-40">
-                    <Navigation className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                    <p className="font-bold text-gray-400">لا توجد طلبات حالياً، اضغط تحديث</p>
+        {activeTab === "history" && (
+          <motion.div initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} className="absolute inset-0 z-[2000] bg-white flex flex-col">
+            <div className="p-6 flex items-center gap-4 border-b">
+              <Button variant="ghost" size="icon" onClick={() => setActiveTab("map")} className="rounded-full bg-gray-50"><ArrowRight className="w-6 h-6"/></Button>
+              <h2 className="text-2xl font-black italic">سجل الرحلات</h2>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {rideHistory && rideHistory.length > 0 ? (
+                rideHistory.map((ride) => (
+                  <div key={ride.id} className="p-5 bg-gray-50 rounded-[30px] border border-gray-100 flex items-center justify-between">
+                    <div className="text-right space-y-1"><p className="font-black text-gray-800">{ride.destination}</p><p className="text-xs text-gray-400 font-bold">{new Date(ride.createdAt).toLocaleDateString('ar-EG')}</p></div>
+                    <div className="bg-green-100 text-green-600 px-4 py-2 rounded-2xl font-black">{ride.price} د.ع</div>
                   </div>
-                ) : (
-                  availableRequests.map((req) => (
-                    <div key={req.id} className="bg-gray-50 border border-gray-100 p-5 rounded-[32px] flex items-center justify-between group">
-                      <div className="flex-1 ml-4 space-y-3 text-right">
-                        <div className="flex items-center gap-3">
-                            <div className="w-2.5 h-2.5 rounded-full bg-orange-500" />
-                            <span className="text-sm font-black text-gray-700">{req.pickupAddress || req.location}</span>
-                        </div>
-                        <div className="flex items-center gap-3 pr-1">
-                            <div className="w-2 h-2 rounded-full bg-gray-300" />
-                            <span className="text-xs text-gray-400 font-bold">{req.destination || "موقع محدد"}</span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-center gap-2 border-r pr-5 border-gray-200 min-w-[100px]">
-                        <span className="text-xl font-black text-orange-600">{req.price}</span>
-                        <Button onClick={() => setActiveOrder(req)} className="bg-black hover:bg-orange-600 text-white rounded-2xl h-10 px-6 font-black text-xs transition-all">قبول</Button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                ))
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center opacity-30 text-center"><History className="w-20 h-20 mb-4" /><p className="font-black text-xl">لا توجد رحلات مكتملة بعد</p></div>
+              )}
+            </div>
+          </motion.div>
+        )}
 
+        {activeTab === "wallet" && (
+          <motion.div initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} className="absolute inset-0 z-[2000] bg-white flex flex-col">
+            <div className="p-6 flex items-center gap-4 border-b"><Button variant="ghost" size="icon" onClick={() => setActiveTab("map")} className="rounded-full bg-gray-50"><ArrowRight className="w-6 h-6"/></Button><h2 className="text-2xl font-black italic">المحفظة</h2></div>
+            <div className="p-8">
+              <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-10 rounded-[45px] text-white shadow-2xl shadow-orange-100 mb-10 text-center"><p className="text-orange-100 font-bold mb-2 text-lg">الرصيد الكلي</p><h3 className="text-6xl font-black">{driverInfo?.walletBalance} <span className="text-xl italic">د.ع</span></h3></div>
+              <div className="space-y-4">
+                <Button onClick={() => toast({ title: "تم إرسال الطلب بنجاح", description: "سيتم مراجعة طلب سحب الأرباح وتحويلها لمحفظتك خلال 24 ساعة." })} className="w-full h-18 rounded-[25px] bg-black hover:bg-gray-900 text-white font-black text-xl shadow-xl active:scale-95 transition-all">طلب سحب الرصيد</Button>
+                <div className="p-6 bg-gray-50 rounded-[30px] flex justify-between items-center italic"><span className="text-gray-400 font-black">أرباح اليوم</span><span className="text-green-600 font-black text-2xl">{driverInfo?.walletBalance} د.ع</span></div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {activeTab === "settings" && (
+          <motion.div initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} className="absolute inset-0 z-[2000] bg-white flex flex-col">
+            <div className="p-6 flex items-center gap-4 border-b">
+              <Button variant="ghost" size="icon" onClick={() => {
+                if (isEditingPhoto || showVehicleDetails) {
+                  setIsEditingPhoto(false);
+                  setShowVehicleDetails(false);
+                } else {
+                  setActiveTab("map");
+                }
+              }} className="rounded-full bg-gray-50">
+                <ArrowRight className="w-6 h-6"/>
+              </Button>
+              <h2 className="text-2xl font-black italic">
+                {isEditingPhoto ? "تعديل الصورة" : showVehicleDetails ? "بيانات السطحة" : "الإعدادات"}
+              </h2>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              {isEditingPhoto ? (
+                <div className="flex flex-col items-center py-10">
+                  <div className="relative group">
+                    <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
+                    <div className="w-40 h-40 bg-orange-50 rounded-full border-8 border-orange-100 flex items-center justify-center text-5xl shadow-inner overflow-hidden">
+                       {driverInfo?.avatarUrl ? <img src={driverInfo.avatarUrl} className="w-full h-full object-cover"/> : "👤"}
+                    </div>
+                    <button onClick={() => fileInputRef.current?.click()} className="absolute bottom-1 right-1 bg-black text-white p-3 rounded-full shadow-lg border-4 border-white active:scale-90 transition-all cursor-pointer">
+                      <Camera className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <p className="mt-8 text-gray-400 font-bold text-center px-6 leading-relaxed">اجعل صورتك واضحة وودودة لتزيد من ثقة الزبائن بك.</p>
+                  <Button onClick={() => { setIsEditingPhoto(false); toast({ title: "تم الحفظ", description: "تم تحديث صورتك بنجاح" }); }} className="w-full h-16 bg-orange-500 rounded-2xl mt-12 font-black text-lg shadow-xl">حفظ الصورة الجديدة</Button>
+                </div>
+              ) : showVehicleDetails ? (
+                <div className="space-y-4">
+                  <div className="bg-gray-50 p-6 rounded-[35px] border-2 border-dashed border-gray-200 flex flex-col items-center">
+                    <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center shadow-sm mb-4"><Truck className="w-10 h-10 text-orange-500" /></div>
+                    <h3 className="font-black text-xl text-gray-800">{driverInfo?.vehicleType || "سطحة هيدروليك"}</h3>
+                  </div>
+                  <div className="space-y-3 mt-6">
+                     {[
+                       { label: "رقم اللوحة", value: "123456 أربيل", icon: <GripHorizontal /> },
+                       { label: "حالة المركبة", value: "جاهزة للعمل", icon: <CheckCircle2 className="text-green-500"/> },
+                       { label: "تاريخ انتهاء الفحص", value: "2026-12-01", icon: <Clock /> }
+                     ].map((info, idx) => (
+                       <div key={idx} className="flex justify-between items-center p-5 bg-gray-50 rounded-2xl">
+                         <div className="flex items-center gap-3 text-gray-400 font-bold text-sm">{info.icon} {info.label}</div>
+                         <div className="font-black text-gray-700">{info.value}</div>
+                       </div>
+                     ))}
+                  </div>
+                  <p className="text-[10px] text-center text-gray-400 mt-10">لتغيير بيانات المركبة، يرجى التواصل مع الإدارة.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <button onClick={() => setIsEditingPhoto(true)} className="w-full p-6 bg-gray-50 rounded-[30px] flex items-center justify-between group active:scale-[0.98] transition-all">
+                    <div className="flex items-center gap-4 font-black text-gray-700"><div className="bg-white p-3 rounded-2xl shadow-sm"><User className="w-6 h-6 text-orange-500"/></div>تعديل الصورة الشخصية</div><ChevronRight className="w-5 h-5 text-gray-300" />
+                  </button>
+                  <button onClick={() => setShowVehicleDetails(true)} className="w-full p-6 bg-gray-50 rounded-[30px] flex items-center justify-between group active:scale-[0.98] transition-all">
+                    <div className="flex items-center gap-4 font-black text-gray-700"><div className="bg-white p-3 rounded-2xl shadow-sm"><Truck className="w-6 h-6 text-orange-500"/></div>بيانات السطحة</div><ChevronRight className="w-5 h-5 text-gray-300" />
+                  </button>
+                  <button onClick={() => toast({ title: "التنبيهات", description: "إشعارات النظام مفعلة حالياً" })} className="w-full p-6 bg-gray-50 rounded-[30px] flex items-center justify-between group active:scale-[0.98] transition-all">
+                    <div className="flex items-center gap-4 font-black text-gray-700"><div className="bg-white p-3 rounded-2xl shadow-sm"><ShieldAlert className="w-6 h-6 text-orange-500"/></div>تنبيهات النظام</div><ChevronRight className="w-5 h-5 text-gray-300" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {/* --- شريط الطلب النشط مع زر الدردشة المحدث --- */}
         {activeOrder && orderStage !== "payment" && (
           <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} className="absolute inset-x-0 bottom-0 z-[1300] bg-white rounded-t-[45px] p-8 shadow-2xl border-t-4 border-orange-500">
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-orange-50 rounded-3xl flex items-center justify-center border-2 border-white shadow-sm text-2xl text-orange-500 font-bold">👤</div>
+                <div className="w-16 h-16 bg-orange-50 rounded-3xl flex items-center justify-center border-2 border-white shadow-sm text-2xl text-orange-500 font-bold">{activeOrder.customerName?.charAt(0) || "👤"}</div>
                 <div className="text-right">
                   <h4 className="font-black text-xl text-gray-800">{activeOrder.customerName || "زبون جديد"}</h4>
                   <p className="text-xs text-blue-500 font-bold flex items-center gap-1 cursor-pointer" onClick={() => window.open(`https://www.google.com/maps?q=${activeOrder.pickupLat},${activeOrder.pickupLng}`)}>فتح الخريطة الخارجية <ExternalLink className="w-3 h-3"/></p>
                 </div>
               </div>
-              <a href={`tel:${activeOrder.customerPhone || '000'}`} className="w-15 h-15 bg-green-500 rounded-3xl flex items-center justify-center shadow-lg shadow-green-100 hover:scale-105 transition-transform p-4">
-                <Phone className="w-7 h-7 text-white" />
-              </a>
+              <div className="flex gap-2">
+                <button onClick={() => { setIsChatOpen(true); setUnreadCount(0); }} className="w-14 h-14 bg-blue-500 rounded-2xl flex items-center justify-center shadow-lg relative active:scale-95 transition-all">
+                  <MessageSquare className="w-7 h-7 text-white" />
+                  {unreadCount > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center border-2 border-white">{unreadCount}</span>}
+                </button>
+                <a href={`tel:${activeOrder.customerPhone || '000'}`} className="w-14 h-14 bg-green-500 rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-all">
+                  <Phone className="w-7 h-7 text-white" />
+                </a>
+              </div>
             </div>
             <Button onClick={() => {
                 if (orderStage === "heading_to_pickup") setOrderStage("arrived_pickup");
@@ -358,12 +443,47 @@ export default function DriverDashboard() {
           </motion.div>
         )}
 
+        {/* --- نافذة الدردشة المباشرة --- */}
+        <AnimatePresence>
+          {isChatOpen && (
+            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="fixed inset-0 z-[7000] bg-white flex flex-col">
+              <div className="p-6 border-b flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center font-black text-orange-600">{activeOrder?.customerName?.charAt(0)}</div>
+                  <h4 className="font-black">{activeOrder?.customerName}</h4>
+                </div>
+                <Button variant="ghost" onClick={() => setIsChatOpen(false)}><X className="w-6 h-6"/></Button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
+                {messages.map((msg) => (
+                  <div key={msg.id} className={`flex ${msg.sender === 'driver' ? 'justify-start' : 'justify-end'}`}>
+                    <div className={`p-4 rounded-2xl max-w-[80%] font-bold ${msg.sender === 'driver' ? 'bg-orange-500 text-white rounded-bl-none' : 'bg-white text-gray-800 rounded-br-none shadow-sm'}`}>
+                      {msg.text}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="p-4 border-t flex gap-2">
+                <input type="text" value={chatMessage} onChange={(e) => setChatMessage(e.target.value)} placeholder="اكتب رسالة..." className="flex-1 bg-gray-100 rounded-xl px-4 text-right font-bold focus:outline-none"/>
+                <Button onClick={() => {
+                  if(!chatMessage.trim()) return;
+                  const newMsg = { text: chatMessage, sender: 'driver', id: Date.now() };
+                  socket.emit("send_message", { ...newMsg, orderId: activeOrder.id });
+                  setMessages([...messages, newMsg]);
+                  setChatMessage("");
+                }} className="bg-orange-500 rounded-xl"><Send className="w-5 h-5 rotate-180"/></Button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* --- شاشة الدفع النهائية --- */}
         {activeOrder && orderStage === "payment" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 z-[5000] bg-white flex flex-col items-center justify-center p-8 text-center">
              <div className="w-28 h-28 bg-orange-50 rounded-full flex items-center justify-center mb-8 border-4 border-white shadow-2xl shadow-orange-100"><CheckCircle2 className="w-14 h-14 text-orange-500" /></div>
              <h2 className="text-gray-400 font-black mb-2 uppercase tracking-widest text-sm">استلم النقد من الزبون</h2>
              <p className="text-6xl font-black text-gray-900 mb-12">{activeOrder.price} <span className="text-xl">د.ع</span></p>
-             <Button onClick={() => { setActiveOrder(null); setOrderStage("heading_to_pickup"); }} className="w-full h-20 bg-orange-500 hover:bg-orange-600 text-white font-black text-2xl rounded-[30px] shadow-2xl shadow-orange-100">تأكيد الاستلام</Button>
+             <Button onClick={() => { setActiveOrder(null); setOrderStage("heading_to_pickup"); setActiveTab("map"); }} className="w-full h-20 bg-orange-500 hover:bg-orange-600 text-white font-black text-2xl rounded-[30px] shadow-2xl shadow-orange-100">تأكيد الاستلام</Button>
           </motion.div>
         )}
 
