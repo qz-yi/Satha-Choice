@@ -33,11 +33,22 @@ const getOrangeArrowIcon = (rotation: number) => L.divIcon({
 
 const socket = io();
 
-const MapViewHandler = ({ center }: { center: [number, number] }) => {
+// ✅ الحل 1: تعديل MapViewHandler لمنع الارتجاج والسحب القسري
+const MapViewHandler = ({ center, isFollowMode }: { center: [number, number], isFollowMode: boolean }) => {
   const map = useMap();
   useEffect(() => { 
-    if (center) map.flyTo(center, 16, { animate: true, duration: 1.5 }); 
-  }, [center]);
+    if (center && isFollowMode) {
+      map.flyTo(center, 16, { animate: true, duration: 1.5 }); 
+    }
+  }, [center, isFollowMode]);
+
+  // إضافة مستمعات لتعطيل التتبع عند تحريك المستخدم للخريطة
+  useEffect(() => {
+    const onMove = () => {}; // يمكن إضافة منطق هنا مستقبلاً
+    map.on('dragstart', onMove);
+    return () => { map.off('dragstart', onMove); };
+  }, [map]);
+
   return null;
 };
 
@@ -59,8 +70,8 @@ const Sidebar = ({ isOpen, onClose, driverData, onLogout, onNavigate }: any) => 
       </div>
 
       <div className="flex flex-col items-center mb-8">
-        <div className="w-20 h-20 bg-orange-50 rounded-full mb-3 flex items-center justify-center border-4 border-orange-100 text-3xl shadow-inner text-orange-500 font-black">
-          {driverData?.name?.charAt(0) || "👤"}
+        <div className="w-20 h-20 bg-orange-50 rounded-full mb-3 flex items-center justify-center border-4 border-orange-100 text-3xl shadow-inner text-orange-500 font-black overflow-hidden">
+          {driverData?.avatarUrl ? <img src={driverData.avatarUrl} className="w-full h-full object-cover"/> : (driverData?.name?.charAt(0) || "👤")}
         </div>
         <h3 className="font-black text-xl text-gray-800">{driverData?.name}</h3>
         <span className="bg-orange-100 text-orange-600 px-3 py-1 rounded-full text-[10px] font-black mt-1 flex items-center gap-1">
@@ -110,7 +121,11 @@ export default function DriverDashboard() {
 
   const [isEditingPhoto, setIsEditingPhoto] = useState(false);
   const [showVehicleDetails, setShowVehicleDetails] = useState(false);
-  const [isDepositing, setIsDepositing] = useState(false); // حالة شحن الرصيد
+  const [isDepositing, setIsDepositing] = useState(false); 
+
+  // ✅ الحالات الجديدة للمشاكل
+  const [isFollowMode, setIsFollowMode] = useState(true); // للتحكم في حركة الخريطة
+  const [showPaymentOptions, setShowPaymentOptions] = useState(false); // خيارات الشحن
 
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -130,22 +145,53 @@ export default function DriverDashboard() {
     enabled: !!driverInfo?.id && activeTab === "wallet",
   });
 
-  const handleDeposit = async () => {
+  // ✅ الحل 2: تعديل نظام شحن المحفظة (طلبات حقيقية)
+  const handleDeposit = async (method: 'zain' | 'master') => {
     if (!driverInfo) return;
     setIsDepositing(true);
     try {
-      // محاكاة الاتصال بـ زين كاش
-      const res = await apiRequest("POST", `/api/drivers/${driverInfo.id}/deposit`, {
-        amount: 25000,
-        referenceId: "ZAIN-" + Math.floor(Math.random() * 1000000)
+      const amount = 25000;
+      // إرسال طلب شحن للمدير للموافقة
+      const res = await apiRequest("POST", `/api/drivers/${driverInfo.id}/deposit-request`, {
+        amount,
+        paymentMethod: method,
+        referenceId: `${method.toUpperCase()}-${Date.now()}`
       });
       if (res.ok) {
-        toast({ title: "تم الشحن بنجاح", description: "أضيف 25,000 دينار لمحفظتك" });
+        toast({ title: "تم إرسال طلب الشحن", description: "سيتم إضافة الرصيد فور تأكيد التحويل من قبل الإدارة" });
+        setShowPaymentOptions(false);
         refetch();
       }
     } catch (err) {
-      toast({ variant: "destructive", title: "فشل الشحن" });
+      toast({ variant: "destructive", title: "فشل إرسال الطلب" });
     } finally { setIsDepositing(false); }
+  };
+
+  // ✅ الحل 3: معالجة رفع الصورة الشخصية وتثبيتها
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !driverInfo) return;
+
+    const formData = new FormData();
+    formData.append("image", file);
+
+    try {
+      toast({ title: "جاري الرفع...", description: "يتم الآن حفظ صورتك الجديدة" });
+      const res = await fetch(`/api/drivers/${driverInfo.id}/upload-avatar`, {
+        method: "POST",
+        body: formData,
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        await apiRequest("PATCH", `/api/drivers/${driverInfo.id}`, { avatarUrl: data.url });
+        await refetch();
+        toast({ title: "نجاح", description: "تم تحديث الصورة الشخصية وتثبيتها" });
+        setIsEditingPhoto(false);
+      }
+    } catch (err) {
+      toast({ variant: "destructive", title: "خطأ", description: "فشل رفع الصورة" });
+    }
   };
 
   const handleCompleteOrder = async () => {
@@ -178,8 +224,16 @@ export default function DriverDashboard() {
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude, heading: deviceHeading } = pos.coords;
-        setCurrentCoords([latitude, longitude]);
+        
+        // منع الارتجاج: تحديث الموقع فقط إذا تحرك أكثر من 5 أمتار (تقريبياً)
+        setCurrentCoords(prev => {
+           if (!prev) return [latitude, longitude];
+           const dist = Math.sqrt(Math.pow(latitude - prev[0], 2) + Math.pow(longitude - prev[1], 2));
+           return dist > 0.00005 ? [latitude, longitude] : prev;
+        });
+
         if (deviceHeading !== null && deviceHeading !== undefined) setHeading(deviceHeading);
+        
         apiRequest("PATCH", `/api/drivers/${driverInfo.id}`, {
           lastLat: latitude.toString(), lastLng: longitude.toString()
         }).catch(() => {});
@@ -282,18 +336,34 @@ export default function DriverDashboard() {
         {activeTab === "map" && (
           <>
             <div className={`absolute inset-0 z-0 transition-all duration-1000 ${driverInfo.isOnline ? 'opacity-100' : 'opacity-40 grayscale'}`}>
-              <MapContainer center={[33.3152, 44.3661]} zoom={15} style={{ height: "100%", width: "100%" }} zoomControl={false}>
+              <MapContainer 
+                center={[33.3152, 44.3661]} 
+                zoom={15} 
+                style={{ height: "100%", width: "100%" }} 
+                zoomControl={false}
+                // حل الارتجاج: تعطيل التتبع التلقائي عند بدء السحب
+                onMovestart={() => setIsFollowMode(false)}
+              >
                 <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="© Google Maps" detectRetina={true} />
                 {currentCoords && (
                   <Marker position={currentCoords} icon={getOrangeArrowIcon(heading)}>
                     <Popup><div className="text-right font-black font-sans">أنت هنا كابتن {driverInfo.name} <br/><span className="text-orange-500 text-[10px]">جاري تتبع موقعك المباشر</span></div></Popup>
                   </Marker>
                 )}
-                <MapViewHandler center={currentCoords || [33.3152, 44.3661]} />
+                <MapViewHandler center={currentCoords || [33.3152, 44.3661]} isFollowMode={isFollowMode} />
               </MapContainer>
             </div>
 
-            <Button onClick={() => currentCoords && setCurrentCoords([...currentCoords])} className="absolute bottom-40 right-6 z-[1000] w-14 h-14 rounded-2xl bg-white text-orange-500 shadow-2xl border-none"><Target className="w-7 h-7" /></Button>
+            {/* زر إعادة التمركز - يحل مشكلة العودة للموقع */}
+            <Button 
+              onClick={() => {
+                setIsFollowMode(true);
+                if (currentCoords) setCurrentCoords([...currentCoords]);
+              }} 
+              className={`absolute bottom-40 right-6 z-[1000] w-14 h-14 rounded-2xl shadow-2xl border-none transition-all ${isFollowMode ? 'bg-orange-500 text-white' : 'bg-white text-orange-500'}`}
+            >
+              <Target className={`w-7 h-7 ${isFollowMode ? 'animate-pulse' : ''}`} />
+            </Button>
 
             {!activeOrder && driverInfo.isOnline && (
               <div className="relative z-10 p-4 grid grid-cols-2 gap-4 pointer-events-none">
@@ -364,9 +434,21 @@ export default function DriverDashboard() {
               <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-10 rounded-[45px] text-white shadow-2xl shadow-orange-100 mb-10 text-center"><p className="text-orange-100 font-bold mb-2 text-lg">الرصيد الحالي</p><h3 className="text-6xl font-black">{driverInfo?.walletBalance} <span className="text-xl italic">د.ع</span></h3></div>
               
               <div className="grid grid-cols-1 gap-4 mb-10">
-                <Button disabled={isDepositing} onClick={handleDeposit} className="w-full h-20 rounded-[30px] bg-black hover:bg-gray-900 text-white font-black text-xl shadow-xl flex items-center justify-center gap-4 transition-all">
-                  {isDepositing ? <Loader2 className="animate-spin" /> : <CreditCard className="w-6 h-6" />} شحن عبر زين كاش (25,000)
-                </Button>
+                {!showPaymentOptions ? (
+                  <Button onClick={() => setShowPaymentOptions(true)} className="w-full h-20 rounded-[30px] bg-black hover:bg-gray-900 text-white font-black text-xl shadow-xl flex items-center justify-center gap-4 transition-all">
+                    <PlusCircle className="w-6 h-6" /> شحن رصيد المحفظة
+                  </Button>
+                ) : (
+                  <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4">
+                    <Button disabled={isDepositing} onClick={() => handleDeposit('zain')} className="w-full h-16 rounded-2xl bg-[#000] text-white font-black flex items-center justify-center gap-3">
+                       <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center text-[10px]">Z</div> زين كاش
+                    </Button>
+                    <Button disabled={isDepositing} onClick={() => handleDeposit('master')} className="w-full h-16 rounded-2xl bg-blue-600 text-white font-black flex items-center justify-center gap-3">
+                       <CreditCard className="w-6 h-6" /> ماستر كارد / فيزا
+                    </Button>
+                    <Button variant="ghost" onClick={() => setShowPaymentOptions(false)} className="w-full text-gray-400 font-bold">إلغاء</Button>
+                  </div>
+                )}
                 <p className="text-center text-gray-400 font-bold text-xs italic">يتم استقطاع 1,000 دينار عمولة عن كل رحلة تكتمل بنجاح</p>
               </div>
 
@@ -418,7 +500,7 @@ export default function DriverDashboard() {
                     </button>
                   </div>
                   <p className="mt-8 text-gray-400 font-bold text-center px-6 leading-relaxed">اجعل صورتك واضحة وودودة لتزيد من ثقة الزبائن بك.</p>
-                  <Button onClick={() => { setIsEditingPhoto(false); toast({ title: "تم الحفظ", description: "تم تحديث صورتك بنجاح" }); }} className="w-full h-16 bg-orange-500 rounded-2xl mt-12 font-black text-lg shadow-xl">حفظ الصورة الجديدة</Button>
+                  <Button onClick={() => setIsEditingPhoto(false)} className="w-full h-16 border-2 border-orange-500 text-orange-600 rounded-2xl mt-12 font-black text-lg">العودة للإعدادات</Button>
                 </div>
               ) : showVehicleDetails ? (
                 <div className="space-y-4">
@@ -463,7 +545,7 @@ export default function DriverDashboard() {
                 <div className="w-16 h-16 bg-orange-50 rounded-3xl flex items-center justify-center border-2 border-white shadow-sm text-2xl text-orange-500 font-bold">{activeOrder.customerName?.charAt(0) || "👤"}</div>
                 <div className="text-right">
                   <h4 className="font-black text-xl text-gray-800">{activeOrder.customerName || "زبون جديد"}</h4>
-                  <p className="text-xs text-blue-500 font-bold flex items-center gap-1 cursor-pointer" onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${activeOrder.pickupLat},${activeOrder.pickupLng}`)}>فتح الخريطة الخارجية <ExternalLink className="w-3 h-3"/></p>
+                  <p className="text-xs text-blue-500 font-bold flex items-center gap-1 cursor-pointer" onClick={() => window.open(`http://maps.google.com/?q=${activeOrder.pickupLat},${activeOrder.pickupLng}`)}>فتح الخريطة الخارجية <ExternalLink className="w-3 h-3"/></p>
                 </div>
               </div>
               <div className="flex gap-2">

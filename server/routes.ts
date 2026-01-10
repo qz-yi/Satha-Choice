@@ -4,10 +4,38 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { insertDriverSchema, loginSchema } from "@shared/schema";
+// استيراد المكتبات اللازمة لرفع الصور
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import express from "express"; // تأكد من استيراد express لاستخدامه في الملفات العامة
+
+// إعداد مجلد رفع الصور وتأكد من وجوده باستخدام المسار المطلق لبيئة Replit
+const uploadDir = path.resolve(process.cwd(), "public/uploads/avatars");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// إعداد Multer لتخزين الصور
+const uploadStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, "avatar-" + uniqueSuffix + path.extname(file.originalname));
+  },
+});
+const upload = multer({ storage: uploadStorage });
 
 export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   const app: Express = arg1.post ? arg1 : arg2;
   const httpServer: Server = arg1.post ? arg2 : arg1;
+
+  // ✅ التعديل الجوهري المحقن: تعريف مسار الصور كأولوية قصوى قبل أي راوتر آخر
+  // هذا السطر يمنع السيرفر من تحويل طلب الصورة إلى صفحة 404
+  app.use('/uploads', express.static(path.resolve(process.cwd(), "public/uploads")));
+  app.use(express.static(path.resolve(process.cwd(), "public")));
 
   // --- مسارات السائقين (Drivers) ---
 
@@ -71,7 +99,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // 5. التفعيل وتحديث بيانات السائق
+  // 5. التفعيل وتحديث بيانات السائق (تم التعديل لدعم الصورة)
   app.patch("/api/drivers/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -84,6 +112,9 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       if (typeof rawBody.isOnline === "boolean") updateData.isOnline = rawBody.isOnline;
       if (rawBody.walletBalance !== undefined) updateData.walletBalance = rawBody.walletBalance;
       
+      // تحديث الصورة الشخصية (لحل المشكلة الثالثة)
+      if (rawBody.avatarUrl) updateData.avatarUrl = rawBody.avatarUrl;
+
       // تحديث الموقع الجغرافي (جديد لدعم خريطة العراق)
       if (rawBody.lastLat) updateData.lastLat = rawBody.lastLat;
       if (rawBody.lastLng) updateData.lastLng = rawBody.lastLng;
@@ -92,6 +123,24 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
+    }
+  });
+
+  // 🆕 مسار رفع الصورة الشخصية (حل المشكلة الثالثة نهائياً)
+  app.post("/api/drivers/:id/upload-avatar", upload.single("image"), async (req, res) => {
+    try {
+      const driverId = parseInt(req.params.id);
+      if (!req.file) return res.status(400).json({ message: "لم يتم اختيار صورة" });
+
+      const imageUrl = `/uploads/avatars/${req.file.filename}`;
+      
+      // تحديث رابط الصورة في قاعدة البيانات
+      await storage.updateDriver(driverId, { avatarUrl: imageUrl });
+      
+      res.json({ url: imageUrl });
+    } catch (err: any) {
+      console.error("Upload error:", err);
+      res.status(500).json({ message: "فشل في رفع الصورة" });
     }
   });
 
@@ -108,6 +157,25 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
   // --- 🆕 مسارات النظام المالي الجديد (المحفظة وزين كاش) ---
 
+  // 🆕 مسار طلب شحن المحفظة (بدلاً من الشحن التلقائي)
+  app.post("/api/drivers/:id/deposit-request", async (req, res) => {
+    try {
+      const driverId = Number(req.params.id);
+      const { amount, paymentMethod, referenceId } = req.body;
+
+      await storage.createTransaction({
+        driverId,
+        amount: amount.toString(),
+        type: "deposit",
+        referenceId: referenceId || `${paymentMethod}-${Date.now()}`,
+      });
+
+      res.json({ message: "تم إرسال طلب الشحن للمراجعة" });
+    } catch (err) {
+      res.status(500).json({ message: "فشل إرسال طلب الشحن" });
+    }
+  });
+
   // أ. شحن المحفظة (محاكاة بوابة زين كاش)
   app.post("/api/drivers/:id/deposit", async (req, res) => {
     try {
@@ -116,14 +184,12 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
       if (!amount || amount <= 0) return res.status(400).json({ message: "المبلغ غير صحيح" });
 
-      // 1. زيادة رصيد السائق في جدول السائقين
       const driver = await storage.getDriver(driverId);
       if (!driver) return res.status(404).json({ message: "السائق غير موجود" });
 
       const newBalance = Number(driver.walletBalance) + Number(amount);
       await storage.updateDriver(driverId, { walletBalance: newBalance.toString() });
 
-      // 2. تسجيل العملية في جدول العمليات للشفافية
       await storage.createTransaction({
         driverId,
         amount: amount.toString(),
@@ -160,13 +226,11 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // تحديث: قبول الطلب مع التحقق من الرصيد
   app.post("/api/drivers/:id/accept/:requestId", async (req, res) => {
     try {
       const driverId = Number(req.params.id);
       const driver = await storage.getDriver(driverId);
       
-      // ✅ شرط الرصيد: لا يمكن قبول طلب إذا كان الرصيد أقل من 1000 دينار (كمثال)
       if (Number(driver?.walletBalance) < 1000) {
         return res.status(400).json({ message: "رصيدك غير كافٍ لقبول الطلبات، يرجى شحن المحفظة." });
       }
@@ -178,22 +242,18 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // 🆕 مسار إكمال الطلب (الاستقطاع الآلي)
   app.post("/api/drivers/:id/complete/:requestId", async (req, res) => {
     try {
       const driverId = Number(req.params.id);
       const requestId = Number(req.params.requestId);
-      const fee = 1000; // مبلغ الاستقطاع لكل طلب (يمكنك تغييره)
+      const fee = 1000; 
 
-      // 1. تحديث حالة الطلب إلى مكتمل
       await storage.updateRequestStatus(requestId, "completed");
 
-      // 2. خصم العمولة من رصيد السائق
       const driver = await storage.getDriver(driverId);
       const newBalance = Number(driver!.walletBalance) - fee;
       await storage.updateDriver(driverId, { walletBalance: newBalance.toString() });
 
-      // 3. تسجيل عملية الخصم
       await storage.createTransaction({
         driverId,
         amount: (-fee).toString(),
@@ -216,7 +276,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // بقية مسارات الـ Admin Controls (Assign/Cancel) بقيت كما هي دون أي حذف
   app.post("/api/admin/requests/:requestId/assign", async (req, res) => {
     try {
       const requestId = parseInt(req.params.requestId);
@@ -238,7 +297,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // دالة بذر البيانات (Seed)
   const seed = async () => {
     const driversList = await storage.getDrivers();
     if (driversList.length === 0) {

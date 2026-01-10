@@ -9,9 +9,9 @@ export const requests = pgTable("requests", {
   id: serial("id").primaryKey(),
   vehicleType: text("vehicle_type").notNull(), 
   price: text("price").notNull(),
-  // تم إرجاع المسميات القديمة لضمان ظهور البيانات وعدم تصفيرها
-  pickupAddress: text("location").notNull(), // استخدام location كـ pickupAddress
-  customerPhone: text("customer_phone").notNull().default("07700000000"), // إضافة الحقل الذي كان يطلبه الـ Shell
+  pickupAddress: text("location").notNull(), 
+  // ✅ تم التعديل هنا: أزلنا .notNull() للسماح للطلبات القديمة بالمرور وتجنب خطأ 23502
+  customerPhone: text("customer_phone").default("07700000000"), 
   pickupLat: text("pickup_lat"),
   pickupLng: text("pickup_lng"),
   destination: text("destination"),
@@ -40,6 +40,7 @@ export const drivers = pgTable("drivers", {
   createdAt: timestamp("created_at").defaultNow(),
   lastLat: text("last_lat"),
   lastLng: text("last_lng"),
+  avatarUrl: text("avatar_url"), 
 });
 
 export const transactions = pgTable("transactions", {
@@ -78,7 +79,8 @@ export const insertDriverSchema = createInsertSchema(drivers, {
   status: true,
   createdAt: true,
   lastLat: true,
-  lastLng: true
+  lastLng: true,
+  avatarUrl: true 
 });
 
 export const loginSchema = z.object({
