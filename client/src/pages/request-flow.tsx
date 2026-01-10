@@ -7,8 +7,9 @@ import { useCreateRequest } from "@/hooks/use-requests";
 import { 
   MapPin, Check, Search, Loader2, Menu, 
   MessageSquare, History, Wallet, Phone, Truck, ChevronRight,
-  LocateFixed, RotateCcw, X, Star, Navigation, Target, Send, LogOut, Camera, User, Lock, Home
+  LocateFixed, RotateCcw, X, Star, Navigation, Target, Send, LogOut, Camera, User, Lock, Home, ShieldCheck
 } from "lucide-react";
+
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -16,6 +17,7 @@ import { MapContainer, TileLayer, useMapEvents, Marker, useMap, Popup } from "re
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { io } from "socket.io-client";
+import { useLocation } from "wouter";
 
 const socket = io("http://192.168.0.104:3000");
 
@@ -58,17 +60,13 @@ const StepIndicator = ({ step }: { step: string }) => {
 };
 
 export default function RequestFlow() {
+  const [, setLocation] = useLocation();
+
   // --- Auth & Profile State ---
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authMode, setAuthMode] = useState<"choice" | "login" | "signup">("choice");
   const [userProfile, setUserProfile] = useState({
-    name: "",
-    phone: "",
-    password: "",
-    address: "",
-    image: null as string | null,
-    wallet: "0",
-    trips: "0"
+    name: "", phone: "", password: "", address: "", image: null as string | null, wallet: "0", trips: "0"
   });
 
   // --- Main App States ---
@@ -89,19 +87,14 @@ export default function RequestFlow() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
-    location: "", destination: "",
-    pickupLat: 33.3152, pickupLng: 44.3661,
-    destLat: 33.3152, destLng: 44.3661,
-    vehicleType: "", price: "", timeMode: "now" as "now" | "later",
+    location: "", destination: "", pickupLat: 33.3152, pickupLng: 44.3661,
+    destLat: 33.3152, destLng: 44.3661, vehicleType: "", price: "", timeMode: "now" as "now" | "later",
   });
 
   // --- Load Saved Session ---
   useEffect(() => {
     const saved = localStorage.getItem("sat7a_user");
-    if (saved) {
-      setUserProfile(JSON.parse(saved));
-      setIsLoggedIn(true);
-    }
+    if (saved) { setUserProfile(JSON.parse(saved)); setIsLoggedIn(true); }
   }, []);
 
   // --- Socket Listeners ---
@@ -135,24 +128,17 @@ export default function RequestFlow() {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed.phone === userProfile.phone && parsed.password === userProfile.password) {
-        setUserProfile(parsed);
-        setIsLoggedIn(true);
-      } else {
-        alert("خطأ في الرقم أو كلمة السر");
-      }
-    } else {
-      alert("الحساب غير موجود، يرجى إنشاء حساب جديد");
-    }
+        setUserProfile(parsed); setIsLoggedIn(true);
+      } else { alert("خطأ في الرقم أو كلمة السر"); }
+    } else { alert("الحساب غير موجود"); }
   };
 
   const handleLogout = () => {
     localStorage.removeItem("sat7a_user");
-    setIsLoggedIn(false);
-    setAuthMode("choice");
+    setIsLoggedIn(false); setAuthMode("choice");
     window.location.reload();
   };
 
-  // --- Map & Logic Handlers ---
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -167,8 +153,7 @@ export default function RequestFlow() {
     setIsSearching(true);
     try {
       const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=iq`);
-      const data = await res.json();
-      setSearchResults(data);
+      const data = await res.json(); setSearchResults(data);
     } catch (error) { console.error(error); } finally { setIsSearching(false); }
   };
 
@@ -184,83 +169,108 @@ export default function RequestFlow() {
   };
 
   const handleSelectResult = (result: any) => {
-    const lat = parseFloat(result.lat);
-    const lon = parseFloat(result.lon);
+    const lat = parseFloat(result.lat); const lon = parseFloat(result.lon);
     setShouldFly(true);
     if (step === "pickup") setFormData(p => ({ ...p, pickupLat: lat, pickupLng: lon, location: result.display_name.split(',')[0] }));
     else setFormData(p => ({ ...p, destLat: lat, destLng: lon, destination: result.display_name.split(',')[0] }));
-    setIsSearchOpen(false);
-    setTimeout(() => setShouldFly(false), 2000);
+    setIsSearchOpen(false); setTimeout(() => setShouldFly(false), 2000);
   };
 
-  // --- Rendering Conditional Logic ---
+  // --- Login/Signup Interface (المطورة بروح السائق) ---
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-right" dir="rtl">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md bg-white rounded-[40px] shadow-2xl p-8">
-          <div className="w-20 h-20 bg-orange-500 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-xl rotate-3">
-            <Truck className="text-white w-10 h-10" />
+      <div className="min-h-screen bg-white flex flex-col p-6 relative overflow-hidden font-sans" dir="rtl">
+        
+        {/* زر العودة للرئيسية - بنفس روح أزرار السائق */}
+        <motion.button 
+          initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
+          onClick={() => setLocation("/")}
+          className="absolute top-8 right-8 z-[50] bg-white p-3 px-5 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-2 hover:bg-gray-50 active:scale-95 transition-all text-gray-900 font-black"
+        >
+          <Home className="w-5 h-5 text-orange-500" />
+          <span className="text-sm">الرئيسية</span>
+        </motion.button>
+
+        <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} className="flex-1 flex flex-col justify-center w-full max-w-md mx-auto">
+          
+          <div className="text-center mb-10">
+            <div className="w-20 h-20 bg-orange-500 rounded-[28px] flex items-center justify-center mx-auto mb-6 shadow-2xl rotate-3 shadow-orange-200">
+              <Truck className="text-white w-10 h-10" />
+            </div>
+            <h2 className="text-4xl font-black text-gray-900 italic tracking-tighter">
+              {authMode === "choice" ? "أهلاً بك" : authMode === "signup" ? "كُن عضواً" : "عودة حميدة"}
+            </h2>
+            <p className="text-gray-400 font-bold mt-2">تطبيق سطحة لخدمتك أينما كنت</p>
           </div>
 
           {authMode === "choice" && (
-            <div className="space-y-6">
-              <h2 className="text-3xl font-black text-gray-900 italic text-center">أهلاً بك في سطحة</h2>
-              <div className="space-y-4">
-                <Button onClick={() => setAuthMode("signup")} className="w-full h-16 bg-orange-500 rounded-2xl text-xl font-black shadow-lg">أنا زبون جديد</Button>
-                <Button onClick={() => setAuthMode("login")} variant="outline" className="w-full h-16 rounded-2xl text-lg font-black border-2 border-gray-100">تسجيل دخول</Button>
-              </div>
+            <div className="space-y-4">
+              <Button onClick={() => setAuthMode("signup")} className="w-full h-20 bg-orange-500 hover:bg-orange-600 rounded-[30px] text-2xl font-black shadow-xl shadow-orange-100 transition-all">أنا زبون جديد</Button>
+              <Button onClick={() => setAuthMode("login")} variant="ghost" className="w-full h-20 rounded-[30px] text-xl font-black bg-gray-50 text-gray-600 border-2 border-transparent hover:border-gray-200">تسجيل دخول</Button>
             </div>
           )}
 
           {(authMode === "signup" || authMode === "login") && (
             <form onSubmit={authMode === "signup" ? handleSignUp : handleLogin} className="space-y-4">
-              <h3 className="text-2xl font-black mb-6">{authMode === "signup" ? "إنشاء حساب زبون" : "مرحباً بعودتك"}</h3>
               
               {authMode === "signup" && (
                 <div className="flex flex-col items-center mb-6">
-                  <div className="w-24 h-24 bg-gray-50 rounded-[32px] border-2 border-dashed border-orange-300 flex items-center justify-center overflow-hidden relative group">
-                    {userProfile.image ? <img src={userProfile.image} className="w-full h-full object-cover" /> : <Camera className="text-orange-400" />}
-                    <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleImageChange} />
+                  <div className="relative group">
+                    <div className="w-24 h-24 bg-gray-50 rounded-[35px] border-4 border-white flex items-center justify-center overflow-hidden shadow-2xl ring-2 ring-orange-100">
+                      {userProfile.image ? <img src={userProfile.image} className="w-full h-full object-cover" /> : <User className="text-orange-200 w-10 h-10" />}
+                      <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleImageChange} />
+                    </div>
+                    <div className="absolute -bottom-1 -right-1 bg-black text-white p-2 rounded-xl shadow-lg border-2 border-white"><Camera className="w-4 h-4" /></div>
                   </div>
-                  <span className="text-[10px] font-black text-gray-400 mt-2">اضف صورتك الشخصية</span>
                 </div>
               )}
 
-              <div className="space-y-3">
+              <div className="bg-white rounded-[35px] p-6 shadow-[0_10px_40px_rgba(0,0,0,0.04)] border border-gray-50 space-y-4">
                 {authMode === "signup" && (
-                  <div className="relative">
-                    <User className="absolute right-4 top-4 text-gray-400 w-5 h-5" />
-                    <input required placeholder="الاسم الكامل" className="w-full h-14 bg-gray-50 rounded-2xl pr-12 font-bold outline-none border border-transparent focus:border-orange-500 transition-all" value={userProfile.name} onChange={e => setUserProfile({...userProfile, name: e.target.value})} />
+                  <div className="bg-gray-50 rounded-2xl p-3 px-5 flex items-center justify-between group focus-within:ring-2 focus-within:ring-orange-500 transition-all">
+                    <div className="flex-1">
+                      <p className="text-[10px] font-black text-gray-400 mb-1">الاسم الكامل</p>
+                      <input required placeholder="أدخل اسمك" className="bg-transparent border-none outline-none w-full font-black text-gray-700 text-right" value={userProfile.name} onChange={e => setUserProfile({...userProfile, name: e.target.value})} />
+                    </div>
+                    <User className="text-orange-500 w-5 h-5 mr-3" />
                   </div>
                 )}
-                <div className="relative">
-                  <Phone className="absolute right-4 top-4 text-gray-400 w-5 h-5" />
-                  <input required type="tel" placeholder="رقم الهاتف" className="w-full h-14 bg-gray-50 rounded-2xl pr-12 font-bold outline-none border border-transparent focus:border-orange-500 transition-all" value={userProfile.phone} onChange={e => setUserProfile({...userProfile, phone: e.target.value})} />
-                </div>
-                <div className="relative">
-                  <Lock className="absolute right-4 top-4 text-gray-400 w-5 h-5" />
-                  <input required type="password" placeholder="كلمة السر" className="w-full h-14 bg-gray-50 rounded-2xl pr-12 font-bold outline-none border border-transparent focus:border-orange-500 transition-all" value={userProfile.password} onChange={e => setUserProfile({...userProfile, password: e.target.value})} />
-                </div>
-                {authMode === "signup" && (
-                  <div className="relative">
-                    <Home className="absolute right-4 top-4 text-gray-400 w-5 h-5" />
-                    <input required placeholder="عنوانك الحالي" className="w-full h-14 bg-gray-50 rounded-2xl pr-12 font-bold outline-none border border-transparent focus:border-orange-500 transition-all" value={userProfile.address} onChange={e => setUserProfile({...userProfile, address: e.target.value})} />
+                
+                <div className="bg-gray-50 rounded-2xl p-3 px-5 flex items-center justify-between focus-within:ring-2 focus-within:ring-orange-500 transition-all">
+                  <div className="flex-1">
+                    <p className="text-[10px] font-black text-gray-400 mb-1">رقم الهاتف</p>
+                    <input required type="tel" placeholder="07XXXXXXXXX" className="bg-transparent border-none outline-none w-full font-black text-gray-700 text-right" value={userProfile.phone} onChange={e => setUserProfile({...userProfile, phone: e.target.value})} />
                   </div>
-                )}
+                  <Phone className="text-orange-500 w-5 h-5 mr-3" />
+                </div>
+
+                <div className="bg-gray-50 rounded-2xl p-3 px-5 flex items-center justify-between focus-within:ring-2 focus-within:ring-orange-500 transition-all">
+                  <div className="flex-1">
+                    <p className="text-[10px] font-black text-gray-400 mb-1">كلمة السر</p>
+                    <input required type="password" placeholder="••••••••" className="bg-transparent border-none outline-none w-full font-black text-gray-700 text-right" value={userProfile.password} onChange={e => setUserProfile({...userProfile, password: e.target.value})} />
+                  </div>
+                  <Lock className="text-orange-500 w-5 h-5 mr-3" />
+                </div>
               </div>
 
-              <Button type="submit" className="w-full h-16 bg-black text-white rounded-2xl font-black mt-6 shadow-xl active:scale-95 transition-transform">
-                {authMode === "signup" ? "تأكيد وإنشاء الحساب" : "دخول"}
+              <Button type="submit" className="w-full h-18 bg-gray-900 hover:bg-black text-white rounded-[25px] font-black text-xl mt-4 shadow-2xl transition-all active:scale-95">
+                {authMode === "signup" ? "تأكيد وإنشاء" : "دخول مباشر"}
               </Button>
-              <button type="button" onClick={() => setAuthMode("choice")} className="w-full text-center text-gray-400 font-bold text-sm mt-4">رجوع</button>
+              <button type="button" onClick={() => setAuthMode("choice")} className="w-full text-center text-gray-400 font-black text-xs mt-4 hover:text-orange-500">إلغاء والعودة</button>
             </form>
           )}
         </motion.div>
+
+        <div className="mt-auto text-center pb-4">
+           <p className="text-[10px] font-black text-gray-300 flex items-center justify-center gap-2 tracking-widest uppercase">
+             <ShieldCheck className="w-3 h-3" /> نظام حماية البيانات 2026
+           </p>
+        </div>
       </div>
     );
   }
 
-  // --- Main Customer Interface ---
+  // --- باقي كود واجهة الخريطة والطلب (بدون أي تغيير) ---
   if (viewState === "success") return (
     <div className="min-h-screen bg-white flex flex-col items-center justify-center p-8 text-center" dir="rtl">
       <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="space-y-8">
@@ -284,13 +294,11 @@ export default function RequestFlow() {
                 <FlyToMarker center={driverLocation || [formData.pickupLat, formData.pickupLng]} shouldFly={!!driverLocation} />
             </MapContainer>
         </div>
-        {/* Tracking Header */}
         <header className="absolute top-6 inset-x-6 z-[1000] flex justify-between items-center">
             <Button onClick={() => setViewState("booking")} className="bg-white/90 backdrop-blur-md text-black rounded-2xl w-12 h-12 shadow-xl border-none"><X className="w-5 h-5" /></Button>
             <div className="bg-orange-500 text-white px-4 py-2 rounded-2xl shadow-xl font-black italic flex items-center gap-2"><Navigation className="w-4 h-4 animate-pulse" /> مباشر</div>
         </header>
 
-        {/* Chat System */}
         <AnimatePresence>
           {isChatOpen && (
             <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="fixed inset-0 z-[7000] bg-white flex flex-col">
@@ -318,7 +326,6 @@ export default function RequestFlow() {
           )}
         </AnimatePresence>
 
-        {/* Driver Tracking Info */}
         <motion.div initial={{ y: 100 }} animate={{ y: 0 }} className="absolute inset-x-0 bottom-0 z-[1000] p-6">
             <div className="bg-white rounded-[40px] shadow-2xl p-8 border-t-4 border-orange-500">
                 <div className="text-center space-y-6">

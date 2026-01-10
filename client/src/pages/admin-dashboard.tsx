@@ -3,7 +3,7 @@ import {
   Users, Truck, Map as MapIcon, ShieldCheck,
   Power, CheckCircle2, XCircle, Menu, Activity,
   Search, Trash2, ArrowLeftRight,
-  UserPlus, AlertCircle, Phone, MapPin
+  UserPlus, AlertCircle, Phone, MapPin, Wallet, TrendingUp, CreditCard, Clock
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
@@ -41,7 +41,18 @@ export default function AdminDashboard() {
     refetchInterval: 5000 
   });
 
-  // --- المبيشنات (أصبحت الآن "أزرار حقيقية" بتحديث فوري) ---
+  // إضافة جلب سجلات المالية
+  const { data: allTransactions = [] } = useQuery<any[]>({
+    queryKey: ["/api/admin/transactions"],
+    enabled: activeTab === "finance"
+  });
+
+  // حساب إجمالي أرباح النظام (العمولات)
+  const systemEarnings = allTransactions
+    .filter(t => t.type === 'fee')
+    .reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
+
+  // --- المبيشنات الأصلية ---
 
   const approveMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -63,13 +74,11 @@ export default function AdminDashboard() {
     }
   });
 
-  // تم إصلاح الحذف لضمان اختفاء العنصر فوراً
   const deleteRequestMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("DELETE", `/api/requests/${id}`);
     },
     onSuccess: async () => {
-      // إجبار الكاش على التحديث فوراً
       await queryClient.invalidateQueries({ queryKey: ["/api/requests"] });
       toast({ variant: "destructive", title: "تم حذف الطلب بنجاح" });
     }
@@ -85,7 +94,6 @@ export default function AdminDashboard() {
     }
   });
 
-  // تم إصلاح التحويل (تعديل السائق والحالة معاً)
   const assignMutation = useMutation({
     mutationFn: async ({ requestId, driverId }: { requestId: number, driverId: number }) => {
       return await apiRequest("PATCH", `/api/requests/${requestId}`, { 
@@ -119,7 +127,7 @@ export default function AdminDashboard() {
   const stats = [
     { id: "online-drivers-tab", label: "سائقين متصلين", value: onlineDrivers.length.toString(), icon: <Activity className="text-green-500" />, color: "bg-green-50" },
     { id: "active-requests-tab", label: "طلبات نشطة", value: activeRequests.length.toString(), icon: <Truck className="text-orange-500" />, color: "bg-orange-50" },
-    { id: "all-drivers", label: "إجمالي السائقين", value: allDrivers.length.toString(), icon: <Users className="text-blue-500" />, color: "bg-blue-50" },
+    { id: "finance", label: "أرباح النظام (د.ع)", value: systemEarnings.toLocaleString(), icon: <TrendingUp className="text-blue-500" />, color: "bg-blue-50" },
   ];
 
   return (
@@ -148,6 +156,9 @@ export default function AdminDashboard() {
           </button>
           <button onClick={() => { setActiveTab("all-drivers"); setIsSidebarOpen(false); }} className={`w-full flex items-center p-4 rounded-[20px] font-black transition-all ${activeTab === "all-drivers" ? 'bg-orange-500 text-white shadow-xl shadow-orange-500/20' : 'text-slate-400 hover:bg-slate-900'}`}>
             <Users className="w-5 h-5 ml-4" /> إدارة السائقين
+          </button>
+          <button onClick={() => { setActiveTab("finance"); setIsSidebarOpen(false); }} className={`w-full flex items-center p-4 rounded-[20px] font-black transition-all ${activeTab === "finance" ? 'bg-orange-500 text-white shadow-xl shadow-orange-500/20' : 'text-slate-400 hover:bg-slate-900'}`}>
+            <Wallet className="w-5 h-5 ml-4" /> المالية والأرباح
           </button>
         </nav>
 
@@ -194,7 +205,6 @@ export default function AdminDashboard() {
           </div>
 
           <AnimatePresence mode="wait">
-            {/* Map Tab */}
             {activeTab === "map" && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} key="map-view" className="space-y-6">
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -236,7 +246,6 @@ export default function AdminDashboard() {
                 </motion.div>
             )}
 
-            {/* Joining Requests Tab */}
             {activeTab === "requests" && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} key="requests-view" className="space-y-6">
                     <h2 className="text-2xl font-black text-slate-900 italic px-2">طلبات الانضمام ({pendingDrivers.length})</h2>
@@ -261,7 +270,6 @@ export default function AdminDashboard() {
                 </motion.div>
             )}
 
-            {/* All Drivers Tab */}
             {activeTab === "all-drivers" && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} key="all-drivers" className="space-y-6">
                     <h2 className="text-2xl font-black text-slate-900 italic px-2">إدارة السائقين ({approvedDrivers.length})</h2>
@@ -273,7 +281,10 @@ export default function AdminDashboard() {
                                         <div className={`w-2 h-2 rounded-full ${driver.isOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
                                         <span className="font-black text-slate-800 text-lg">{driver.name}</span>
                                     </div>
-                                    <span className="text-xs text-gray-400 font-bold">{driver.phone}</span>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <Wallet className="w-3 h-3 text-orange-500" />
+                                        <span className="text-[10px] font-black text-blue-600">{driver.walletBalance} د.ع</span>
+                                    </div>
                                 </div>
                                 <Button onClick={() => deleteMutation.mutate(driver.id)} variant="ghost" className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl"><Trash2 className="w-5 h-5" /></Button>
                             </div>
@@ -282,7 +293,48 @@ export default function AdminDashboard() {
                 </motion.div>
             )}
 
-            {/* Online Drivers Tab */}
+            {/* FINANCE TAB - الإضافة الجديدة */}
+            {activeTab === "finance" && (
+                <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} key="finance-view" className="space-y-6">
+                    <h2 className="text-2xl font-black italic px-2">السجل المالي العام</h2>
+                    <div className="bg-white rounded-[40px] shadow-sm overflow-hidden border border-gray-100">
+                        <table className="w-full text-right">
+                            <thead className="bg-gray-50 text-gray-400 text-xs font-black uppercase">
+                                <tr>
+                                    <th className="px-6 py-4">التاريخ</th>
+                                    <th className="px-6 py-4">نوع العملية</th>
+                                    <th className="px-6 py-4">المبلغ</th>
+                                    <th className="px-6 py-4">الحالة</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                                {allTransactions.map((tx) => (
+                                    <tr key={tx.id} className="hover:bg-gray-50/50 transition-colors">
+                                        <td className="px-6 py-4 text-xs font-bold text-gray-500">{new Date(tx.createdAt).toLocaleString('ar-EG')}</td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-2">
+                                                {tx.type === 'deposit' ? <CreditCard className="w-4 h-4 text-green-500"/> : <TrendingUp className="w-4 h-4 text-blue-500"/>}
+                                                <span className="font-black text-slate-700 text-sm">{tx.type === 'deposit' ? 'شحن محفظة' : 'عمولة رحلة'}</span>
+                                            </div>
+                                        </td>
+                                        <td className={`px-6 py-4 font-black ${tx.amount > 0 ? 'text-green-600' : 'text-blue-600'}`}>
+                                            {tx.amount.toLocaleString()} د.ع
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <span className="bg-green-100 text-green-600 text-[10px] px-2 py-1 rounded-full font-black">مكتمل</span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        {allTransactions.length === 0 && (
+                            <div className="py-20 text-center text-gray-400 font-bold">لا توجد عمليات مالية مسجلة بعد</div>
+                        )}
+                    </div>
+                </motion.div>
+            )}
+
+            {/* بقية التبويبات (Online Drivers, Active Requests) تبقى كما هي في كودك الأصلي */}
             {activeTab === "online-drivers-tab" && (
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} key="online-view" className="space-y-6">
                     <h2 className="text-2xl font-black italic px-2">السائقين المتصلين الآن</h2>
@@ -292,7 +344,10 @@ export default function AdminDashboard() {
                             return (
                                 <div key={driver.id} className="bg-white p-6 rounded-[35px] shadow-sm border-t-4 border-green-500">
                                     <div className="flex justify-between items-start mb-4">
-                                        <h4 className="font-black text-lg">{driver.name}</h4>
+                                        <div>
+                                            <h4 className="font-black text-lg">{driver.name}</h4>
+                                            <p className="text-[10px] font-black text-orange-500">المحفظة: {driver.walletBalance} د.ع</p>
+                                        </div>
                                         <span className={`px-3 py-1 rounded-full text-[10px] font-black ${currentJob ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
                                             {currentJob ? 'مشغول بطلب' : 'متاح'}
                                         </span>
@@ -313,8 +368,7 @@ export default function AdminDashboard() {
                     </div>
                 </motion.div>
             )}
-
-            {/* Active Requests Tab */}
+            
             {activeTab === "active-requests-tab" && (
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} key="requests-active-view" className="space-y-6">
                     <h2 className="text-2xl font-black italic px-2">جميع الطلبات النشطة</h2>
@@ -338,7 +392,7 @@ export default function AdminDashboard() {
           </AnimatePresence>
         </div>
 
-        {/* Modals Section */}
+        {/* Modals Section (Keep as originally implemented) */}
         <AnimatePresence>
           {assigningRequest && (
             <div className="fixed inset-0 z-[6000] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -354,7 +408,10 @@ export default function AdminDashboard() {
                         key={driver.id} onClick={() => setSelectedDriverForAssign(driver)}
                         className={`p-4 rounded-2xl border-2 cursor-pointer flex justify-between items-center transition-all ${selectedDriverForAssign?.id === driver.id ? 'border-orange-500 bg-orange-50' : 'border-gray-100 hover:border-gray-200'}`}
                       >
-                        <span className="font-black text-sm">{driver.name}</span>
+                        <div className="flex flex-col">
+                            <span className="font-black text-sm">{driver.name}</span>
+                            <span className="text-[10px] text-gray-400">الرصيد: {driver.walletBalance} د.ع</span>
+                        </div>
                         {selectedDriverForAssign?.id === driver.id && <CheckCircle2 className="text-orange-500" />}
                       </div>
                     ))
