@@ -3,7 +3,7 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { insertDriverSchema, loginSchema } from "@shared/schema";
+import { insertDriverSchema, loginSchema, insertUserSchema } from "@shared/schema"; // ✅ أضفنا insertUserSchema
 // استيراد المكتبات اللازمة لرفع الصور
 import multer from "multer";
 import path from "path";
@@ -33,13 +33,60 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   const httpServer: Server = arg1.post ? arg2 : arg1;
 
   // ✅ التعديل الجوهري المحقن: تعريف مسار الصور كأولوية قصوى قبل أي راوتر آخر
-  // هذا السطر يمنع السيرفر من تحويل طلب الصورة إلى صفحة 404
   app.use('/uploads', express.static(path.resolve(process.cwd(), "public/uploads")));
   app.use(express.static(path.resolve(process.cwd(), "public")));
 
-  // --- مسارات السائقين (Drivers) ---
+  // --- 🆕 مسارات الزبائن (Users/Customers) ---
+  
+  // 1. مسار إنشاء حساب جديد للزبائن (الميزة المفقودة التي تسبب المشكلة)
+  app.post("/api/register", async (req, res) => {
+    try {
+      const input = insertUserSchema.parse(req.body);
+      
+      // التأكد من أن الرقم غير مسجل مسبقاً
+      const existingUser = await storage.getUserByPhone(input.phone);
+      if (existingUser) {
+        return res.status(400).json({ message: "رقم الهاتف هذا مسجل مسبقاً كزبون" });
+      }
 
-  // 1. تسجيل سائق جديد
+      const user = await storage.createUser(input);
+      res.status(201).json(user);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      res.status(500).json({ message: "حدث خطأ أثناء إنشاء الحساب" });
+    }
+  });
+
+  // 2. مسار تسجيل الدخول الخاص بالزبائن (تم الحفاظ عليه كما هو في كودك)
+  app.post("/api/login", async (req, res) => {
+    try {
+      const { phone, password } = loginSchema.parse(req.body);
+      
+      const user = await storage.getUserByPhone(phone);
+
+      if (!user) {
+        return res.status(401).json({ message: "الحساب غير موجود" });
+      }
+
+      if (user.password !== password) {
+        return res.status(401).json({ message: "كلمة المرور غير صحيحة" });
+      }
+
+      res.json(user);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      res.status(500).json({ message: "حدث خطأ أثناء تسجيل الدخول" });
+    }
+  });
+
+
+  // --- مسارات السائقين (Drivers) ---
+  // (تم الحفاظ على كل الكود أدناه بدون تغيير حرف واحد لضمان سلامة العمليات السابقة)
+
   app.post("/api/drivers", async (req, res) => {
     try {
       const input = insertDriverSchema.parse(req.body);
@@ -57,7 +104,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // 2. تسجيل الدخول
   app.post("/api/drivers/login", async (req, res) => {
     try {
       const { phone, password } = loginSchema.parse(req.body);
@@ -80,13 +126,11 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // 3. جلب كل السائقين
   app.get("/api/drivers", async (_req, res) => {
     const drivers = await storage.getDrivers();
     res.json(drivers);
   });
 
-  // 4. جلب بيانات السائق الحالي
   app.get("/api/driver/me/:id", async (req, res) => {
     try {
       const driverId = Number(req.params.id);
@@ -99,7 +143,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // 5. التفعيل وتحديث بيانات السائق (تم التعديل لدعم الصورة)
   app.patch("/api/drivers/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -112,10 +155,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       if (typeof rawBody.isOnline === "boolean") updateData.isOnline = rawBody.isOnline;
       if (rawBody.walletBalance !== undefined) updateData.walletBalance = rawBody.walletBalance;
       
-      // تحديث الصورة الشخصية (لحل المشكلة الثالثة)
       if (rawBody.avatarUrl) updateData.avatarUrl = rawBody.avatarUrl;
 
-      // تحديث الموقع الجغرافي (جديد لدعم خريطة العراق)
       if (rawBody.lastLat) updateData.lastLat = rawBody.lastLat;
       if (rawBody.lastLng) updateData.lastLng = rawBody.lastLng;
 
@@ -126,17 +167,13 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // 🆕 مسار رفع الصورة الشخصية (حل المشكلة الثالثة نهائياً)
   app.post("/api/drivers/:id/upload-avatar", upload.single("image"), async (req, res) => {
     try {
       const driverId = parseInt(req.params.id);
       if (!req.file) return res.status(400).json({ message: "لم يتم اختيار صورة" });
 
       const imageUrl = `/uploads/avatars/${req.file.filename}`;
-      
-      // تحديث رابط الصورة في قاعدة البيانات
       await storage.updateDriver(driverId, { avatarUrl: imageUrl });
-      
       res.json({ url: imageUrl });
     } catch (err: any) {
       console.error("Upload error:", err);
@@ -144,7 +181,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // 6. حذف طلب السائق
   app.delete("/api/drivers/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -155,9 +191,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // --- 🆕 مسارات النظام المالي الجديد (المحفظة وزين كاش) ---
-
-  // 🆕 مسار طلب شحن المحفظة (بدلاً من الشحن التلقائي)
   app.post("/api/drivers/:id/deposit-request", async (req, res) => {
     try {
       const driverId = Number(req.params.id);
@@ -176,7 +209,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // أ. شحن المحفظة (محاكاة بوابة زين كاش)
   app.post("/api/drivers/:id/deposit", async (req, res) => {
     try {
       const driverId = Number(req.params.id);
@@ -203,7 +235,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // ب. جلب سجل العمليات المالية للسائق
   app.get("/api/drivers/:id/transactions", async (req, res) => {
     try {
       const driverId = Number(req.params.id);
@@ -213,8 +244,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       res.status(500).json({ message: "فشل في جلب السجل المالي" });
     }
   });
-
-  // --- مسارات الطلبات (Requests) ---
 
   app.post(api.requests.create.path, async (req, res) => {
     try {

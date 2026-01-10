@@ -8,10 +8,17 @@ import {
   type Request,
   type Driver,
   type InsertDriver,
+  type User,        // 🆕 إضافة استيراد نوع المستخدم
+  type InsertUser,  // 🆕 إضافة استيراد نوع إدخال المستخدم
 } from "@shared/schema";
 import { eq, desc, sql, and } from "drizzle-orm";
 
 export interface IStorage {
+  // --- 🆕 الزبائن (Users) - مضافة لحل مشكلة تسجيل دخول الزبائن ---
+  createUser(user: InsertUser): Promise<User>;
+  getUser(id: number): Promise<User | undefined>;
+  getUserByPhone(phone: string): Promise<User | undefined>;
+
   // --- طلبات الزبائن ---
   createRequest(request: InsertRequest): Promise<Request>;
   getRequests(): Promise<Request[]>;
@@ -40,6 +47,26 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // ✅ 0. إدارة الزبائن (إضافة الدوال المفقودة)
+  async createUser(user: InsertUser): Promise<User> {
+    const [newUser] = await db.insert(users).values({
+      ...user,
+      walletBalance: "0.00" // تهيئة محفظة الزبون
+    }).returning();
+    return newUser;
+  }
+
+  async getUser(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  // هذه الدالة هي مفتاح حل رسالة "الحساب غير موجود" في الصور
+  async getUserByPhone(phone: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.phone, phone));
+    return user;
+  }
+
   // 1. إدارة الطلبات
   async createRequest(request: InsertRequest): Promise<Request> {
     const [newRequest] = await db.insert(requests).values(request).returning();

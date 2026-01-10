@@ -7,7 +7,7 @@ import { useCreateRequest } from "@/hooks/use-requests";
 import { 
   MapPin, Check, Search, Loader2, Menu, 
   MessageSquare, History, Wallet, Phone, Truck, ChevronRight,
-  LocateFixed, RotateCcw, X, Star, Navigation, Target, Send, LogOut, Camera, User, Lock, Home, ShieldCheck
+  LocateFixed, RotateCcw, X, Star, Navigation, Target, Send, LogOut, Camera, User, Lock, Home, ShieldCheck, CreditCard
 } from "lucide-react";
 
 import { motion, AnimatePresence } from "framer-motion";
@@ -62,14 +62,12 @@ const StepIndicator = ({ step }: { step: string }) => {
 export default function RequestFlow() {
   const [, setLocation] = useLocation();
 
-  // --- Auth & Profile State ---
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authMode, setAuthMode] = useState<"choice" | "login" | "signup">("choice");
   const [userProfile, setUserProfile] = useState({
-    name: "", phone: "", password: "", address: "", image: null as string | null, wallet: "0", trips: "0"
+    name: "", phone: "", password: "", address: "", image: null as string | null, wallet: "25,000", trips: "12"
   });
 
-  // --- Main App States ---
   const [step, setStep] = useState<"pickup" | "dropoff" | "vehicle">("pickup");
   const [viewState, setViewState] = useState<"booking" | "success" | "tracking">("booking");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -85,19 +83,29 @@ export default function RequestFlow() {
   const [chatMessage, setChatMessage] = useState("");
   const [messages, setMessages] = useState<any[]>([]);
 
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isWalletOpen, setIsWalletOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "wallet">("cash");
+  const [tripsHistory] = useState([
+    { id: 101, date: "2026-01-05", from: "المنصور", to: "اليرموك", price: "15,000", status: "completed" },
+    { id: 102, date: "2026-01-02", from: "زيونة", to: "الكرادة", price: "25,000", status: "completed" }
+  ]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     location: "", destination: "", pickupLat: 33.3152, pickupLng: 44.3661,
     destLat: 33.3152, destLng: 44.3661, vehicleType: "", price: "", timeMode: "now" as "now" | "later",
   });
 
-  // --- Load Saved Session ---
   useEffect(() => {
     const saved = localStorage.getItem("sat7a_user");
-    if (saved) { setUserProfile(JSON.parse(saved)); setIsLoggedIn(true); }
+    const sessionActive = localStorage.getItem("sat7a_session_active");
+    if (saved && sessionActive === "true") { 
+      setUserProfile(JSON.parse(saved)); 
+      setIsLoggedIn(true); 
+    }
   }, []);
 
-  // --- Socket Listeners ---
   useEffect(() => {
     socket.on("receive_location", (data) => {
         setDriverLocation([data.lat, data.lng]);
@@ -115,10 +123,10 @@ export default function RequestFlow() {
     };
   }, [isChatOpen]);
 
-  // --- Auth Handlers ---
   const handleSignUp = (e: React.FormEvent) => {
     e.preventDefault();
     localStorage.setItem("sat7a_user", JSON.stringify(userProfile));
+    localStorage.setItem("sat7a_session_active", "true");
     setIsLoggedIn(true);
   };
 
@@ -128,22 +136,33 @@ export default function RequestFlow() {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed.phone === userProfile.phone && parsed.password === userProfile.password) {
-        setUserProfile(parsed); setIsLoggedIn(true);
+        setUserProfile(parsed); 
+        localStorage.setItem("sat7a_session_active", "true");
+        setIsLoggedIn(true);
       } else { alert("خطأ في الرقم أو كلمة السر"); }
     } else { alert("الحساب غير موجود"); }
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("sat7a_user");
-    setIsLoggedIn(false); setAuthMode("choice");
-    window.location.reload();
+    localStorage.setItem("sat7a_session_active", "false");
+    setIsLoggedIn(false); 
+    setAuthMode("choice");
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => setUserProfile(prev => ({ ...prev, image: reader.result as string }));
+      reader.onloadend = () => {
+        const base64 = reader.result as string;
+        setUserProfile(prev => ({ ...prev, image: base64 }));
+        const saved = localStorage.getItem("sat7a_user");
+        if(saved) {
+          const parsed = JSON.parse(saved);
+          parsed.image = base64;
+          localStorage.setItem("sat7a_user", JSON.stringify(parsed));
+        }
+      };
       reader.readAsDataURL(file);
     }
   };
@@ -176,12 +195,26 @@ export default function RequestFlow() {
     setIsSearchOpen(false); setTimeout(() => setShouldFly(false), 2000);
   };
 
-  // --- Login/Signup Interface (المطورة بروح السائق) ---
+  const handleTopUp = (method: string) => {
+    alert(`سيتم توجيهك الآن لبوابة ${method} لإتمام عملية الدفع وتعبئة رصيدك.`);
+  };
+
+  const handleFinalOrder = () => {
+    if (paymentMethod === "wallet" && parseFloat(userProfile.wallet.replace(',','')) < parseFloat(formData.price)) {
+      alert("عذراً، رصيد محفظتك غير كافٍ لهذه الرحلة. يرجى اختيار الدفع النقدي أو تعبئة المحفظة.");
+      return;
+    }
+    socket.emit("create_order", {
+      ...formData,
+      customerId: userProfile.phone,
+      paymentType: paymentMethod
+    });
+    setViewState("success");
+  };
+
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-white flex flex-col p-6 relative overflow-hidden font-sans" dir="rtl">
-        
-        {/* زر العودة للرئيسية - بنفس روح أزرار السائق */}
         <motion.button 
           initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
           onClick={() => setLocation("/")}
@@ -192,7 +225,6 @@ export default function RequestFlow() {
         </motion.button>
 
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} className="flex-1 flex flex-col justify-center w-full max-w-md mx-auto">
-          
           <div className="text-center mb-10">
             <div className="w-20 h-20 bg-orange-500 rounded-[28px] flex items-center justify-center mx-auto mb-6 shadow-2xl rotate-3 shadow-orange-200">
               <Truck className="text-white w-10 h-10" />
@@ -212,7 +244,6 @@ export default function RequestFlow() {
 
           {(authMode === "signup" || authMode === "login") && (
             <form onSubmit={authMode === "signup" ? handleSignUp : handleLogin} className="space-y-4">
-              
               {authMode === "signup" && (
                 <div className="flex flex-col items-center mb-6">
                   <div className="relative group">
@@ -224,7 +255,6 @@ export default function RequestFlow() {
                   </div>
                 </div>
               )}
-
               <div className="bg-white rounded-[35px] p-6 shadow-[0_10px_40px_rgba(0,0,0,0.04)] border border-gray-50 space-y-4">
                 {authMode === "signup" && (
                   <div className="bg-gray-50 rounded-2xl p-3 px-5 flex items-center justify-between group focus-within:ring-2 focus-within:ring-orange-500 transition-all">
@@ -235,7 +265,6 @@ export default function RequestFlow() {
                     <User className="text-orange-500 w-5 h-5 mr-3" />
                   </div>
                 )}
-                
                 <div className="bg-gray-50 rounded-2xl p-3 px-5 flex items-center justify-between focus-within:ring-2 focus-within:ring-orange-500 transition-all">
                   <div className="flex-1">
                     <p className="text-[10px] font-black text-gray-400 mb-1">رقم الهاتف</p>
@@ -243,7 +272,6 @@ export default function RequestFlow() {
                   </div>
                   <Phone className="text-orange-500 w-5 h-5 mr-3" />
                 </div>
-
                 <div className="bg-gray-50 rounded-2xl p-3 px-5 flex items-center justify-between focus-within:ring-2 focus-within:ring-orange-500 transition-all">
                   <div className="flex-1">
                     <p className="text-[10px] font-black text-gray-400 mb-1">كلمة السر</p>
@@ -252,7 +280,6 @@ export default function RequestFlow() {
                   <Lock className="text-orange-500 w-5 h-5 mr-3" />
                 </div>
               </div>
-
               <Button type="submit" className="w-full h-18 bg-gray-900 hover:bg-black text-white rounded-[25px] font-black text-xl mt-4 shadow-2xl transition-all active:scale-95">
                 {authMode === "signup" ? "تأكيد وإنشاء" : "دخول مباشر"}
               </Button>
@@ -260,7 +287,6 @@ export default function RequestFlow() {
             </form>
           )}
         </motion.div>
-
         <div className="mt-auto text-center pb-4">
            <p className="text-[10px] font-black text-gray-300 flex items-center justify-center gap-2 tracking-widest uppercase">
              <ShieldCheck className="w-3 h-3" /> نظام حماية البيانات 2026
@@ -270,7 +296,6 @@ export default function RequestFlow() {
     );
   }
 
-  // --- باقي كود واجهة الخريطة والطلب (بدون أي تغيير) ---
   if (viewState === "success") return (
     <div className="min-h-screen bg-white flex flex-col items-center justify-center p-8 text-center" dir="rtl">
       <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="space-y-8">
@@ -278,6 +303,7 @@ export default function RequestFlow() {
         <div className="space-y-2">
             <h2 className="text-4xl font-black text-gray-900 italic tracking-tighter">تم الإرسال!</h2>
             <p className="text-gray-400 font-bold">طلبك الآن متاح لجميع السائقين القريبين</p>
+            <p className="text-orange-500 font-black">طريقة الدفع: {paymentMethod === "wallet" ? "المحفظة" : "نقدي"}</p>
         </div>
         <Button onClick={() => setViewState("tracking")} className="w-full h-16 bg-black text-white rounded-[24px] font-black text-xl shadow-2xl">تتبع الرحلة</Button>
       </motion.div>
@@ -288,7 +314,7 @@ export default function RequestFlow() {
     <div className="h-screen w-full bg-slate-50 flex flex-col relative" dir="rtl">
         <div className="absolute inset-0 z-0">
             <MapContainer center={[formData.pickupLat, formData.pickupLng]} zoom={15} style={{ height: "100%", width: "100%" }} zoomControl={false}>
-                <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="&copy; Google Maps" detectRetina={true} tileSize={256}/>
+                <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" />
                 {driverLocation && <Marker position={driverLocation} icon={getOrangeArrowIcon(driverHeading)} />}
                 <Marker position={[formData.pickupLat, formData.pickupLng]} />
                 <FlyToMarker center={driverLocation || [formData.pickupLat, formData.pickupLng]} shouldFly={!!driverLocation} />
@@ -341,11 +367,8 @@ export default function RequestFlow() {
                                 <div className="flex items-center gap-1 text-orange-500 text-xs font-black"><Star className="w-3 h-3 fill-orange-500" /> 4.9 ممتاز</div>
                             </div>
                             <div className="flex gap-2">
-                                <button onClick={() => { setIsChatOpen(true); setUnreadCount(0); }} className="bg-blue-500 rounded-2xl w-14 h-14 shadow-lg flex items-center justify-center relative">
-                                    <MessageSquare className="w-6 h-6 text-white" />
-                                    {unreadCount > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-white">{unreadCount}</span>}
-                                </button>
-                                <a href="tel:07701234567" className="bg-green-500 rounded-2xl w-14 h-14 shadow-lg flex items-center justify-center"><Phone className="w-6 h-6 text-white" /></a>
+                                <button onClick={() => { setIsChatOpen(true); setUnreadCount(0); }} className="bg-green-500 rounded-2xl w-14 h-14 shadow-lg flex items-center justify-center"><MessageSquare className="w-6 h-6 text-white" /></button>
+                                <a href="tel:0780000000" className="bg-blue-500 rounded-2xl w-14 h-14 shadow-lg flex items-center justify-center"><Phone className="w-6 h-6 text-white" /></a>
                             </div>
                         </div>
                      )}
@@ -357,6 +380,7 @@ export default function RequestFlow() {
 
   return (
     <div className="h-screen w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative" dir="rtl">
+      
       <header className="absolute top-0 inset-x-0 z-[4000] p-6 flex flex-col gap-3">
           <div className="flex items-start gap-3 w-full">
               <Sheet>
@@ -376,8 +400,8 @@ export default function RequestFlow() {
                     </div>
 
                     <div className="p-6 flex-1">
-                      <SidebarLink icon={<History />} label="سجل الرحلات" extra={`${userProfile.trips} رحلة`} />
-                      <SidebarLink icon={<Wallet />} label="المحفظة" extra={`${userProfile.wallet} د.ع`} color="text-green-600" />
+                      <SidebarLink onClick={() => setIsHistoryOpen(true)} icon={<History />} label="سجل الرحلات" extra={`${userProfile.trips} رحلة`} />
+                      <SidebarLink onClick={() => setIsWalletOpen(true)} icon={<Wallet />} label="المحفظة" extra={`${userProfile.wallet} د.ع`} color="text-green-600" />
                       <SidebarLink icon={<Star />} label="التقييم" extra="4.9" color="text-yellow-500" />
                       <SidebarLink icon={<Phone />} label="الدعم الفني" color="text-blue-600" />
                     </div>
@@ -408,7 +432,7 @@ export default function RequestFlow() {
         {(step === "pickup" || step === "dropoff") && (
           <>
             <MapContainer center={[33.3152, 44.3661]} zoom={15} style={{ height: "100%", width: "100%" }} zoomControl={false}>
-              <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="&copy; Google Maps" detectRetina={true} tileSize={256}/>
+              <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" />
               <FlyToMarker center={step === "pickup" ? [formData.pickupLat, formData.pickupLng] : [formData.destLat, formData.destLng]} shouldFly={shouldFly} />
               <MapEventsHandler onMove={(center) => {
                  setShouldFly(false);
@@ -427,7 +451,8 @@ export default function RequestFlow() {
         )}
 
         {step === "vehicle" && (
-          <div className="h-full overflow-y-auto p-6 pt-36 pb-48 space-y-4 bg-gray-50">
+          /* تم زيادة الـ pb لضمان ظهور زر الدفع عند السحب */
+          <div className="h-full overflow-y-auto p-6 pt-36 pb-64 space-y-4 bg-gray-50 scroll-smooth">
             {VEHICLE_OPTIONS.map((opt) => (
               <div key={opt.id} onClick={() => setFormData(p => ({...p, vehicleType: opt.id, price: opt.price.toString()}))}
                    className={`p-5 rounded-[32px] border-2 transition-all flex justify-between items-center ${formData.vehicleType === opt.id ? 'bg-orange-500 border-orange-500 text-white shadow-xl scale-[1.02]' : 'bg-white border-transparent shadow-sm'}`}>
@@ -438,16 +463,34 @@ export default function RequestFlow() {
                   <span className="text-xl font-black">{opt.price} <span className="text-xs">د.ع</span></span>
               </div>
             ))}
+
+            <div className="bg-white p-6 rounded-[35px] shadow-sm border border-gray-100 space-y-4 mb-10">
+                <h4 className="font-black text-gray-800 text-sm">اختر طريقة الدفع</h4>
+                <div className="flex gap-3">
+                    <button 
+                        onClick={() => setPaymentMethod("cash")}
+                        className={`flex-1 h-16 rounded-[20px] font-black transition-all flex items-center justify-center gap-2 ${paymentMethod === "cash" ? "bg-black text-white shadow-lg" : "bg-gray-50 text-gray-400"}`}
+                    >
+                        <RotateCcw className="w-4 h-4" /> كاش
+                    </button>
+                    <button 
+                        onClick={() => setPaymentMethod("wallet")}
+                        className={`flex-1 h-16 rounded-[20px] font-black transition-all flex items-center justify-center gap-2 ${paymentMethod === "wallet" ? "bg-orange-500 text-white shadow-lg" : "bg-gray-50 text-gray-400"}`}
+                    >
+                        <Wallet className="w-4 h-4" /> المحفظة
+                    </button>
+                </div>
+            </div>
           </div>
         )}
       </div>
 
-      <footer className="fixed bottom-0 inset-x-0 bg-white p-8 pb-10 rounded-t-[45px] shadow-2xl z-[4000] border-t border-gray-50">
+      <footer className="fixed bottom-0 inset-x-0 bg-white p-8 pb-10 rounded-t-[45px] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-[4000] border-t border-gray-50">
           <Button 
             onClick={() => {
                 if (step === "pickup") setStep("dropoff");
                 else if (step === "dropoff") setStep("vehicle");
-                else setViewState("success");
+                else handleFinalOrder();
             }}
             disabled={step === "vehicle" && !formData.vehicleType}
             className={`w-full h-18 rounded-[28px] font-black text-xl transition-all shadow-xl ${step === "vehicle" ? "bg-orange-500 text-white" : "bg-black text-white"}`}
@@ -483,6 +526,75 @@ export default function RequestFlow() {
                     ))}
                 </div>
               </motion.div>
+          )}
+
+          {isHistoryOpen && (
+            <motion.div initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} className="absolute inset-0 z-[9000] bg-white flex flex-col">
+              <div className="p-6 border-b flex justify-between items-center">
+                <h3 className="font-black text-xl">سجل الرحلات</h3>
+                <Button variant="ghost" onClick={() => setIsHistoryOpen(false)} className="rounded-2xl"><X /></Button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+                {tripsHistory.map((trip) => (
+                  <div key={trip.id} className="bg-white p-5 rounded-[30px] shadow-sm border border-gray-100">
+                    <div className="flex justify-between mb-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                        <span>رقم الرحلة #{trip.id}</span>
+                        <span className="text-green-600 bg-green-50 px-2 py-1 rounded-lg">مكتملة</span>
+                    </div>
+                    <div className="space-y-3 relative">
+                        <div className="flex items-center gap-3 font-bold text-sm"><MapPin className="text-orange-500 w-4 h-4"/> {trip.from}</div>
+                        <div className="flex items-center gap-3 font-bold text-sm"><Target className="text-black w-4 h-4"/> {trip.to}</div>
+                    </div>
+                    <div className="mt-4 pt-4 border-t flex justify-between items-center font-black">
+                        <span className="text-orange-600">{trip.price} د.ع</span>
+                        <span className="text-gray-300 text-[10px]">{trip.date}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {isWalletOpen && (
+            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="absolute inset-0 z-[9000] bg-white flex flex-col">
+               {/* Header المحفظة - تم تعديل مكان زر الإغلاق لسهولة الوصول */}
+               <div className="p-8 bg-black text-white rounded-b-[50px] relative overflow-hidden">
+                  <div className="relative z-10 flex justify-between items-start mb-10 pt-4">
+                    <div>
+                      <p className="text-gray-400 font-black text-xs mb-1">الرصيد المتاح</p>
+                      <h2 className="text-5xl font-black italic">{userProfile.wallet} <span className="text-lg">د.ع</span></h2>
+                    </div>
+                    {/* زر الإغلاق الجديد: أكبر، أبعد عن الحافة، ومنطقة ضغط واسعة */}
+                    <button 
+                      onClick={() => setIsWalletOpen(false)} 
+                      className="w-12 h-12 flex items-center justify-center bg-white/10 hover:bg-white/20 active:scale-90 transition-all rounded-full border border-white/20 shadow-lg"
+                    >
+                      <X className="w-6 h-6 text-white"/>
+                    </button>
+                  </div>
+                  <Truck className="absolute -right-10 -bottom-10 w-48 h-48 text-white/5 -rotate-12" />
+               </div>
+
+               <div className="p-8 flex-1 space-y-8">
+                  <div className="space-y-4">
+                    <h4 className="font-black text-gray-800">تعبئة الرصيد</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                        <button onClick={() => handleTopUp("Zain Cash")} className="flex flex-col items-center gap-4 bg-gray-50 p-6 rounded-[35px] hover:border-orange-500 border-2 border-transparent transition-all">
+                           <div className="w-14 h-14 bg-[#D12B2F] rounded-2xl flex items-center justify-center font-black text-white italic text-xs shadow-lg">Zain</div>
+                           <span className="font-black text-sm">زين كاش</span>
+                        </button>
+                        <button onClick={() => handleTopUp("MasterCard")} className="flex flex-col items-center gap-4 bg-gray-50 p-6 rounded-[35px] hover:border-blue-600 border-2 border-transparent transition-all">
+                           <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg"><CreditCard /></div>
+                           <span className="font-black text-sm">ماستر كارد</span>
+                        </button>
+                    </div>
+                  </div>
+                  <div className="p-6 bg-orange-50 rounded-[35px] border border-orange-100">
+                    <h5 className="font-black text-orange-700 text-sm mb-2 italic">ملاحظة الأمان</h5>
+                    <p className="text-xs text-orange-600 leading-relaxed font-bold">يتم تأمين كافة المعاملات المالية عبر بروتوكول حماية مشفر. لا نقوم بتخزين معلومات بطاقتك الائتمانية.</p>
+                  </div>
+               </div>
+            </motion.div>
           )}
       </AnimatePresence>
     </div>

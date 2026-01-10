@@ -10,7 +10,6 @@ export const requests = pgTable("requests", {
   vehicleType: text("vehicle_type").notNull(), 
   price: text("price").notNull(),
   pickupAddress: text("location").notNull(), 
-  // ✅ تم التعديل هنا: أزلنا .notNull() للسماح للطلبات القديمة بالمرور وتجنب خطأ 23502
   customerPhone: text("customer_phone").default("07700000000"), 
   pickupLat: text("pickup_lat"),
   pickupLng: text("pickup_lng"),
@@ -52,9 +51,12 @@ export const transactions = pgTable("transactions", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// ✅ تم تصحيح جدول الزبائن بإضافة الحقول اللازمة لتسجيل الدخول
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
+  phone: text("phone").notNull().unique(), // 🆕 إضافة حقل الهاتف
+  password: text("password").notNull(), // 🆕 إضافة حقل كلمة السر
   walletBalance: decimal("wallet_balance", { precision: 10, scale: 2 }).notNull().default("0.00"),
 });
 
@@ -63,6 +65,12 @@ export const insertRequestSchema = createInsertSchema(requests).omit({
   id: true, 
   status: true, 
   createdAt: true 
+});
+
+// 🆕 إضافة سكيما إدخال الزبائن (لحل مشكلة التسجيل)
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  walletBalance: true
 });
 
 export const insertDriverSchema = createInsertSchema(drivers, {
@@ -89,6 +97,8 @@ export const loginSchema = z.object({
 });
 
 // === EXPLICIT API CONTRACT TYPES ===
+export type User = typeof users.$inferSelect; // 🆕 إضافة نوع الزبون
+export type InsertUser = z.infer<typeof insertUserSchema>; // 🆕 إضافة نوع إدخال الزبون
 export type Request = typeof requests.$inferSelect;
 export type InsertRequest = z.infer<typeof insertRequestSchema>;
 export type Driver = typeof drivers.$inferSelect;
