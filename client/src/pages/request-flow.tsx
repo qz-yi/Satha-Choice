@@ -100,7 +100,7 @@ export default function RequestFlow() {
     destLat: 33.3152, destLng: 44.3661, vehicleType: "", price: "", timeMode: "now" as "now" | "later",
   });
 
-  // --- Load Saved Session [تعديل لضمان عدم الحذف عند الخروج] ---
+  // --- Load Saved Session ---
   useEffect(() => {
     const saved = localStorage.getItem("sat7a_user");
     const sessionActive = localStorage.getItem("sat7a_session_active");
@@ -128,11 +128,11 @@ export default function RequestFlow() {
     };
   }, [isChatOpen]);
 
-  // --- Auth Handlers [تم تحسين المنطق دون حذف أي واجهة] ---
+  // --- Auth Handlers ---
   const handleSignUp = (e: React.FormEvent) => {
     e.preventDefault();
     localStorage.setItem("sat7a_user", JSON.stringify(userProfile));
-    localStorage.setItem("sat7a_session_active", "true"); // تفعيل الجلسة
+    localStorage.setItem("sat7a_session_active", "true");
     setIsLoggedIn(true);
   };
 
@@ -143,19 +143,16 @@ export default function RequestFlow() {
       const parsed = JSON.parse(saved);
       if (parsed.phone === userProfile.phone && parsed.password === userProfile.password) {
         setUserProfile(parsed); 
-        localStorage.setItem("sat7a_session_active", "true"); // تفعيل الجلسة
+        localStorage.setItem("sat7a_session_active", "true");
         setIsLoggedIn(true);
       } else { alert("خطأ في الرقم أو كلمة السر"); }
     } else { alert("الحساب غير موجود"); }
   };
 
   const handleLogout = () => {
-    // التعديل الجوهري هنا: نغير حالة الجلسة فقط ولا نحذف بيانات الحساب
     localStorage.setItem("sat7a_session_active", "false");
     setIsLoggedIn(false); 
     setAuthMode("choice");
-    // تعليق الريفرش التلقائي للسماح للمستخدم بالبقاء في واجهة الاختيار
-    // window.location.reload(); 
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -165,7 +162,6 @@ export default function RequestFlow() {
       reader.onloadend = () => {
         const base64 = reader.result as string;
         setUserProfile(prev => ({ ...prev, image: base64 }));
-        // تحديث البيانات المخزنة فورياً عند تغيير الصورة
         const saved = localStorage.getItem("sat7a_user");
         if(saved) {
           const parsed = JSON.parse(saved);
@@ -205,10 +201,8 @@ export default function RequestFlow() {
     setIsSearchOpen(false); setTimeout(() => setShouldFly(false), 2000);
   };
 
-  // --- Wallet Logic ---
   const handleTopUp = (method: string) => {
     alert(`سيتم توجيهك الآن لبوابة ${method} لإتمام عملية الدفع وتعبئة رصيدك.`);
-    // هنا سيتم وضع API زين كاش لاحقاً
   };
 
   const handleFinalOrder = () => {
@@ -216,8 +210,6 @@ export default function RequestFlow() {
       alert("عذراً، رصيد محفظتك غير كافٍ لهذه الرحلة. يرجى اختيار الدفع النقدي أو تعبئة المحفظة.");
       return;
     }
-
-    // إرسال الطلب للسيرفر مع طريقة الدفع
     socket.emit("create_order", {
       ...formData,
       customerId: userProfile.phone,
@@ -226,7 +218,7 @@ export default function RequestFlow() {
     setViewState("success");
   };
 
-  // --- Login/Signup Interface ---
+  // --- Auth Interface ---
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-white flex flex-col p-6 relative overflow-hidden font-sans" dir="rtl">
@@ -311,7 +303,6 @@ export default function RequestFlow() {
     );
   }
 
-  // --- Success State ---
   if (viewState === "success") return (
     <div className="min-h-screen bg-white flex flex-col items-center justify-center p-8 text-center" dir="rtl">
       <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="space-y-8">
@@ -326,7 +317,6 @@ export default function RequestFlow() {
     </div>
   );
 
-  // --- Tracking State ---
   if (viewState === "tracking") return (
     <div className="h-screen w-full bg-slate-50 flex flex-col relative" dir="rtl">
         <div className="absolute inset-0 z-0">
@@ -395,11 +385,9 @@ export default function RequestFlow() {
     </div>
   );
 
-  // --- Main Booking State ---
   return (
     <div className="h-screen w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative" dir="rtl">
-
-      {/* Sidebar Sheet */}
+      
       <header className="absolute top-0 inset-x-0 z-[4000] p-6 flex flex-col gap-3">
           <div className="flex items-start gap-3 w-full">
               <Sheet>
@@ -433,7 +421,7 @@ export default function RequestFlow() {
                     </div>
                 </SheetContent>
               </Sheet>
-
+            
               <div onClick={() => step !== "vehicle" && setIsSearchOpen(true)} className="flex-1 bg-white shadow-2xl rounded-[28px] p-4 flex flex-col justify-center border border-white cursor-pointer transition-transform active:scale-95">
                 <StepIndicator step={step} />
                 <div className="flex items-center justify-between">
@@ -447,7 +435,6 @@ export default function RequestFlow() {
           </div>
       </header>
 
-      {/* Map Content */}
       <div className="flex-1 relative z-0">
         {(step === "pickup" || step === "dropoff") && (
           <>
@@ -470,33 +457,32 @@ export default function RequestFlow() {
           </>
         )}
 
-        {/* Vehicle Selection + Payment Selection */}
+        {/* Vehicle Selection - تم تحديث الحشوات والأحجام هنا بدقة لضمان الوصول لخيار الدفع */}
         {step === "vehicle" && (
-          <div className="h-full overflow-y-auto p-6 pt-36 pb-48 space-y-4 bg-gray-50">
+          <div className="h-full overflow-y-auto p-4 pt-28 pb-64 space-y-3 bg-gray-50">
             {VEHICLE_OPTIONS.map((opt) => (
               <div key={opt.id} onClick={() => setFormData(p => ({...p, vehicleType: opt.id, price: opt.price.toString()}))}
-                   className={`p-5 rounded-[32px] border-2 transition-all flex justify-between items-center ${formData.vehicleType === opt.id ? 'bg-orange-500 border-orange-500 text-white shadow-xl scale-[1.02]' : 'bg-white border-transparent shadow-sm'}`}>
-                  <div className="flex items-center gap-4">
-                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${formData.vehicleType === opt.id ? 'bg-white/20' : 'bg-orange-50 text-orange-500'}`}><Truck className="w-8 h-8" /></div>
-                      <div><h4 className="font-black text-lg">{opt.label}</h4><p className="text-[10px]">تصل خلال 10 دقائق</p></div>
+                   className={`p-4 rounded-[28px] border-2 transition-all flex justify-between items-center ${formData.vehicleType === opt.id ? 'bg-orange-500 border-orange-500 text-white shadow-lg scale-[1.01]' : 'bg-white border-transparent shadow-sm'}`}>
+                  <div className="flex items-center gap-3">
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${formData.vehicleType === opt.id ? 'bg-white/20' : 'bg-orange-50 text-orange-500'}`}><Truck className="w-6 h-6" /></div>
+                      <div><h4 className="font-black text-base">{opt.label}</h4><p className="text-[10px] opacity-80">تصل خلال 10 دقائق</p></div>
                   </div>
-                  <span className="text-xl font-black">{opt.price} <span className="text-xs">د.ع</span></span>
+                  <span className="text-lg font-black">{opt.price} <span className="text-xs">د.ع</span></span>
               </div>
             ))}
 
-            {/* Payment Method Switcher */}
-            <div className="bg-white p-6 rounded-[35px] shadow-sm border border-gray-100 space-y-4">
-                <h4 className="font-black text-gray-800 text-sm">اختر طريقة الدفع</h4>
-                <div className="flex gap-3">
+            <div className="bg-white p-5 rounded-[30px] shadow-sm border border-gray-100 space-y-3">
+                <h4 className="font-black text-gray-800 text-xs">اختر طريقة الدفع</h4>
+                <div className="flex gap-2">
                     <button 
                         onClick={() => setPaymentMethod("cash")}
-                        className={`flex-1 h-16 rounded-[20px] font-black transition-all flex items-center justify-center gap-2 ${paymentMethod === "cash" ? "bg-black text-white shadow-lg" : "bg-gray-50 text-gray-400"}`}
+                        className={`flex-1 h-12 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 ${paymentMethod === "cash" ? "bg-black text-white shadow-md" : "bg-gray-50 text-gray-400"}`}
                     >
                         <RotateCcw className="w-4 h-4" /> كاش
                     </button>
                     <button 
                         onClick={() => setPaymentMethod("wallet")}
-                        className={`flex-1 h-16 rounded-[20px] font-black transition-all flex items-center justify-center gap-2 ${paymentMethod === "wallet" ? "bg-orange-500 text-white shadow-lg" : "bg-gray-50 text-gray-400"}`}
+                        className={`flex-1 h-12 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 ${paymentMethod === "wallet" ? "bg-orange-500 text-white shadow-md" : "bg-gray-50 text-gray-400"}`}
                     >
                         <Wallet className="w-4 h-4" /> المحفظة
                     </button>
@@ -523,9 +509,7 @@ export default function RequestFlow() {
           )}
       </footer>
 
-      {/* --- Overlay Panels (Search, Wallet, History) --- */}
       <AnimatePresence>
-          {/* Search Panel */}
           {isSearchOpen && (
               <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="absolute inset-0 z-[9999] bg-white p-6 flex flex-col">
                 <div className="flex items-center gap-4 mb-8">
@@ -551,7 +535,6 @@ export default function RequestFlow() {
               </motion.div>
           )}
 
-          {/* History Panel */}
           {isHistoryOpen && (
             <motion.div initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} className="absolute inset-0 z-[9000] bg-white flex flex-col">
               <div className="p-6 border-b flex justify-between items-center">
@@ -579,7 +562,6 @@ export default function RequestFlow() {
             </motion.div>
           )}
 
-          {/* Wallet Panel */}
           {isWalletOpen && (
             <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="absolute inset-0 z-[9000] bg-white flex flex-col">
                <div className="p-8 bg-black text-white rounded-b-[50px] relative overflow-hidden">
