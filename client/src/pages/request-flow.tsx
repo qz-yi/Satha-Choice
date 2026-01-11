@@ -62,12 +62,14 @@ const StepIndicator = ({ step }: { step: string }) => {
 export default function RequestFlow() {
   const [, setLocation] = useLocation();
 
+  // --- Auth & Profile State ---
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authMode, setAuthMode] = useState<"choice" | "login" | "signup">("choice");
   const [userProfile, setUserProfile] = useState({
-    name: "", phone: "", password: "", address: "", image: null as string | null, wallet: "25,000", trips: "12"
+    name: "", phone: "", password: "", address: "", image: null as string | null, wallet: "25000", trips: "12"
   });
 
+  // --- Main App States ---
   const [step, setStep] = useState<"pickup" | "dropoff" | "vehicle">("pickup");
   const [viewState, setViewState] = useState<"booking" | "success" | "tracking">("booking");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -83,6 +85,7 @@ export default function RequestFlow() {
   const [chatMessage, setChatMessage] = useState("");
   const [messages, setMessages] = useState<any[]>([]);
 
+  // --- New Feature States (Wallet & History) ---
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "wallet">("cash");
@@ -97,6 +100,7 @@ export default function RequestFlow() {
     destLat: 33.3152, destLng: 44.3661, vehicleType: "", price: "", timeMode: "now" as "now" | "later",
   });
 
+  // --- Load Saved Session [تعديل لضمان عدم الحذف عند الخروج] ---
   useEffect(() => {
     const saved = localStorage.getItem("sat7a_user");
     const sessionActive = localStorage.getItem("sat7a_session_active");
@@ -106,6 +110,7 @@ export default function RequestFlow() {
     }
   }, []);
 
+  // --- Socket Listeners ---
   useEffect(() => {
     socket.on("receive_location", (data) => {
         setDriverLocation([data.lat, data.lng]);
@@ -123,10 +128,11 @@ export default function RequestFlow() {
     };
   }, [isChatOpen]);
 
+  // --- Auth Handlers [تم تحسين المنطق دون حذف أي واجهة] ---
   const handleSignUp = (e: React.FormEvent) => {
     e.preventDefault();
     localStorage.setItem("sat7a_user", JSON.stringify(userProfile));
-    localStorage.setItem("sat7a_session_active", "true");
+    localStorage.setItem("sat7a_session_active", "true"); // تفعيل الجلسة
     setIsLoggedIn(true);
   };
 
@@ -137,16 +143,19 @@ export default function RequestFlow() {
       const parsed = JSON.parse(saved);
       if (parsed.phone === userProfile.phone && parsed.password === userProfile.password) {
         setUserProfile(parsed); 
-        localStorage.setItem("sat7a_session_active", "true");
+        localStorage.setItem("sat7a_session_active", "true"); // تفعيل الجلسة
         setIsLoggedIn(true);
       } else { alert("خطأ في الرقم أو كلمة السر"); }
     } else { alert("الحساب غير موجود"); }
   };
 
   const handleLogout = () => {
+    // التعديل الجوهري هنا: نغير حالة الجلسة فقط ولا نحذف بيانات الحساب
     localStorage.setItem("sat7a_session_active", "false");
     setIsLoggedIn(false); 
     setAuthMode("choice");
+    // تعليق الريفرش التلقائي للسماح للمستخدم بالبقاء في واجهة الاختيار
+    // window.location.reload(); 
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -156,6 +165,7 @@ export default function RequestFlow() {
       reader.onloadend = () => {
         const base64 = reader.result as string;
         setUserProfile(prev => ({ ...prev, image: base64 }));
+        // تحديث البيانات المخزنة فورياً عند تغيير الصورة
         const saved = localStorage.getItem("sat7a_user");
         if(saved) {
           const parsed = JSON.parse(saved);
@@ -195,15 +205,19 @@ export default function RequestFlow() {
     setIsSearchOpen(false); setTimeout(() => setShouldFly(false), 2000);
   };
 
+  // --- Wallet Logic ---
   const handleTopUp = (method: string) => {
     alert(`سيتم توجيهك الآن لبوابة ${method} لإتمام عملية الدفع وتعبئة رصيدك.`);
+    // هنا سيتم وضع API زين كاش لاحقاً
   };
 
   const handleFinalOrder = () => {
-    if (paymentMethod === "wallet" && parseFloat(userProfile.wallet.replace(',','')) < parseFloat(formData.price)) {
+    if (paymentMethod === "wallet" && parseFloat(userProfile.wallet) < parseFloat(formData.price)) {
       alert("عذراً، رصيد محفظتك غير كافٍ لهذه الرحلة. يرجى اختيار الدفع النقدي أو تعبئة المحفظة.");
       return;
     }
+
+    // إرسال الطلب للسيرفر مع طريقة الدفع
     socket.emit("create_order", {
       ...formData,
       customerId: userProfile.phone,
@@ -212,6 +226,7 @@ export default function RequestFlow() {
     setViewState("success");
   };
 
+  // --- Login/Signup Interface ---
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-white flex flex-col p-6 relative overflow-hidden font-sans" dir="rtl">
@@ -296,6 +311,7 @@ export default function RequestFlow() {
     );
   }
 
+  // --- Success State ---
   if (viewState === "success") return (
     <div className="min-h-screen bg-white flex flex-col items-center justify-center p-8 text-center" dir="rtl">
       <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="space-y-8">
@@ -310,11 +326,12 @@ export default function RequestFlow() {
     </div>
   );
 
+  // --- Tracking State ---
   if (viewState === "tracking") return (
     <div className="h-screen w-full bg-slate-50 flex flex-col relative" dir="rtl">
         <div className="absolute inset-0 z-0">
             <MapContainer center={[formData.pickupLat, formData.pickupLng]} zoom={15} style={{ height: "100%", width: "100%" }} zoomControl={false}>
-                <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" />
+                <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="&copy; Google Maps" detectRetina={true} tileSize={256}/>
                 {driverLocation && <Marker position={driverLocation} icon={getOrangeArrowIcon(driverHeading)} />}
                 <Marker position={[formData.pickupLat, formData.pickupLng]} />
                 <FlyToMarker center={driverLocation || [formData.pickupLat, formData.pickupLng]} shouldFly={!!driverLocation} />
@@ -378,9 +395,11 @@ export default function RequestFlow() {
     </div>
   );
 
+  // --- Main Booking State ---
   return (
     <div className="h-screen w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative" dir="rtl">
-      
+
+      {/* Sidebar Sheet */}
       <header className="absolute top-0 inset-x-0 z-[4000] p-6 flex flex-col gap-3">
           <div className="flex items-start gap-3 w-full">
               <Sheet>
@@ -414,7 +433,7 @@ export default function RequestFlow() {
                     </div>
                 </SheetContent>
               </Sheet>
-            
+
               <div onClick={() => step !== "vehicle" && setIsSearchOpen(true)} className="flex-1 bg-white shadow-2xl rounded-[28px] p-4 flex flex-col justify-center border border-white cursor-pointer transition-transform active:scale-95">
                 <StepIndicator step={step} />
                 <div className="flex items-center justify-between">
@@ -428,11 +447,12 @@ export default function RequestFlow() {
           </div>
       </header>
 
+      {/* Map Content */}
       <div className="flex-1 relative z-0">
         {(step === "pickup" || step === "dropoff") && (
           <>
             <MapContainer center={[33.3152, 44.3661]} zoom={15} style={{ height: "100%", width: "100%" }} zoomControl={false}>
-              <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" />
+              <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="&copy; Google Maps" detectRetina={true} tileSize={256}/>
               <FlyToMarker center={step === "pickup" ? [formData.pickupLat, formData.pickupLng] : [formData.destLat, formData.destLng]} shouldFly={shouldFly} />
               <MapEventsHandler onMove={(center) => {
                  setShouldFly(false);
@@ -450,9 +470,9 @@ export default function RequestFlow() {
           </>
         )}
 
+        {/* Vehicle Selection + Payment Selection */}
         {step === "vehicle" && (
-          /* تم زيادة الـ pb لضمان ظهور زر الدفع عند السحب */
-          <div className="h-full overflow-y-auto p-6 pt-36 pb-64 space-y-4 bg-gray-50 scroll-smooth">
+          <div className="h-full overflow-y-auto p-6 pt-36 pb-48 space-y-4 bg-gray-50">
             {VEHICLE_OPTIONS.map((opt) => (
               <div key={opt.id} onClick={() => setFormData(p => ({...p, vehicleType: opt.id, price: opt.price.toString()}))}
                    className={`p-5 rounded-[32px] border-2 transition-all flex justify-between items-center ${formData.vehicleType === opt.id ? 'bg-orange-500 border-orange-500 text-white shadow-xl scale-[1.02]' : 'bg-white border-transparent shadow-sm'}`}>
@@ -464,7 +484,8 @@ export default function RequestFlow() {
               </div>
             ))}
 
-            <div className="bg-white p-6 rounded-[35px] shadow-sm border border-gray-100 space-y-4 mb-10">
+            {/* Payment Method Switcher */}
+            <div className="bg-white p-6 rounded-[35px] shadow-sm border border-gray-100 space-y-4">
                 <h4 className="font-black text-gray-800 text-sm">اختر طريقة الدفع</h4>
                 <div className="flex gap-3">
                     <button 
@@ -485,7 +506,7 @@ export default function RequestFlow() {
         )}
       </div>
 
-      <footer className="fixed bottom-0 inset-x-0 bg-white p-8 pb-10 rounded-t-[45px] shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-[4000] border-t border-gray-50">
+      <footer className="fixed bottom-0 inset-x-0 bg-white p-8 pb-10 rounded-t-[45px] shadow-2xl z-[4000] border-t border-gray-50">
           <Button 
             onClick={() => {
                 if (step === "pickup") setStep("dropoff");
@@ -502,7 +523,9 @@ export default function RequestFlow() {
           )}
       </footer>
 
+      {/* --- Overlay Panels (Search, Wallet, History) --- */}
       <AnimatePresence>
+          {/* Search Panel */}
           {isSearchOpen && (
               <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="absolute inset-0 z-[9999] bg-white p-6 flex flex-col">
                 <div className="flex items-center gap-4 mb-8">
@@ -528,6 +551,7 @@ export default function RequestFlow() {
               </motion.div>
           )}
 
+          {/* History Panel */}
           {isHistoryOpen && (
             <motion.div initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} className="absolute inset-0 z-[9000] bg-white flex flex-col">
               <div className="p-6 border-b flex justify-between items-center">
@@ -555,22 +579,16 @@ export default function RequestFlow() {
             </motion.div>
           )}
 
+          {/* Wallet Panel */}
           {isWalletOpen && (
             <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="absolute inset-0 z-[9000] bg-white flex flex-col">
-               {/* Header المحفظة - تم تعديل مكان زر الإغلاق لسهولة الوصول */}
                <div className="p-8 bg-black text-white rounded-b-[50px] relative overflow-hidden">
-                  <div className="relative z-10 flex justify-between items-start mb-10 pt-4">
+                  <div className="relative z-10 flex justify-between items-start mb-10">
                     <div>
                       <p className="text-gray-400 font-black text-xs mb-1">الرصيد المتاح</p>
                       <h2 className="text-5xl font-black italic">{userProfile.wallet} <span className="text-lg">د.ع</span></h2>
                     </div>
-                    {/* زر الإغلاق الجديد: أكبر، أبعد عن الحافة، ومنطقة ضغط واسعة */}
-                    <button 
-                      onClick={() => setIsWalletOpen(false)} 
-                      className="w-12 h-12 flex items-center justify-center bg-white/10 hover:bg-white/20 active:scale-90 transition-all rounded-full border border-white/20 shadow-lg"
-                    >
-                      <X className="w-6 h-6 text-white"/>
-                    </button>
+                    <Button variant="ghost" onClick={() => setIsWalletOpen(false)} className="text-white hover:bg-white/10 rounded-2xl"><X/></Button>
                   </div>
                   <Truck className="absolute -right-10 -bottom-10 w-48 h-48 text-white/5 -rotate-12" />
                </div>
@@ -589,6 +607,7 @@ export default function RequestFlow() {
                         </button>
                     </div>
                   </div>
+
                   <div className="p-6 bg-orange-50 rounded-[35px] border border-orange-100">
                     <h5 className="font-black text-orange-700 text-sm mb-2 italic">ملاحظة الأمان</h5>
                     <p className="text-xs text-orange-600 leading-relaxed font-bold">يتم تأمين كافة المعاملات المالية عبر بروتوكول حماية مشفر. لا نقوم بتخزين معلومات بطاقتك الائتمانية.</p>
