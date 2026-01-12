@@ -293,19 +293,31 @@ export default function DriverDashboard() {
     </div>
   );
 
-  if (!driverInfo || driverInfo.status === "pending" || !driverInfo.status) {
+if (!driverInfo || driverInfo.status !== "approved") {
+    const isBlocked = driverInfo?.status === "blocked";
     return (
       <div className="h-screen flex flex-col items-center justify-center p-8 text-center bg-[#F3F4F6] font-sans" dir="rtl">
-        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white p-10 rounded-[45px] shadow-2xl max-w-md w-full border-t-[12px] border-orange-500">
-          <div className="w-24 h-24 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-6"><Clock className="w-12 h-12 text-orange-500 animate-pulse" /></div>
-          <h2 className="text-3xl font-black text-gray-800 mb-4 italic">طلبك قيد المراجعة</h2>
-          <p className="text-gray-500 font-bold mb-8 text-lg leading-relaxed">أهلاً بك كابتن <span className="text-orange-600 font-black">"{driverInfo?.name || 'الجديد'}"</span>. <br/> يتم تدقيق بياناتك حالياً. سيتم تفعيل حسابك فور الانتهاء.</p>
-          <Button onClick={() => refetch()} className="w-full h-14 rounded-2xl font-black bg-orange-500 hover:bg-orange-600 gap-2 mb-4"><RefreshCw className="w-4 h-4" /> تحديث الحالة الآن</Button>
+        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} 
+          className={`bg-white p-10 rounded-[45px] shadow-2xl max-w-md w-full border-t-[12px] ${isBlocked ? 'border-red-500' : 'border-orange-500'}`}>
+          <div className={`w-24 h-24 ${isBlocked ? 'bg-red-50' : 'bg-orange-50'} rounded-full flex items-center justify-center mx-auto mb-6`}>
+            {isBlocked ? <ShieldAlert className="w-12 h-12 text-red-500" /> : <Clock className="w-12 h-12 text-orange-500 animate-pulse" />}
+          </div>
+          <h2 className={`text-3xl font-black mb-4 italic ${isBlocked ? 'text-red-600' : 'text-gray-800'}`}>
+            {isBlocked ? "الحساب مغلق" : "طلبك قيد المراجعة"}
+          </h2>
+          <p className="text-gray-500 font-bold mb-8 text-lg leading-relaxed">
+            {isBlocked 
+              ? <>عذراً كابتن <span className="text-red-600 font-black">"{driverInfo?.name}"</span>، تم إيقاف حسابك من قبل الإدارة. يرجى التواصل مع الدعم.</>
+              : <>أهلاً بك كابتن <span className="text-orange-600 font-black">"{driverInfo?.name || 'الجديد'}"</span>. يتم تدقيق بياناتك حالياً.</>}
+          </p>
+          <Button onClick={() => refetch()} className={`w-full h-14 rounded-2xl font-black gap-2 mb-4 ${isBlocked ? 'bg-red-500' : 'bg-orange-500'}`}>
+            <RefreshCw className="w-4 h-4" /> تحديث الحالة
+          </Button>
           <Button onClick={() => setLocation("/")} variant="outline" className="w-full h-14 rounded-2xl font-black border-2">العودة للرئيسية</Button>
         </motion.div>
       </div>
     );
-  }
+}
 
   return (
     <div className="h-screen w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative font-sans" dir="rtl">
