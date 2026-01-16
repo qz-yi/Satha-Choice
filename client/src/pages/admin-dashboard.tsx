@@ -3,7 +3,7 @@ import {
   Users, Truck, Map as MapIcon, ShieldCheck,
   Power, CheckCircle2, XCircle, Menu, Activity,
   Search, Trash2, ArrowLeftRight,
-  UserPlus, AlertCircle, Phone, MapPin, Wallet, TrendingUp, CreditCard, Clock, ShieldAlert
+  UserPlus, AlertCircle, Phone, MapPin, Wallet, TrendingUp, CreditCard, Clock, ShieldAlert, Settings2, Coins
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
@@ -26,6 +26,7 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("map");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [newCommission, setNewCommission] = useState(""); // للحالة الخاصة بإدخال العمولة الجديدة
 
   const [assigningRequest, setAssigningRequest] = useState<Request | null>(null);
   const [selectedDriverForAssign, setSelectedDriverForAssign] = useState<Driver | null>(null);
@@ -34,22 +35,45 @@ export default function AdminDashboard() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
+  // --- Queries ---
   const { data: allDrivers = [] } = useQuery<Driver[]>({ queryKey: ["/api/drivers"] });
   const { data: allRequests = [] } = useQuery<Request[]>({ 
     queryKey: ["/api/requests"], 
     refetchInterval: 5000 
   });
 
+  // جلب سجل العمليات المالية
   const { data: allTransactions = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/transactions"],
     enabled: activeTab === "finance"
   });
 
+  // جلب إعدادات النظام (العمولة الحالية)
+  const { data: systemSettings } = useQuery<any>({
+    queryKey: ["/api/admin/settings"],
+    enabled: activeTab === "finance"
+  });
+
   const systemEarnings = allTransactions
-    .filter(t => t.type === 'fee')
+    .filter(t => t.type === 'fee' || t.type === 'commission')
     .reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
 
   // --- Mutations ---
+
+  // تحديث العمولة في النظام
+  const updateCommissionMutation = useMutation({
+    mutationFn: async (amount: number) => {
+      return await apiRequest("POST", "/api/admin/settings/commission", { amount });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
+      toast({ title: "تم تحديث قيمة العمولة بنجاح" });
+      setNewCommission("");
+    },
+    onError: () => {
+      toast({ variant: "destructive", title: "فشل تحديث العمولة" });
+    }
+  });
 
   const toggleAccountStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: number, status: string }) => {
@@ -162,7 +186,6 @@ export default function AdminDashboard() {
       <div className={`p-6 rounded-[35px] shadow-sm border transition-all duration-300 ${!isAccountActive ? 'bg-gray-100 border-red-100' : 'bg-white border-gray-100'} flex flex-col gap-4 relative overflow-hidden`}>
         
         <div className="flex justify-end gap-6 mb-[-10px] z-10">
-            {/* زر اتصال/قطع - التصميم الاحترافي الجديد */}
             <div className="flex flex-col items-center gap-1.5">
               <span className="text-[10px] font-black text-gray-500 uppercase tracking-tight">اتصال</span>
               <div 
@@ -186,7 +209,6 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* زر الحساب/إغلاق - التصميم الاحترافي الجديد */}
             <div className="flex flex-col items-center gap-1.5">
               <span className="text-[10px] font-black text-gray-500 uppercase tracking-tight">الحساب</span>
               <div 
@@ -257,7 +279,7 @@ export default function AdminDashboard() {
   return (
     <div className="flex flex-col md:flex-row h-screen bg-[#F3F4F6] font-sans" dir="rtl">
       
-      {/* Sidebar - Remains exactly the same */}
+      {/* Sidebar */}
       <aside className={`${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} md:translate-x-0 fixed md:relative z-[5000] w-72 h-full bg-slate-950 text-white flex flex-col p-6 shadow-2xl transition-transform duration-500`}>
         <div className="flex items-center justify-between mb-12">
           <div className="flex items-center gap-3">
@@ -389,44 +411,117 @@ export default function AdminDashboard() {
                 </motion.div>
             )}
 
+            {/* القسم المطور: المالية والأرباح مع زر تعديل العمولة */}
             {activeTab === "finance" && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} key="finance-view" className="space-y-6">
-                    <h2 className="text-2xl font-black italic px-2">السجل المالي</h2>
-                    <div className="bg-white rounded-[40px] shadow-sm overflow-hidden border border-gray-100">
-                        <table className="w-full text-right">
-                            <thead className="bg-gray-50 text-gray-400 text-xs font-black uppercase">
-                                <tr>
-                                    <th className="px-6 py-4">التاريخ</th>
-                                    <th className="px-6 py-4">نوع العملية</th>
-                                    <th className="px-6 py-4">المبلغ</th>
-                                    <th className="px-6 py-4">الحالة</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                                {allTransactions.map((tx) => (
-                                    <tr key={tx.id} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="px-6 py-4 text-xs font-bold text-gray-500">{new Date(tx.createdAt).toLocaleString('ar-EG')}</td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2">
-                                                {tx.type === 'deposit' ? <CreditCard className="w-4 h-4 text-green-500"/> : <TrendingUp className="w-4 h-4 text-blue-500"/>}
-                                                <span className="font-black text-slate-700 text-sm">{tx.type === 'deposit' ? 'شحن محفظة' : 'عمولة رحلة'}</span>
-                                            </div>
-                                        </td>
-                                        <td className={`px-6 py-4 font-black ${tx.amount > 0 ? 'text-green-600' : 'text-blue-600'}`}>
-                                            {tx.amount.toLocaleString()} د.ع
-                                        </td>
-                                        <td className="px-6 py-4"><span className="bg-green-100 text-green-600 text-[10px] px-2 py-1 rounded-full font-black">مكتمل</span></td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} key="finance-view" className="space-y-8">
+                    <div className="flex items-center justify-between px-2">
+                        <h2 className="text-2xl font-black italic">إدارة المالية والعمولات</h2>
+                        <div className="bg-white px-4 py-2 rounded-2xl shadow-sm border flex items-center gap-3">
+                            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
+                            <span className="text-xs font-black text-slate-600 tracking-tighter">النظام متصل وجاهز</span>
+                        </div>
+                    </div>
+
+                    {/* كرت التحكم بالعمولة - تصميم عصري */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-1 bg-slate-950 rounded-[40px] p-8 text-white relative overflow-hidden shadow-2xl">
+                            <div className="absolute top-[-20px] left-[-20px] w-40 h-40 bg-orange-500/10 rounded-full blur-3xl" />
+                            <div className="relative z-10">
+                                <div className="flex items-center gap-3 mb-6">
+                                    <div className="bg-orange-500 p-3 rounded-2xl shadow-lg shadow-orange-500/30">
+                                        <Coins className="w-6 h-6 text-white" />
+                                    </div>
+                                    <span className="font-black text-lg italic tracking-tight">عمولة النظام</span>
+                                </div>
+                                
+                                <p className="text-slate-400 text-xs font-bold mb-2">القيمة الحالية لكل طلب</p>
+                                <div className="flex items-baseline gap-2 mb-8">
+                                    <h4 className="text-4xl font-black text-orange-500">
+                                        {systemSettings?.commissionAmount?.toLocaleString() || "1,000"}
+                                    </h4>
+                                    <span className="text-xs font-black text-slate-500">د.ع</span>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="relative">
+                                        <input 
+                                            type="number" 
+                                            value={newCommission}
+                                            onChange={(e) => setNewCommission(e.target.value)}
+                                            placeholder="أدخل القيمة الجديدة..."
+                                            className="w-full bg-slate-900 border border-slate-800 rounded-2xl py-4 pr-12 pl-4 text-sm font-black text-white focus:border-orange-500 outline-none transition-all"
+                                        />
+                                        <Settings2 className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-600" />
+                                    </div>
+                                    <Button 
+                                        onClick={() => {
+                                            if(!newCommission) return toast({ title: "يرجى إدخال مبلغ" });
+                                            updateCommissionMutation.mutate(Number(newCommission));
+                                        }}
+                                        className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black h-14 rounded-2xl shadow-xl shadow-orange-500/20 transition-all"
+                                    >
+                                        تحديث العمولة الآن
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* جدول الحركات المالية */}
+                        <div className="lg:col-span-2 bg-white rounded-[40px] shadow-sm overflow-hidden border border-gray-100">
+                            <div className="p-6 border-b flex items-center justify-between">
+                                <h3 className="font-black text-slate-800 italic">آخر العمليات المالية</h3>
+                                <div className="p-2 bg-gray-50 rounded-xl text-gray-400"><Clock className="w-4 h-4"/></div>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-right">
+                                    <thead className="bg-gray-50/50 text-gray-400 text-[10px] font-black uppercase tracking-widest">
+                                        <tr>
+                                            <th className="px-6 py-4">التاريخ والوقت</th>
+                                            <th className="px-6 py-4">نوع العملية</th>
+                                            <th className="px-6 py-4">المبلغ</th>
+                                            <th className="px-6 py-4">الحالة</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-50">
+                                        {allTransactions.map((tx) => (
+                                            <tr key={tx.id} className="hover:bg-gray-50/30 transition-colors">
+                                                <td className="px-6 py-5 text-xs font-bold text-gray-500">
+                                                    {new Date(tx.createdAt).toLocaleString('ar-EG', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                                                </td>
+                                                <td className="px-6 py-5">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`p-2 rounded-xl ${tx.type === 'deposit' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                                                            {tx.type === 'deposit' ? <CreditCard className="w-4 h-4"/> : <TrendingUp className="w-4 h-4"/>}
+                                                        </div>
+                                                        <span className="font-black text-slate-700 text-xs">
+                                                            {tx.type === 'deposit' ? 'شحن محفظة' : 'عمولة رحلة'}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className={`px-6 py-5 font-black text-sm ${tx.amount > 0 ? 'text-green-600' : 'text-slate-900'}`}>
+                                                    {Math.abs(Number(tx.amount)).toLocaleString()} <span className="text-[10px]">د.ع</span>
+                                                </td>
+                                                <td className="px-6 py-5">
+                                                    <span className="bg-green-100 text-green-600 text-[9px] px-3 py-1 rounded-full font-black">ناجحة</span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {allTransactions.length === 0 && (
+                                            <tr>
+                                                <td colSpan={4} className="px-6 py-20 text-center text-gray-400 font-bold italic">لا توجد عمليات مسجلة حالياً</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        {/* Modals - Remain exactly the same */}
+        {/* Modals */}
         <AnimatePresence>
           {assigningRequest && (
             <div className="fixed inset-0 z-[6000] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">

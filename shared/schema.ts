@@ -5,20 +5,30 @@ import { sql } from "drizzle-orm";
 
 // === TABLE DEFINITIONS ===
 
+// التعديل الجديد: جدول إعدادات النظام للتحكم في العمولة وأي ثوابت مستقبلية
+export const settings = pgTable("settings", {
+  id: serial("id").primaryKey(),
+  commissionAmount: integer("commission_amount").notNull().default(1000), // العمولة الافتراضية 1000 دينار
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const requests = pgTable("requests", {
   id: serial("id").primaryKey(),
+  customerName: text("customer_name").default("زبون"), 
+  customerPhone: text("customer_phone").default("07700000000"),
   vehicleType: text("vehicle_type").notNull(), 
   price: text("price").notNull(),
-  pickupAddress: text("location").notNull(), 
-  customerPhone: text("customer_phone").default("07700000000"), 
+  location: text("location").default("لم يحدد العنوان"), 
+  pickupAddress: text("pickup_address"), 
   pickupLat: text("pickup_lat"),
   pickupLng: text("pickup_lng"),
-  destination: text("destination"),
+  destination: text("destination").default("غير محدد"),
   destLat: text("dest_lat"),
   destLng: text("dest_lng"),
+  city: text("city").default("بغداد"), 
   scheduledAt: timestamp("scheduled_at"),
   status: text("status").default("pending"),
-  driverId: integer("driver_id"),
+  driverId: integer("driver_id").references(() => drivers.id), 
   createdAt: timestamp("created_at").defaultNow(),
   rating: integer("rating"),
   paymentMethod: text("payment_method"),
@@ -42,32 +52,47 @@ export const drivers = pgTable("drivers", {
   avatarUrl: text("avatar_url"), 
 });
 
+// التعديل 1: تطوير جدول العمليات ليدعم "زين كاش" بشكل مباشر
 export const transactions = pgTable("transactions", {
   id: serial("id").primaryKey(),
   driverId: integer("driver_id").references(() => drivers.id).notNull(),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(), 
-  type: text("type").notNull(), 
-  referenceId: text("reference_id"), 
+  type: text("type").notNull(), // 'deposit' (شحن), 'withdrawal' (سحب), 'payment' (دفع)
+  status: text("status").notNull().default("pending"), // 'pending', 'success', 'failed'
+  zainCashId: text("zain_cash_id"), // رقم العملية المرجعي من شركة زين كاش
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// ✅ تم تصحيح جدول الزبائن بإضافة الحقول اللازمة لتسجيل الدخول
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  phone: text("phone").notNull().unique(), // 🆕 إضافة حقل الهاتف
-  password: text("password").notNull(), // 🆕 إضافة حقل كلمة السر
+  phone: text("phone").notNull().unique(), 
+  password: text("password").notNull(), 
   walletBalance: decimal("wallet_balance", { precision: 10, scale: 2 }).notNull().default("0.00"),
 });
 
-// === BASE SCHEMAS ===
-export const insertRequestSchema = createInsertSchema(requests).omit({ 
+// === BASE SCHEMAS & VALIDATION ===
+
+// مخطط إدخال الإعدادات
+export const insertSettingsSchema = createInsertSchema(settings).omit({
+  id: true,
+  updatedAt: true
+});
+
+export const insertRequestSchema = createInsertSchema(requests, {
+  city: z.string().optional().nullable(), 
+  location: z.string().optional().nullable(),
+  customerName: z.string().optional().nullable(),
+  customerPhone: z.string().optional().nullable(),
+  destination: z.string().optional().nullable(),
+  vehicleType: z.string().optional().nullable(),
+  price: z.string().optional().nullable(),
+}).omit({ 
   id: true, 
   status: true, 
   createdAt: true 
 });
 
-// 🆕 إضافة سكيما إدخال الزبائن (لحل مشكلة التسجيل)
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   walletBalance: true
@@ -91,19 +116,27 @@ export const insertDriverSchema = createInsertSchema(drivers, {
   avatarUrl: true 
 });
 
+// التعديل 2: إضافة مخطط إدخال العمليات (ضروري للسيرفر لمعالجة الدفع)
+export const insertTransactionSchema = createInsertSchema(transactions).omit({
+  id: true,
+  createdAt: true
+});
+
 export const loginSchema = z.object({
   phone: z.string().min(10, "رقم الهاتف غير صحيح"),
   password: z.string().min(6, "كلمة المرور قصيرة جداً"),
 });
 
 // === EXPLICIT API CONTRACT TYPES ===
-export type User = typeof users.$inferSelect; // 🆕 إضافة نوع الزبون
-export type InsertUser = z.infer<typeof insertUserSchema>; // 🆕 إضافة نوع إدخال الزبون
+export type Setting = typeof settings.$inferSelect; // تصدير نوع الإعدادات
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
 export type Request = typeof requests.$inferSelect;
 export type InsertRequest = z.infer<typeof insertRequestSchema>;
 export type Driver = typeof drivers.$inferSelect;
 export type InsertDriver = z.infer<typeof insertDriverSchema>;
 export type Transaction = typeof transactions.$inferSelect;
+export type InsertTransaction = z.infer<typeof insertTransactionSchema>; // التعديل 3: تصدير نوع الإدخال
 
 export const VEHICLE_OPTIONS = [
   { id: "small", label: "سطحة صغيرة", price: "25,000 د.ع", priceValue: 25000, description: "Small Flatbed" },

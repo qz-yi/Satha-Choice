@@ -3,18 +3,20 @@ import {
   requests,
   drivers,
   users,
-  transactions, // 🆕 تأكد من إضافة هذا الجدول في السكيما لاحقاً
+  transactions,
+  settings, // إضافة جدول الإعدادات
   type InsertRequest,
   type Request,
   type Driver,
   type InsertDriver,
-  type User,        // 🆕 إضافة استيراد نوع المستخدم
-  type InsertUser,  // 🆕 إضافة استيراد نوع إدخال المستخدم
+  type User,
+  type InsertUser,
+  type Setting, // إضافة نوع الإعدادات
 } from "@shared/schema";
 import { eq, desc, sql, and } from "drizzle-orm";
 
 export interface IStorage {
-  // --- 🆕 الزبائن (Users) - مضافة لحل مشكلة تسجيل دخول الزبائن ---
+  // --- الزبائن (Users) ---
   createUser(user: InsertUser): Promise<User>;
   getUser(id: number): Promise<User | undefined>;
   getUserByPhone(phone: string): Promise<User | undefined>;
@@ -36,7 +38,7 @@ export interface IStorage {
   deleteDriver(id: number): Promise<void>;
   updateDriverApprovalStatus(id: number, status: string): Promise<Driver>;
   
-  // --- 🆕 دوال العمليات المالية (المفقودة والتي تسببت بالمشكلة) ---
+  // --- دوال العمليات المالية ---
   createTransaction(data: any): Promise<any>;
   getDriverTransactions(driverId: number): Promise<any[]>;
   
@@ -44,14 +46,18 @@ export interface IStorage {
   updateRequestStatus(id: number, status: string, rating?: number, paymentMethod?: string): Promise<Request>;
   refundToCustomer(driverId: number, requestId: number, amount: number): Promise<{ driver: Driver; user: any }>;
   acceptRequest(driverId: number, requestId: number): Promise<{ request: Request; driver: Driver }>;
+
+  // --- التعديل الجديد: إعدادات النظام ---
+  getSettings(): Promise<Setting>;
+  updateCommission(amount: number): Promise<Setting>;
 }
 
 export class DatabaseStorage implements IStorage {
-  // ✅ 0. إدارة الزبائن (إضافة الدوال المفقودة)
+  // ✅ إدارة الزبائن
   async createUser(user: InsertUser): Promise<User> {
     const [newUser] = await db.insert(users).values({
       ...user,
-      walletBalance: "0.00" // تهيئة محفظة الزبون
+      walletBalance: "0.00"
     }).returning();
     return newUser;
   }
@@ -61,7 +67,6 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  // هذه الدالة هي مفتاح حل رسالة "الحساب غير موجود" في الصور
   async getUserByPhone(phone: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.phone, phone));
     return user;
@@ -82,7 +87,6 @@ export class DatabaseStorage implements IStorage {
     return request;
   }
 
-  // --- دوال التحكم المباشر (Admin Control) ---
   async assignRequestToDriver(requestId: number, driverId: number): Promise<Request> {
     const [updated] = await db
       .update(requests)
@@ -116,7 +120,7 @@ export class DatabaseStorage implements IStorage {
       status: "pending", 
       walletBalance: "0.00",
       isOnline: false,
-      avatarUrl: null // تهيئة حقل الصورة
+      avatarUrl: null
     }).returning();
     return newDriver;
   }
@@ -135,7 +139,6 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(drivers).orderBy(desc(drivers.id));
   }
 
-  // 3. التحديث والحذف (تم الحفاظ عليها لدعم الصورة والموقع)
   async updateDriver(id: number, update: Partial<Driver>): Promise<Driver> {
     const [updated] = await db
       .update(drivers)
@@ -163,7 +166,7 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  // 🆕 4. إضافة دوال سجل العمليات المالية (لحل مشكلة المحفظة)
+  // 4. العمليات المالية
   async createTransaction(data: { driverId: number; amount: string; type: string; referenceId: string }): Promise<any> {
     const [tx] = await db.insert(transactions).values({
       ...data,
@@ -208,23 +211,50 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  // 7. قبول الطلب (تعديل المنطق ليتوافق مع الرصيد)
+  // 🛠️ التعديل الجذري: سحب العمولة ديناميكياً من قاعدة البيانات
+  async getSettings(): Promise<Setting> {
+    let [systemSettings] = await db.select().from(settings).limit(1);
+    
+    // في حال كان الجدول فارغاً (أول تشغيل)، نقوم بإنشاء سجل افتراضي
+    if (!systemSettings) {
+      [systemSettings] = await db.insert(settings).values({
+        commissionAmount: 1000,
+      }).returning();
+    }
+    return systemSettings;
+  }
+
+  async updateCommission(amount: number): Promise<Setting> {
+    const currentSettings = await this.getSettings();
+    const [updated] = await db
+      .update(settings)
+      .set({ commissionAmount: amount, updatedAt: new Date() })
+      .where(eq(settings.id, currentSettings.id))
+      .returning();
+    return updated;
+  }
+
+  // 7. قبول الطلب (معدلة لتستخدم العمولة الديناميكية)
   async acceptRequest(driverId: number, requestId: number): Promise<{ request: Request; driver: Driver }> {
     return await db.transaction(async (tx) => {
+      // جلب العمولة الحالية من الإعدادات
+      const systemSettings = await this.getSettings();
+      const currentCommission = systemSettings.commissionAmount;
+
       const [driver] = await tx.select().from(drivers).where(eq(drivers.id, driverId));
       if (!driver) throw new Error("Driver not found");
       
       const balance = parseFloat(driver.walletBalance);
-      // جعلنا الحد الأدنى للرصيد 1000 دينار كما في الرووت
-      if (balance < 1000) {
-        throw new Error("رصيدك غير كافٍ. يرجى شحن المحفظة (أقل رصيد مطلوب 1000 دينار).");
+      
+      // استخدام المتغير currentCommission بدلاً من 1000 الثابتة
+      if (balance < currentCommission) {
+        throw new Error(`رصيدك غير كافٍ. يرجى شحن المحفظة (أقل رصيد مطلوب ${currentCommission} دينار).`);
       }
 
       const [request] = await tx.select().from(requests).where(eq(requests.id, requestId));
       if (!request) throw new Error("Request not found");
       if (request.status !== "pending") throw new Error("الطلب تم قبوله من سائق آخر");
 
-      // تحديث الحالة وتعيين السائق (الخصم يتم عند الإكمال لضمان حق السائق)
       const [updatedRequest] = await tx
         .update(requests)
         .set({ status: "confirmed", driverId })

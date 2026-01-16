@@ -8,7 +8,7 @@ import {
   MapPin, Check, Search, Loader2, Menu, 
   MessageSquare, History, Wallet, Phone, Truck, ChevronRight,
   LocateFixed, RotateCcw, X, Star, Navigation, Target, Send, LogOut, Camera, User, Lock, Home, ShieldCheck, CreditCard
-} from "lucide-react";
+} from "lucide-react"; 
 
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,8 @@ import L from "leaflet";
 import { io } from "socket.io-client";
 import { useLocation } from "wouter";
 
-const socket = io("http://192.168.0.104:3000");
+// ملاحظة: تأكد من أن الـ IP يتطابق مع سيرفرك الحالي أو استخدم رابط السيرفر المباشر
+const socket = io(window.location.origin); 
 
 // --- Helper Components & Icons ---
 const getOrangeArrowIcon = (rotation: number) => L.divIcon({
@@ -66,7 +67,7 @@ export default function RequestFlow() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authMode, setAuthMode] = useState<"choice" | "login" | "signup">("choice");
   const [userProfile, setUserProfile] = useState({
-    name: "", phone: "", password: "", address: "", image: null as string | null, wallet: "25000", trips: "12"
+    id: null as number | null, name: "", phone: "", password: "", address: "بغداد", image: null as string | null, wallet: "0", trips: "0"
   });
 
   // --- Main App States ---
@@ -89,15 +90,13 @@ export default function RequestFlow() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "wallet">("cash");
-  const [tripsHistory] = useState([
-    { id: 101, date: "2026-01-05", from: "المنصور", to: "اليرموك", price: "15,000", status: "completed" },
-    { id: 102, date: "2026-01-02", from: "زيونة", to: "الكرادة", price: "25,000", status: "completed" }
-  ]);
+  const [tripsHistory, setTripsHistory] = useState<any[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     location: "", destination: "", pickupLat: 33.3152, pickupLng: 44.3661,
     destLat: 33.3152, destLng: 44.3661, vehicleType: "", price: "", timeMode: "now" as "now" | "later",
+    city: "بغداد" 
   });
 
   // --- Load Saved Session ---
@@ -129,24 +128,55 @@ export default function RequestFlow() {
   }, [isChatOpen]);
 
   // --- Auth Handlers ---
-  const handleSignUp = (e: React.FormEvent) => {
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem("sat7a_user", JSON.stringify(userProfile));
-    localStorage.setItem("sat7a_session_active", "true");
-    setIsLoggedIn(true);
+    try {
+      const response = await fetch("/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: userProfile.name,
+          phone: userProfile.phone,
+          password: userProfile.password
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "فشل التسجيل");
+      
+      const completeProfile = { ...userProfile, id: data.id, wallet: data.walletBalance?.toString() || "0" };
+      setUserProfile(completeProfile);
+      localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
+      localStorage.setItem("sat7a_session_active", "true");
+      setIsLoggedIn(true);
+    } catch (err: any) {
+      alert(err.message);
+    }
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const saved = localStorage.getItem("sat7a_user");
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed.phone === userProfile.phone && parsed.password === userProfile.password) {
-        setUserProfile(parsed); 
-        localStorage.setItem("sat7a_session_active", "true");
-        setIsLoggedIn(true);
-      } else { alert("خطأ في الرقم أو كلمة السر"); }
-    } else { alert("الحساب غير موجود"); }
+    try {
+      const response = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: userProfile.phone, password: userProfile.password }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "بيانات الدخول غير صحيحة");
+
+      const completeProfile = { 
+        ...userProfile, 
+        id: data.id, 
+        name: data.name, 
+        wallet: data.walletBalance?.toString() || "0" 
+      };
+      setUserProfile(completeProfile);
+      localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
+      localStorage.setItem("sat7a_session_active", "true");
+      setIsLoggedIn(true);
+    } catch (err: any) {
+      alert(err.message);
+    }
   };
 
   const handleLogout = () => {
@@ -179,6 +209,9 @@ export default function RequestFlow() {
     try {
       const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=iq`);
       const data = await res.json(); setSearchResults(data);
+      if (data[0]?.address?.city || data[0]?.address?.state) {
+          setFormData(prev => ({ ...prev, city: data[0].address.city || data[0].address.state }));
+      }
     } catch (error) { console.error(error); } finally { setIsSearching(false); }
   };
 
@@ -205,20 +238,59 @@ export default function RequestFlow() {
     alert(`سيتم توجيهك الآن لبوابة ${method} لإتمام عملية الدفع وتعبئة رصيدك.`);
   };
 
-  const handleFinalOrder = () => {
-    if (paymentMethod === "wallet" && parseFloat(userProfile.wallet) < parseFloat(formData.price)) {
-      alert("عذراً، رصيد محفظتك غير كافٍ لهذه الرحلة. يرجى اختيار الدفع النقدي أو تعبئة المحفظة.");
+  const handleFinalOrder = async () => {
+    if (!userProfile.id) {
+      alert("يرجى تسجيل الدخول مجدداً لإتمام عملية الطلب.");
+      setIsLoggedIn(false);
+      setAuthMode("login");
       return;
     }
-    socket.emit("create_order", {
-      ...formData,
-      customerId: userProfile.phone,
-      paymentType: paymentMethod
-    });
-    setViewState("success");
+
+    if (paymentMethod === "wallet" && parseFloat(userProfile.wallet) < parseFloat(formData.price)) {
+      alert("عذراً، رصيد محفظتك غير كافٍ لهذه الرحلة.");
+      return;
+    }
+
+    try {
+      const orderPayload = {
+        customerId: Number(userProfile.id),
+        customerName: userProfile.name || "زبون",
+        customerPhone: userProfile.phone || "0000",
+        location: formData.location || "موقعي الحالي",
+        destination: formData.destination || "وجهة غير محددة",
+        pickupLat: formData.pickupLat.toString(),
+        pickupLng: formData.pickupLng.toString(),
+        destLat: formData.destLat.toString(),
+        destLng: formData.destLng.toString(),
+        vehicleType: formData.vehicleType,
+        price: formData.price.toString(),
+        city: formData.city || "بغداد",
+        status: "pending"
+      };
+
+      const response = await fetch("/api/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(orderPayload),
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "فشل في إرسال الطلب");
+      
+      setActiveOrderId(result.id);
+
+      socket.emit("create_order", {
+        ...orderPayload,
+        orderId: result.id,
+        paymentType: paymentMethod
+      });
+
+      setViewState("success");
+    } catch (err: any) {
+      alert("حدث خطأ: " + err.message);
+    }
   };
 
-  // --- Auth Interface ---
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-white flex flex-col p-6 relative overflow-hidden font-sans" dir="rtl">
@@ -325,7 +397,7 @@ export default function RequestFlow() {
                 {driverLocation && <Marker position={driverLocation} icon={getOrangeArrowIcon(driverHeading)} />}
                 <Marker position={[formData.pickupLat, formData.pickupLng]} />
                 <FlyToMarker center={driverLocation || [formData.pickupLat, formData.pickupLng]} shouldFly={!!driverLocation} />
-            </MapContainer>
+       </MapContainer>
         </div>
         <header className="absolute top-6 inset-x-6 z-[1000] flex justify-between items-center">
             <Button onClick={() => setViewState("booking")} className="bg-white/90 backdrop-blur-md text-black rounded-2xl w-12 h-12 shadow-xl border-none"><X className="w-5 h-5" /></Button>
@@ -457,7 +529,6 @@ export default function RequestFlow() {
           </>
         )}
 
-        {/* Vehicle Selection - تم تحديث الحشوات والأحجام هنا بدقة لضمان الوصول لخيار الدفع */}
         {step === "vehicle" && (
           <div className="h-full overflow-y-auto p-4 pt-28 pb-64 space-y-3 bg-gray-50">
             {VEHICLE_OPTIONS.map((opt) => (
@@ -542,22 +613,24 @@ export default function RequestFlow() {
                 <Button variant="ghost" onClick={() => setIsHistoryOpen(false)} className="rounded-2xl"><X /></Button>
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
-                {tripsHistory.map((trip) => (
+                {tripsHistory.length > 0 ? tripsHistory.map((trip) => (
                   <div key={trip.id} className="bg-white p-5 rounded-[30px] shadow-sm border border-gray-100">
                     <div className="flex justify-between mb-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">
                         <span>رقم الرحلة #{trip.id}</span>
                         <span className="text-green-600 bg-green-50 px-2 py-1 rounded-lg">مكتملة</span>
                     </div>
                     <div className="space-y-3 relative">
-                        <div className="flex items-center gap-3 font-bold text-sm"><MapPin className="text-orange-500 w-4 h-4"/> {trip.from}</div>
-                        <div className="flex items-center gap-3 font-bold text-sm"><Target className="text-black w-4 h-4"/> {trip.to}</div>
+                        <div className="flex items-center gap-3 font-bold text-sm"><MapPin className="text-orange-500 w-4 h-4"/> {trip.pickupLocation}</div>
+                        <div className="flex items-center gap-3 font-bold text-sm"><Target className="text-black w-4 h-4"/> {trip.destination}</div>
                     </div>
                     <div className="mt-4 pt-4 border-t flex justify-between items-center font-black">
                         <span className="text-orange-600">{trip.price} د.ع</span>
-                        <span className="text-gray-300 text-[10px]">{trip.date}</span>
+                        <span className="text-gray-300 text-[10px]">{new Date(trip.createdAt).toLocaleDateString()}</span>
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <div className="h-full flex flex-col items-center justify-center opacity-30 italic font-black">لا توجد رحلات سابقة</div>
+                )}
               </div>
             </motion.div>
           )}
@@ -595,7 +668,7 @@ export default function RequestFlow() {
                     <p className="text-xs text-orange-600 leading-relaxed font-bold">يتم تأمين كافة المعاملات المالية عبر بروتوكول حماية مشفر. لا نقوم بتخزين معلومات بطاقتك الائتمانية.</p>
                   </div>
                </div>
-            </motion.div>
+  </motion.div>
           )}
       </AnimatePresence>
     </div>

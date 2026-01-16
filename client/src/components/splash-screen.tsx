@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MapPin } from "lucide-react";
 
@@ -6,6 +7,42 @@ interface SplashScreenProps {
 }
 
 export function SplashScreen({ isLoaded }: SplashScreenProps) {
+  // مراجع الملف الصوتي لضمان الأداء
+  const wooshRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    // إعداد ملف الصوت الجديد
+    wooshRef.current = new Audio("/sounds/deep-woosh.mp3");
+    if (wooshRef.current) wooshRef.current.volume = 0.6;
+
+    const playWoosh = () => {
+      // تشغيل الصوت ليتزامن مع حركة صعود كلمة "سطحة"
+      setTimeout(() => {
+        wooshRef.current?.play().catch(() => {
+          console.log("Audio waiting for interaction");
+        });
+      }, 200);
+    };
+
+    // محاولة التشغيل التلقائي
+    playWoosh();
+
+    // التفعيل عند أول لمسة أو نقرة لضمان عمل الصوت في المتصفح
+    const handleInteraction = () => {
+      playWoosh();
+      window.removeEventListener("click", handleInteraction);
+      window.removeEventListener("touchstart", handleInteraction);
+    };
+
+    window.addEventListener("click", handleInteraction);
+    window.addEventListener("touchstart", handleInteraction);
+
+    return () => {
+      window.removeEventListener("click", handleInteraction);
+      window.removeEventListener("touchstart", handleInteraction);
+    };
+  }, []);
+
   return (
     <AnimatePresence>
       {!isLoaded && (

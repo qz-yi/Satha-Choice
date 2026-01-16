@@ -6,7 +6,7 @@ import {
   Phone, CheckCircle2, User, MapPin, Navigation, List, ExternalLink,
   Star, Clock, TrendingUp, ChevronRight, Settings, History, GripHorizontal,
   Loader2, ShieldAlert, ArrowRight, Camera, MessageSquare, Send, Target, Power,
-  PlusCircle, CreditCard
+  PlusCircle, CreditCard, Info
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MapContainer, TileLayer, useMap, Marker, Popup } from "react-leaflet"; 
@@ -37,17 +37,11 @@ const socket = io();
 const MapViewHandler = ({ center, isFollowMode }: { center: [number, number], isFollowMode: boolean }) => {
   const map = useMap();
   useEffect(() => { 
+    // يتم التحريك فقط إذا كان وضع التتبع مفعلاً وهناك إحداثيات جديدة
     if (center && isFollowMode) {
-      map.flyTo(center, 16, { animate: true, duration: 1.5 }); 
+      map.setView(center, map.getZoom(), { animate: true, duration: 1 }); 
     }
-  }, [center, isFollowMode]);
-
-  // إضافة مستمعات لتعطيل التتبع عند تحريك المستخدم للخريطة
-  useEffect(() => {
-    const onMove = () => {}; // يمكن إضافة منطق هنا مستقبلاً
-    map.on('dragstart', onMove);
-    return () => { map.off('dragstart', onMove); };
-  }, [map]);
+  }, [center, isFollowMode, map]);
 
   return null;
 };
@@ -145,25 +139,37 @@ export default function DriverDashboard() {
     enabled: !!driverInfo?.id && activeTab === "wallet",
   });
 
-  // ✅ الحل 2: تعديل نظام شحن المحفظة (طلبات حقيقية)
+  // ✅ جلب إعدادات النظام للحصول على العمولة الحالية ديناميكياً
+  const { data: settings } = useQuery<{ commissionAmount: number }>({
+    queryKey: ["/api/admin/settings"],
+  });
+
+  // ✅ التعديل الجوهري: ربط دالة الشحن ببوابة زين كاش مباشرة
   const handleDeposit = async (method: 'zain' | 'master') => {
     if (!driverInfo) return;
     setIsDepositing(true);
     try {
-      const amount = 25000;
-      // إرسال طلب شحن للمدير للموافقة
-      const res = await apiRequest("POST", `/api/drivers/${driverInfo.id}/deposit-request`, {
+      const amount = 25000; // المبلغ الافتراضي للشحن
+      
+      // 1. طلب إنشاء عملية دفع من السيرفر
+      const res = await apiRequest("POST", "/api/zain-cash/initiate", {
         amount,
-        paymentMethod: method,
-        referenceId: `${method.toUpperCase()}-${Date.now()}`
+        driverId: driverInfo.id,
+        method: method
       });
-      if (res.ok) {
-        toast({ title: "تم إرسال طلب الشحن", description: "سيتم إضافة الرصيد فور تأكيد التحويل من قبل الإدارة" });
-        setShowPaymentOptions(false);
-        refetch();
+      
+      const data = await res.json();
+      
+      if (data.transactionId) {
+        toast({ title: "جاري التوجيه...", description: "سيتم فتح بوابة الدفع الآمنة الآن" });
+        // 2. التوجيه الفوري لرابط الدفع الخاص بزين كاش (أو رابط التست حالياً)
+        window.location.href = `https://test.zaincash.iq/transaction/pay?id=${data.transactionId}`;
+      } else {
+        throw new Error("لم يتم استلام معرف العملية");
       }
+
     } catch (err) {
-      toast({ variant: "destructive", title: "فشل إرسال الطلب" });
+      toast({ variant: "destructive", title: "فشل الاتصال بالبوابة", description: "يرجى المحاولة مرة أخرى أو مراجعة الإدارة" });
     } finally { setIsDepositing(false); }
   };
 
@@ -184,9 +190,10 @@ export default function DriverDashboard() {
       
       if (res.ok) {
         const data = await res.json();
+        // تحديث الرابط في قاعدة البيانات
         await apiRequest("PATCH", `/api/drivers/${driverInfo.id}`, { avatarUrl: data.url });
         await refetch();
-        toast({ title: "نجاح", description: "تم تحديث الصورة الشخصية وتثبيتها" });
+        toast({ title: "نجاح", description: "تم تحديث الصورة الشخصية بنجاح" });
         setIsEditingPhoto(false);
       }
     } catch (err) {
@@ -211,8 +218,14 @@ export default function DriverDashboard() {
   };
 
   const handleAcceptOrder = async (req: any) => {
-    if (Number(driverInfo?.walletBalance) < 1000) {
-      toast({ variant: "destructive", title: "رصيدك غير كافٍ", description: "يرجى شحن محفظتك بـ 1000 دينار على الأقل لقبول الطلب" });
+    // تم تحديث التحقق ليعتمد على قيمة العمولة من الإعدادات
+    const currentCommission = settings?.commissionAmount || 1000;
+    if (Number(driverInfo?.walletBalance) < currentCommission) {
+      toast({ 
+        variant: "destructive", 
+        title: "رصيدك غير كافٍ", 
+        description: `يرجى شحن محفظتك بـ ${currentCommission.toLocaleString()} دينار على الأقل لقبول الطلب` 
+      });
       setActiveTab("wallet");
       return;
     }
@@ -225,11 +238,11 @@ export default function DriverDashboard() {
       (pos) => {
         const { latitude, longitude, heading: deviceHeading } = pos.coords;
         
-        // منع الارتجاج: تحديث الموقع فقط إذا تحرك أكثر من 5 أمتار (تقريبياً)
         setCurrentCoords(prev => {
            if (!prev) return [latitude, longitude];
            const dist = Math.sqrt(Math.pow(latitude - prev[0], 2) + Math.pow(longitude - prev[1], 2));
-           return dist > 0.00005 ? [latitude, longitude] : prev;
+           // تحديث فقط إذا كانت الحركة ملموسة لتقليل الارتجاج
+           return dist > 0.00002 ? [latitude, longitude] : prev;
         });
 
         if (deviceHeading !== null && deviceHeading !== undefined) setHeading(deviceHeading);
@@ -260,20 +273,35 @@ export default function DriverDashboard() {
     } finally { setIsUpdatingStatus(false); }
   };
 
-  const handleRefresh = () => {
+  // ✅ تعديل دالة التحديث لجلب الطلبات وفلترتها حسب المدينة برمجياً
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    refetch(); 
-    setTimeout(() => {
-        setIsRefreshing(false);
-        setNotification({ show: true, message: "تم تحديث القائمة بنجاح", type: "success" });
-        setTimeout(() => setNotification(n => ({ ...n, show: false })), 2000);
-    }, 1000);
+    try {
+      await refetch(); 
+      const response = await fetch('/api/requests');
+      if (response.ok) {
+        const allRequests = await response.json();
+        // فلترة دقيقة حسب المدينة وحالة الطلب
+        const myCityRequests = allRequests.filter((req: any) => 
+          req.city?.trim() === driverInfo?.city?.trim() && req.status === "pending"
+        );
+        setAvailableRequests(myCityRequests);
+      }
+      setNotification({ show: true, message: "تم تحديث طلبات منطقتك", type: "success" });
+    } catch (err) {
+      setNotification({ show: true, message: "فشل التحديث", type: "error" });
+    } finally {
+      setIsRefreshing(false);
+      setTimeout(() => setNotification(n => ({ ...n, show: false })), 2000);
+    }
   };
 
   useEffect(() => {
     if (driverInfo?.isOnline && driverInfo?.status === "approved") {
       socket.on("receive_request", (data: any) => {
-        if (!activeOrder) setAvailableRequests(prev => [...prev, data]);
+        if (!activeOrder && data.city?.trim() === driverInfo?.city?.trim()) {
+          setAvailableRequests(prev => [...prev, data]);
+        }
       });
       socket.on("receive_message", (msg: any) => {
         setMessages(prev => [...prev, { ...msg, id: Date.now() }]);
@@ -284,7 +312,7 @@ export default function DriverDashboard() {
         socket.off("receive_message");
       };
     }
-  }, [driverInfo?.isOnline, activeOrder, driverInfo?.status, isChatOpen]);
+  }, [driverInfo?.isOnline, activeOrder, driverInfo?.status, isChatOpen, driverInfo?.city]);
 
   if (isLoading) return (
     <div className="h-screen flex flex-col items-center justify-center bg-white">
@@ -353,8 +381,8 @@ if (!driverInfo || driverInfo.status !== "approved") {
                 zoom={15} 
                 style={{ height: "100%", width: "100%" }} 
                 zoomControl={false}
-                // حل الارتجاج: تعطيل التتبع التلقائي عند بدء السحب
-                onMovestart={() => setIsFollowMode(false)}
+                // حل الارتجاج: تعطيل التتبع التلقائي فقط عند السحب اليدوي المتعمد
+                onDragstart={() => setIsFollowMode(false)}
               >
                 <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="© Google Maps" detectRetina={true} />
                 {currentCoords && (
@@ -366,7 +394,6 @@ if (!driverInfo || driverInfo.status !== "approved") {
               </MapContainer>
             </div>
 
-            {/* زر إعادة التمركز - يحل مشكلة العودة للموقع */}
             <Button 
               onClick={() => {
                 setIsFollowMode(true);
@@ -443,8 +470,25 @@ if (!driverInfo || driverInfo.status !== "approved") {
           <motion.div initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} className="absolute inset-0 z-[2000] bg-white flex flex-col">
             <div className="p-6 flex items-center gap-4 border-b"><Button variant="ghost" size="icon" onClick={() => setActiveTab("map")} className="rounded-full bg-gray-50"><ArrowRight className="w-6 h-6"/></Button><h2 className="text-2xl font-black italic">المحفظة المالية</h2></div>
             <div className="p-8 overflow-y-auto flex-1">
-              <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-10 rounded-[45px] text-white shadow-2xl shadow-orange-100 mb-10 text-center"><p className="text-orange-100 font-bold mb-2 text-lg">الرصيد الحالي</p><h3 className="text-6xl font-black">{driverInfo?.walletBalance} <span className="text-xl italic">د.ع</span></h3></div>
+              <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-10 rounded-[45px] text-white shadow-2xl shadow-orange-100 mb-6 text-center"><p className="text-orange-100 font-bold mb-2 text-lg">الرصيد الحالي</p><h3 className="text-6xl font-black">{driverInfo?.walletBalance} <span className="text-xl italic">د.ع</span></h3></div>
               
+              {/* ✅ تنبيه العمولة الديناميكية المحدث */}
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-orange-50 border border-orange-100 rounded-[25px] p-4 flex items-center gap-4 mb-8 shadow-sm"
+              >
+                <div className="bg-orange-500 p-2.5 rounded-xl">
+                  <Info className="w-5 h-5 text-white" />
+                </div>
+                <div className="flex flex-col">
+                  <p className="text-[11px] font-black text-orange-800 uppercase tracking-tighter">نظام العمولات الحالي</p>
+                  <p className="text-xs font-bold text-orange-600">
+                    يتم استقطاع <span className="font-black underline decoration-2">{(settings?.commissionAmount || 1000).toLocaleString()} د.ع</span> عن كل رحلة تكتمل بنجاح.
+                  </p>
+                </div>
+              </motion.div>
+
               <div className="grid grid-cols-1 gap-4 mb-10">
                 {!showPaymentOptions ? (
                   <Button onClick={() => setShowPaymentOptions(true)} className="w-full h-20 rounded-[30px] bg-black hover:bg-gray-900 text-white font-black text-xl shadow-xl flex items-center justify-center gap-4 transition-all">
@@ -461,7 +505,6 @@ if (!driverInfo || driverInfo.status !== "approved") {
                     <Button variant="ghost" onClick={() => setShowPaymentOptions(false)} className="w-full text-gray-400 font-bold">إلغاء</Button>
                   </div>
                 )}
-                <p className="text-center text-gray-400 font-bold text-xs italic">يتم استقطاع 1,000 دينار عمولة عن كل رحلة تكتمل بنجاح</p>
               </div>
 
               <h4 className="font-black text-gray-800 mb-4 px-2 flex items-center gap-2"><History className="w-5 h-5 text-orange-500" /> سجل العمليات</h4>
@@ -557,7 +600,7 @@ if (!driverInfo || driverInfo.status !== "approved") {
                 <div className="w-16 h-16 bg-orange-50 rounded-3xl flex items-center justify-center border-2 border-white shadow-sm text-2xl text-orange-500 font-bold">{activeOrder.customerName?.charAt(0) || "👤"}</div>
                 <div className="text-right">
                   <h4 className="font-black text-xl text-gray-800">{activeOrder.customerName || "زبون جديد"}</h4>
-                  <p className="text-xs text-blue-500 font-bold flex items-center gap-1 cursor-pointer" onClick={() => window.open(`http://maps.google.com/?q=${activeOrder.pickupLat},${activeOrder.pickupLng}`)}>فتح الخريطة الخارجية <ExternalLink className="w-3 h-3"/></p>
+                  <p className="text-xs text-blue-500 font-bold flex items-center gap-1 cursor-pointer" onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${activeOrder.pickupLat},${activeOrder.pickupLng}`)}>فتح الخريطة الخارجية <ExternalLink className="w-3 h-3"/></p>
                 </div>
               </div>
               <div className="flex gap-2">
