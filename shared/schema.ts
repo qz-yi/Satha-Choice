@@ -5,10 +5,9 @@ import { sql } from "drizzle-orm";
 
 // === TABLE DEFINITIONS ===
 
-// التعديل الجديد: جدول إعدادات النظام للتحكم في العمولة وأي ثوابت مستقبلية
 export const settings = pgTable("settings", {
   id: serial("id").primaryKey(),
-  commissionAmount: integer("commission_amount").notNull().default(1000), // العمولة الافتراضية 1000 دينار
+  commissionAmount: integer("commission_amount").notNull().default(1000),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -16,6 +15,8 @@ export const requests = pgTable("requests", {
   id: serial("id").primaryKey(),
   customerName: text("customer_name").default("زبون"), 
   customerPhone: text("customer_phone").default("07700000000"),
+  // +++ التعديل الجوهري: إضافة حقل الرصيد هنا لكي يظهر في لوحة الإدارة +++
+  customerWalletBalance: decimal("customer_wallet_balance", { precision: 10, scale: 2 }).default("0.00"),
   vehicleType: text("vehicle_type").notNull(), 
   price: text("price").notNull(),
   location: text("location").default("لم يحدد العنوان"), 
@@ -52,14 +53,13 @@ export const drivers = pgTable("drivers", {
   avatarUrl: text("avatar_url"), 
 });
 
-// التعديل 1: تطوير جدول العمليات ليدعم "زين كاش" بشكل مباشر
 export const transactions = pgTable("transactions", {
   id: serial("id").primaryKey(),
   driverId: integer("driver_id").references(() => drivers.id).notNull(),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(), 
-  type: text("type").notNull(), // 'deposit' (شحن), 'withdrawal' (سحب), 'payment' (دفع)
-  status: text("status").notNull().default("pending"), // 'pending', 'success', 'failed'
-  zainCashId: text("zain_cash_id"), // رقم العملية المرجعي من شركة زين كاش
+  type: text("type").notNull(), 
+  status: text("status").notNull().default("pending"), 
+  zainCashId: text("zain_cash_id"), 
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -73,7 +73,6 @@ export const users = pgTable("users", {
 
 // === BASE SCHEMAS & VALIDATION ===
 
-// مخطط إدخال الإعدادات
 export const insertSettingsSchema = createInsertSchema(settings).omit({
   id: true,
   updatedAt: true
@@ -90,7 +89,8 @@ export const insertRequestSchema = createInsertSchema(requests, {
 }).omit({ 
   id: true, 
   status: true, 
-  createdAt: true 
+  createdAt: true,
+  customerWalletBalance: true // لا نريده عند إنشاء الطلب
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({
@@ -116,7 +116,6 @@ export const insertDriverSchema = createInsertSchema(drivers, {
   avatarUrl: true 
 });
 
-// التعديل 2: إضافة مخطط إدخال العمليات (ضروري للسيرفر لمعالجة الدفع)
 export const insertTransactionSchema = createInsertSchema(transactions).omit({
   id: true,
   createdAt: true
@@ -128,7 +127,7 @@ export const loginSchema = z.object({
 });
 
 // === EXPLICIT API CONTRACT TYPES ===
-export type Setting = typeof settings.$inferSelect; // تصدير نوع الإعدادات
+export type Setting = typeof settings.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type Request = typeof requests.$inferSelect;
@@ -136,7 +135,7 @@ export type InsertRequest = z.infer<typeof insertRequestSchema>;
 export type Driver = typeof drivers.$inferSelect;
 export type InsertDriver = z.infer<typeof insertDriverSchema>;
 export type Transaction = typeof transactions.$inferSelect;
-export type InsertTransaction = z.infer<typeof insertTransactionSchema>; // التعديل 3: تصدير نوع الإدخال
+export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 
 export const VEHICLE_OPTIONS = [
   { id: "small", label: "سطحة صغيرة", price: "25,000 د.ع", priceValue: 25000, description: "Small Flatbed" },

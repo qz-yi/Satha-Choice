@@ -7,8 +7,8 @@ import { useCreateRequest } from "@/hooks/use-requests";
 import { 
   MapPin, Check, Search, Loader2, Menu, 
   MessageSquare, History, Wallet, Phone, Truck, ChevronRight,
-  LocateFixed, RotateCcw, X, Star, Navigation, Target, Send, LogOut, Camera, User, Lock, Home, ShieldCheck, CreditCard
-} from "lucide-react"; 
+  LocateFixed, RotateCcw, X, Star, Navigation, Target, Send, LogOut, Camera, User, Lock, Home, ShieldCheck, CreditCard, QrCode
+} from "lucide-react";
 
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -18,11 +18,10 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { io } from "socket.io-client";
 import { useLocation } from "wouter";
+import { useToast } from "@/hooks/use-toast"; 
 
-// ملاحظة: تأكد من أن الـ IP يتطابق مع سيرفرك الحالي أو استخدم رابط السيرفر المباشر
 const socket = io(window.location.origin); 
 
-// --- Helper Components & Icons ---
 const getOrangeArrowIcon = (rotation: number) => L.divIcon({
   html: `
     <div style="transform: rotate(${rotation}deg); transition: transform 0.4s; filter: drop-shadow(0px 3px 5px rgba(0,0,0,0.3));">
@@ -39,13 +38,22 @@ function FlyToMarker({ center, shouldFly }: { center: [number, number], shouldFl
   return null;
 }
 
-const SidebarLink = memo(({ icon, label, extra, onClick, color = "text-orange-600" }: any) => (
-  <button onClick={onClick} className="w-full flex items-center justify-between p-4 hover:bg-orange-50 active:scale-[0.98] transition-all rounded-2xl text-right group mb-2">
+const SidebarLink = memo(({ icon, label, extra, onClick, color = "text-orange-600", extraColor = "bg-gray-100 text-gray-500" }: any) => (
+  <button 
+    onClick={onClick} 
+    className="w-full flex items-center justify-between p-4 bg-gray-50/50 hover:bg-orange-50 active:scale-[0.97] transition-all rounded-2xl text-right group mb-3 border border-transparent hover:border-orange-100"
+  >
     <div className="flex items-center gap-4">
-      <div className={`${color} p-2 rounded-xl bg-gray-50 group-hover:bg-white transition-colors shadow-sm`}>{icon}</div>
+      <div className={`${color} p-2.5 rounded-xl bg-white shadow-sm group-hover:scale-110 transition-transform`}>
+        {icon}
+      </div>
       <span className="text-[15px] font-black text-gray-700">{label}</span>
     </div>
-    {extra && <span className="text-xs font-black text-gray-400 bg-gray-100 px-2 py-1 rounded-lg">{extra}</span>}
+    {extra && (
+      <span className={`text-[11px] font-black px-3 py-1.5 rounded-xl shadow-sm ${extraColor}`}>
+        {extra}
+      </span>
+    )}
   </button>
 ));
 
@@ -62,20 +70,20 @@ const StepIndicator = ({ step }: { step: string }) => {
 
 export default function RequestFlow() {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
-  // --- Auth & Profile State ---
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authMode, setAuthMode] = useState<"choice" | "login" | "signup">("choice");
   const [userProfile, setUserProfile] = useState({
     id: null as number | null, name: "", phone: "", password: "", address: "بغداد", image: null as string | null, wallet: "0", trips: "0"
   });
 
-  // --- Main App States ---
   const [step, setStep] = useState<"pickup" | "dropoff" | "vehicle">("pickup");
   const [viewState, setViewState] = useState<"booking" | "success" | "tracking">("booking");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isCharging, setIsCharging] = useState(false); 
   const [shouldFly, setShouldFly] = useState(false); 
   const [requestStatus, setRequestStatus] = useState("pending");
   const [driverLocation, setDriverLocation] = useState<[number, number] | null>(null);
@@ -85,12 +93,11 @@ export default function RequestFlow() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatMessage, setChatMessage] = useState("");
   const [messages, setMessages] = useState<any[]>([]);
-
-  // --- New Feature States (Wallet & History) ---
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "wallet">("cash");
   const [tripsHistory, setTripsHistory] = useState<any[]>([]);
+  const [chargeAmount, setChargeAmount] = useState(""); 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
@@ -99,17 +106,44 @@ export default function RequestFlow() {
     city: "بغداد" 
   });
 
-  // --- Load Saved Session ---
+  const refreshUserData = useCallback(async (userId: number) => {
+    try {
+      const response = await fetch(`/api/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: userProfile.phone, password: userProfile.password }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const updatedProfile = { 
+          ...userProfile, 
+          wallet: data.walletBalance?.toString() || "0" 
+        };
+        setUserProfile(updatedProfile);
+        localStorage.setItem("sat7a_user", JSON.stringify(updatedProfile));
+      }
+    } catch (err) {
+      console.error("خطأ في تحديث بيانات المحفظة", err);
+    }
+  }, [userProfile.phone, userProfile.password, userProfile]);
+
   useEffect(() => {
     const saved = localStorage.getItem("sat7a_user");
     const sessionActive = localStorage.getItem("sat7a_session_active");
     if (saved && sessionActive === "true") { 
-      setUserProfile(JSON.parse(saved)); 
+      const parsed = JSON.parse(saved);
+      setUserProfile(parsed); 
       setIsLoggedIn(true); 
+      if (parsed.id) refreshUserData(parsed.id);
     }
   }, []);
 
-  // --- Socket Listeners ---
+  useEffect(() => {
+    if (isWalletOpen && userProfile.id) {
+      refreshUserData(userProfile.id);
+    }
+  }, [isWalletOpen, userProfile.id, refreshUserData]);
+
   useEffect(() => {
     socket.on("receive_location", (data) => {
         setDriverLocation([data.lat, data.lng]);
@@ -127,7 +161,6 @@ export default function RequestFlow() {
     };
   }, [isChatOpen]);
 
-  // --- Auth Handlers ---
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -142,7 +175,7 @@ export default function RequestFlow() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "فشل التسجيل");
-      
+
       const completeProfile = { ...userProfile, id: data.id, wallet: data.walletBalance?.toString() || "0" };
       setUserProfile(completeProfile);
       localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
@@ -234,8 +267,40 @@ export default function RequestFlow() {
     setIsSearchOpen(false); setTimeout(() => setShouldFly(false), 2000);
   };
 
-  const handleTopUp = (method: string) => {
-    alert(`سيتم توجيهك الآن لبوابة ${method} لإتمام عملية الدفع وتعبئة رصيدك.`);
+  const handleTopUp = async (method: string) => {
+    if (method === "Zain Cash") {
+      if (!chargeAmount || Number(chargeAmount) < 1000) {
+        toast({ variant: "destructive", title: "المبلغ غير صالح", description: "الحد الأدنى للشحن عبر زين كاش هو 1000 د.ع" });
+        return;
+      }
+
+      setIsCharging(true);
+      try {
+        const response = await fetch("/api/zaincash/initiate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount: Number(chargeAmount),
+            userId: userProfile.id,
+            userName: userProfile.name,
+            userType: "customer"
+          }),
+        });
+
+        const data = await response.json();
+        if (data.url) {
+          window.location.href = data.url; 
+        } else {
+          throw new Error("لم يتم استلام رابط الدفع");
+        }
+      } catch (err: any) {
+        toast({ variant: "destructive", title: "فشل الاتصال بزين كاش", description: err.message });
+      } finally {
+        setIsCharging(false);
+      }
+    } else {
+      alert(`سيتم توجيهك الآن لبوابة ${method} لإتمام عملية الدفع وتعبئة رصيدك.`);
+    }
   };
 
   const handleFinalOrder = async () => {
@@ -276,7 +341,7 @@ export default function RequestFlow() {
 
       const result = await response.json();
       if (!response.ok) throw new Error(result.message || "فشل في إرسال الطلب");
-      
+
       setActiveOrderId(result.id);
 
       socket.emit("create_order", {
@@ -459,13 +524,13 @@ export default function RequestFlow() {
 
   return (
     <div className="h-screen w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative" dir="rtl">
-      
+
       <header className="absolute top-0 inset-x-0 z-[4000] p-6 flex flex-col gap-3">
           <div className="flex items-start gap-3 w-full">
               <Sheet>
                 <SheetTrigger asChild><Button variant="secondary" size="icon" className="rounded-2xl shadow-xl bg-white text-black w-14 h-14 border-none"><Menu className="w-6 h-6" /></Button></SheetTrigger>
                 <SheetContent side="right" className="w-[85%] p-0 z-[6000] border-none text-right flex flex-col bg-white">
-                    <div className="p-8 pt-20 bg-orange-500 text-right rounded-bl-[50px] shadow-xl relative overflow-hidden">
+                    <div className="p-8 pt-20 bg-orange-500 text-right rounded-bl-[60px] shadow-2xl relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none"><Truck className="w-64 h-64 -rotate-12 absolute -right-10 -bottom-10" /></div>
                         <div className="relative group w-24 h-24 mb-6">
                             <div className="w-24 h-24 bg-white rounded-[32px] overflow-hidden shadow-2xl border-4 border-white/20 flex items-center justify-center">
@@ -474,26 +539,48 @@ export default function RequestFlow() {
                             <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-2 -right-2 bg-black text-white p-2 rounded-xl shadow-lg active:scale-90 transition-transform"><Camera className="w-4 h-4" /></button>
                             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageChange} />
                         </div>
-                        <h2 className="text-2xl font-black text-white">{userProfile.name || "مستخدم جديد"}</h2>
-                        <p className="text-white/70 text-sm font-bold mt-1 italic">{userProfile.address || "بغداد"}</p>
+                        <h2 className="text-2xl font-black text-white leading-tight">{userProfile.name || "مستخدم جديد"}</h2>
+                        <p className="text-white/80 text-sm font-bold mt-1 italic">{userProfile.address || "بغداد"}</p>
                     </div>
 
-                    <div className="p-6 flex-1">
-                      <SidebarLink onClick={() => setIsHistoryOpen(true)} icon={<History />} label="سجل الرحلات" extra={`${userProfile.trips} رحلة`} />
-                      <SidebarLink onClick={() => setIsWalletOpen(true)} icon={<Wallet />} label="المحفظة" extra={`${userProfile.wallet} د.ع`} color="text-green-600" />
-                      <SidebarLink icon={<Star />} label="التقييم" extra="4.9" color="text-yellow-500" />
-                      <SidebarLink icon={<Phone />} label="الدعم الفني" color="text-blue-600" />
+                    <div className="p-6 pt-10 flex-1 overflow-y-auto">
+                      <SidebarLink 
+                        onClick={() => setIsHistoryOpen(true)} 
+                        icon={<History className="w-5 h-5"/>} 
+                        label="سجل الرحلات" 
+                        extra={`${userProfile.trips} رحلة`} 
+                      />
+                      <SidebarLink 
+                        onClick={() => setIsWalletOpen(true)} 
+                        icon={<Wallet className="w-5 h-5"/>} 
+                        label="المحفظة" 
+                        extra={`${userProfile.wallet} د.ع`} 
+                        color="text-green-600" 
+                        extraColor="bg-green-50 text-green-700"
+                      />
+                      <SidebarLink 
+                        icon={<Star className="w-5 h-5"/>} 
+                        label="التقييم" 
+                        extra="4.9 ★" 
+                        color="text-yellow-500" 
+                        extraColor="bg-yellow-50 text-yellow-700"
+                      />
+                      <SidebarLink 
+                        icon={<Phone className="w-5 h-5"/>} 
+                        label="الدعم الفني" 
+                        color="text-blue-600" 
+                      />
                     </div>
 
-                    <div className="p-8 border-t border-gray-100">
+                    <div className="p-8 border-t border-gray-50">
                         <Button variant="ghost" className="w-full justify-start gap-4 text-red-500 font-black h-14 rounded-2xl hover:bg-red-50 transition-all" onClick={handleLogout}>
-                            <div className="bg-red-50 p-2 rounded-xl"><LogOut className="w-5 h-5" /></div>
+                            <div className="bg-red-50 p-2.5 rounded-xl"><LogOut className="w-5 h-5" /></div>
                             <span>تسجيل الخروج</span>
                         </Button>
                     </div>
                 </SheetContent>
               </Sheet>
-            
+
               <div onClick={() => step !== "vehicle" && setIsSearchOpen(true)} className="flex-1 bg-white shadow-2xl rounded-[28px] p-4 flex flex-col justify-center border border-white cursor-pointer transition-transform active:scale-95">
                 <StepIndicator step={step} />
                 <div className="flex items-center justify-between">
@@ -507,9 +594,9 @@ export default function RequestFlow() {
           </div>
       </header>
 
-      <div className="flex-1 relative z-0">
+      <div className="flex-1 relative z-0 flex flex-col">
         {(step === "pickup" || step === "dropoff") && (
-          <>
+          <div className="flex-1 relative">
             <MapContainer center={[33.3152, 44.3661]} zoom={15} style={{ height: "100%", width: "100%" }} zoomControl={false}>
               <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="&copy; Google Maps" detectRetina={true} tileSize={256}/>
               <FlyToMarker center={step === "pickup" ? [formData.pickupLat, formData.pickupLng] : [formData.destLat, formData.destLng]} shouldFly={shouldFly} />
@@ -526,44 +613,49 @@ export default function RequestFlow() {
                     <div className={`w-1.5 h-8 ${step === "pickup" ? "bg-orange-500" : "bg-black"} rounded-full shadow-lg`}></div>
                 </div>
             </div>
-          </>
+          </div>
         )}
 
         {step === "vehicle" && (
-          <div className="h-full overflow-y-auto p-4 pt-28 pb-64 space-y-3 bg-gray-50">
-            {VEHICLE_OPTIONS.map((opt) => (
-              <div key={opt.id} onClick={() => setFormData(p => ({...p, vehicleType: opt.id, price: opt.price.toString()}))}
-                   className={`p-4 rounded-[28px] border-2 transition-all flex justify-between items-center ${formData.vehicleType === opt.id ? 'bg-orange-500 border-orange-500 text-white shadow-lg scale-[1.01]' : 'bg-white border-transparent shadow-sm'}`}>
-                  <div className="flex items-center gap-3">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${formData.vehicleType === opt.id ? 'bg-white/20' : 'bg-orange-50 text-orange-500'}`}><Truck className="w-6 h-6" /></div>
-                      <div><h4 className="font-black text-base">{opt.label}</h4><p className="text-[10px] opacity-80">تصل خلال 10 دقائق</p></div>
-                  </div>
-                  <span className="text-lg font-black">{opt.price} <span className="text-xs">د.ع</span></span>
-              </div>
-            ))}
-
-            <div className="bg-white p-5 rounded-[30px] shadow-sm border border-gray-100 space-y-3">
-                <h4 className="font-black text-gray-800 text-xs">اختر طريقة الدفع</h4>
-                <div className="flex gap-2">
-                    <button 
-                        onClick={() => setPaymentMethod("cash")}
-                        className={`flex-1 h-12 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 ${paymentMethod === "cash" ? "bg-black text-white shadow-md" : "bg-gray-50 text-gray-400"}`}
-                    >
-                        <RotateCcw className="w-4 h-4" /> كاش
-                    </button>
-                    <button 
-                        onClick={() => setPaymentMethod("wallet")}
-                        className={`flex-1 h-12 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 ${paymentMethod === "wallet" ? "bg-orange-500 text-white shadow-md" : "bg-gray-50 text-gray-400"}`}
-                    >
-                        <Wallet className="w-4 h-4" /> المحفظة
-                    </button>
+          <div className="absolute inset-0 z-10 bg-gray-50 overflow-y-auto px-4 pt-28 scroll-smooth" style={{ height: '100%' }}>
+            <h3 className="font-black text-gray-800 text-lg pr-2 mb-4">اختر السطحة المناسبة</h3>
+            <div className="space-y-4">
+              {VEHICLE_OPTIONS.map((opt) => (
+                <div key={opt.id} onClick={() => setFormData(p => ({...p, vehicleType: opt.id, price: opt.price.toString()}))}
+                     className={`p-4 rounded-[28px] border-2 transition-all flex justify-between items-center ${formData.vehicleType === opt.id ? 'bg-orange-500 border-orange-500 text-white shadow-lg scale-[1.01]' : 'bg-white border-transparent shadow-sm hover:border-orange-100'}`}>
+                    <div className="flex items-center gap-3">
+                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${formData.vehicleType === opt.id ? 'bg-white/20' : 'bg-orange-50 text-orange-500'}`}><Truck className="w-6 h-6" /></div>
+                        <div><h4 className="font-black text-base">{opt.label}</h4><p className="text-[10px] opacity-80">تصل خلال 10 دقائق</p></div>
+                    </div>
+                    <span className="text-lg font-black">{opt.price} <span className="text-xs">د.ع</span></span>
                 </div>
+              ))}
+
+              <div className="bg-white p-5 rounded-[30px] shadow-sm border border-gray-100 space-y-3 mt-4">
+                  <h4 className="font-black text-gray-800 text-xs">طريقة الدفع</h4>
+                  <div className="flex gap-2">
+                      <button 
+                          onClick={() => setPaymentMethod("cash")}
+                          className={`flex-1 h-12 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 ${paymentMethod === "cash" ? "bg-black text-white shadow-md" : "bg-gray-50 text-gray-400"}`}
+                      >
+                          <RotateCcw className="w-4 h-4" /> كاش
+                      </button>
+                      <button 
+                          onClick={() => setPaymentMethod("wallet")}
+                          className={`flex-1 h-12 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 ${paymentMethod === "wallet" ? "bg-orange-500 text-white shadow-md" : "bg-gray-50 text-gray-400"}`}
+                      >
+                          <Wallet className="w-4 h-4" /> المحفظة
+                      </button>
+                  </div>
+              </div>
             </div>
+            {/* هامش سفلي ضخم لضمان أن آخر عنصر يظهر فوق الـ footer تماماً عند السحب */}
+            <div className="h-[220px] w-full"></div>
           </div>
         )}
       </div>
 
-      <footer className="fixed bottom-0 inset-x-0 bg-white p-8 pb-10 rounded-t-[45px] shadow-2xl z-[4000] border-t border-gray-50">
+      <footer className="fixed bottom-0 inset-x-0 bg-white p-8 pb-10 rounded-t-[45px] shadow-[0_-15px_40px_rgba(0,0,0,0.1)] z-[5000] border-t border-gray-100">
           <Button 
             onClick={() => {
                 if (step === "pickup") setStep("dropoff");
@@ -576,7 +668,7 @@ export default function RequestFlow() {
             {step === "vehicle" ? "تأكيد الطلب الآن" : "تأكيد الموقع"}
           </Button>
           {step !== "pickup" && (
-            <button onClick={() => setStep(step === "dropoff" ? "pickup" : "dropoff")} className="w-full mt-5 text-gray-400 font-black text-xs flex items-center justify-center gap-2"><RotateCcw className="w-3 h-3" /> رجوع للخطوة السابقة</button>
+            <button onClick={() => setStep(step === "dropoff" ? "pickup" : "dropoff")} className="w-full mt-5 text-gray-400 font-black text-xs flex items-center justify-center gap-2 hover:text-orange-500 transition-colors"><RotateCcw className="w-3 h-3" /> رجوع للخطوة السابقة</button>
           )}
       </footer>
 
@@ -636,39 +728,93 @@ export default function RequestFlow() {
           )}
 
           {isWalletOpen && (
-            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="absolute inset-0 z-[9000] bg-white flex flex-col">
-               <div className="p-8 bg-black text-white rounded-b-[50px] relative overflow-hidden">
-                  <div className="relative z-10 flex justify-between items-start mb-10">
+            <motion.div 
+              initial={{ y: "100%", opacity: 0 }} 
+              animate={{ y: 0, opacity: 1 }} 
+              exit={{ y: "100%", opacity: 0 }} 
+              className="absolute inset-0 z-[9000] bg-white flex flex-col overflow-hidden"
+            >
+               <div className="relative bg-gradient-to-br from-orange-500 to-orange-400 rounded-b-[45px] p-6 pt-10 shadow-lg overflow-hidden z-20">
+                  <Truck className="absolute -right-10 -bottom-10 w-48 h-48 text-white/10 -rotate-12 pointer-events-none" />
+
+                  <div className="relative z-30 flex justify-between items-center">
                     <div>
-                      <p className="text-gray-400 font-black text-xs mb-1">الرصيد المتاح</p>
-                      <h2 className="text-5xl font-black italic">{userProfile.wallet} <span className="text-lg">د.ع</span></h2>
+                      <p className="text-orange-50 font-black text-xs mb-0.5 tracking-wide opacity-90">الرصيد المتاح</p>
+                      <h2 className="text-4xl font-black text-white tracking-tighter italic">
+                        {userProfile.wallet} <span className="text-xl text-orange-100 not-italic">د.ع</span>
+                      </h2>
                     </div>
-                    <Button variant="ghost" onClick={() => setIsWalletOpen(false)} className="text-white hover:bg-white/10 rounded-2xl"><X/></Button>
+                    <motion.button 
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => setIsWalletOpen(false)} 
+                        className="bg-white/20 hover:bg-white/30 text-white rounded-2xl w-10 h-10 flex items-center justify-center backdrop-blur-md shadow-lg transition-all border border-white/20"
+                    >
+                        <X className="w-5 h-5" />
+                    </motion.button>
                   </div>
-                  <Truck className="absolute -right-10 -bottom-10 w-48 h-48 text-white/5 -rotate-12" />
                </div>
 
-               <div className="p-8 flex-1 space-y-8">
+               <div className="flex-1 p-6 -mt-5 overflow-y-auto space-y-6 bg-white rounded-t-[35px] z-10 relative">
                   <div className="space-y-4">
-                    <h4 className="font-black text-gray-800">تعبئة الرصيد</h4>
+                    <h4 className="font-black text-slate-800 text-sm flex items-center gap-2 px-1">
+                        <Wallet className="w-4 h-4 text-orange-500"/>
+                        تعبئة الرصيد
+                    </h4>
+
+                    <div className="relative group pointer-events-auto">
+                      <input 
+                        type="number" 
+                        inputMode="numeric"
+                        value={chargeAmount}
+                        onChange={(e) => setChargeAmount(e.target.value)}
+                        placeholder="أدخل مبلغ الشحن بالدينار..."
+                        style={{ touchAction: 'manipulation' }}
+                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pr-12 pl-4 font-black text-base outline-none focus:border-orange-500 focus:bg-white transition-all shadow-sm group-hover:border-orange-200 relative z-[10001]"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-black text-xs pointer-events-none z-[10002]">د.ع</span>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
-                        <button onClick={() => handleTopUp("Zain Cash")} className="flex flex-col items-center gap-4 bg-gray-50 p-6 rounded-[35px] hover:border-orange-500 border-2 border-transparent transition-all">
-                           <div className="w-14 h-14 bg-[#D12B2F] rounded-2xl flex items-center justify-center font-black text-white italic text-xs shadow-lg">Zain</div>
-                           <span className="font-black text-sm">زين كاش</span>
-                        </button>
-                        <button onClick={() => handleTopUp("MasterCard")} className="flex flex-col items-center gap-4 bg-gray-50 p-6 rounded-[35px] hover:border-blue-600 border-2 border-transparent transition-all">
-                           <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg"><CreditCard /></div>
-                           <span className="font-black text-sm">ماستر كارد</span>
-                        </button>
+                        <motion.button 
+                          whileTap={{ scale: 0.96 }}
+                          disabled={isCharging}
+                          onClick={() => handleTopUp("Zain Cash")} 
+                          className="flex flex-col items-center justify-center gap-2 bg-white p-4 rounded-[28px] border-2 border-slate-50 hover:border-orange-500 shadow-sm hover:shadow-md transition-all"
+                        >
+                           <div className="w-12 h-12 flex items-center justify-center">
+                             {isCharging ? (
+                               <Loader2 className="animate-spin text-orange-500 w-5 h-5"/>
+                             ) : (
+                               <img src="/zain-logo.png" alt="Zain Cash" className="w-full h-full object-contain" />
+                             )}
+                           </div>
+                           <span className="font-black text-xs text-slate-700">زين كاش</span>
+                        </motion.button>
+
+                        <motion.button 
+                          whileTap={{ scale: 0.96 }}
+                          onClick={() => handleTopUp("MasterCard")} 
+                          className="flex flex-col items-center justify-center gap-2 bg-white p-4 rounded-[28px] border-2 border-slate-50 hover:border-orange-500 shadow-sm hover:shadow-md transition-all"
+                        >
+                           <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center">
+                             <CreditCard className="text-slate-600 w-6 h-6" />
+                           </div>
+                           <span className="font-black text-xs text-slate-700">ماستر كارد</span>
+                        </motion.button>
                     </div>
                   </div>
 
-                  <div className="p-6 bg-orange-50 rounded-[35px] border border-orange-100">
-                    <h5 className="font-black text-orange-700 text-sm mb-2 italic">ملاحظة الأمان</h5>
-                    <p className="text-xs text-orange-600 leading-relaxed font-bold">يتم تأمين كافة المعاملات المالية عبر بروتوكول حماية مشفر. لا نقوم بتخزين معلومات بطاقتك الائتمانية.</p>
+                  <div className="p-4 bg-orange-50/50 rounded-2xl border border-orange-100 flex gap-3 items-center backdrop-blur-sm">
+                    <div className="bg-orange-100 p-2 rounded-lg shrink-0">
+                        <ShieldCheck className="w-5 h-5 text-orange-500" />
+                    </div>
+                    <div>
+                        <h5 className="font-black text-orange-700 text-[11px] mb-0.5">عملية آمنة وموثوقة</h5>
+                        <p className="text-[10px] text-orange-600 leading-tight font-bold opacity-80">سيتم تحديث رصيدك فور نجاح عملية الدفع.</p>
+                    </div>
                   </div>
                </div>
-  </motion.div>
+            </motion.div>
           )}
       </AnimatePresence>
     </div>

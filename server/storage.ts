@@ -20,6 +20,8 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   getUser(id: number): Promise<User | undefined>;
   getUserByPhone(phone: string): Promise<User | undefined>;
+  // ✅ إضافة التعديل هنا: تحديث محفظة الزبون
+  updateCustomerWallet(phone: string, amount: number): Promise<User>;
 
   // --- طلبات الزبائن ---
   createRequest(request: InsertRequest): Promise<Request>;
@@ -70,6 +72,23 @@ export class DatabaseStorage implements IStorage {
   async getUserByPhone(phone: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.phone, phone));
     return user;
+  }
+
+  // ✅ إضافة التعديل: تنفيذ تحديث محفظة الزبون
+  async updateCustomerWallet(phone: string, amount: number): Promise<User> {
+    const [user] = await db.select().from(users).where(eq(users.phone, phone));
+    if (!user) throw new Error("Customer not found");
+
+    const currentBalance = parseFloat(user.walletBalance || "0");
+    const newBalance = (currentBalance + amount).toFixed(2);
+
+    const [updatedUser] = await db
+      .update(users)
+      .set({ walletBalance: newBalance })
+      .where(eq(users.phone, phone))
+      .returning();
+    
+    return updatedUser;
   }
 
   // 1. إدارة الطلبات

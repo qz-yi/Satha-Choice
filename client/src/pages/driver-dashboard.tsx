@@ -6,7 +6,7 @@ import {
   Phone, CheckCircle2, User, MapPin, Navigation, List, ExternalLink,
   Star, Clock, TrendingUp, ChevronRight, Settings, History, GripHorizontal,
   Loader2, ShieldAlert, ArrowRight, Camera, MessageSquare, Send, Target, Power,
-  PlusCircle, CreditCard, Info
+  PlusCircle, CreditCard, Info, ShieldCheck
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MapContainer, TileLayer, useMap, Marker, Popup } from "react-leaflet"; 
@@ -18,7 +18,6 @@ import { Driver } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient"; 
 import { useToast } from "@/hooks/use-toast"; 
 
-// ✅ تم تحديث الأيقونة لتطابق الزبون
 const getOrangeArrowIcon = (rotation: number) => L.divIcon({
   html: `
     <div style="transform: rotate(${rotation}deg); transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); filter: drop-shadow(0px 3px 5px rgba(0,0,0,0.3));">
@@ -33,11 +32,9 @@ const getOrangeArrowIcon = (rotation: number) => L.divIcon({
 
 const socket = io();
 
-// ✅ الحل 1: تعديل MapViewHandler لمنع الارتجاج والسحب القسري
 const MapViewHandler = ({ center, isFollowMode }: { center: [number, number], isFollowMode: boolean }) => {
   const map = useMap();
   useEffect(() => { 
-    // يتم التحريك فقط إذا كان وضع التتبع مفعلاً وهناك إحداثيات جديدة
     if (center && isFollowMode) {
       map.setView(center, map.getZoom(), { animate: true, duration: 1 }); 
     }
@@ -106,7 +103,7 @@ export default function DriverDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [activeTab, setActiveTab] = useState<"map" | "history" | "wallet" | "settings">("map");
-  
+
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatMessage, setChatMessage] = useState("");
   const [messages, setMessages] = useState<any[]>([]);
@@ -116,10 +113,9 @@ export default function DriverDashboard() {
   const [isEditingPhoto, setIsEditingPhoto] = useState(false);
   const [showVehicleDetails, setShowVehicleDetails] = useState(false);
   const [isDepositing, setIsDepositing] = useState(false); 
+  const [paymentMethod, setPaymentMethod] = useState<'zain' | 'card' | null>(null);
 
-  // ✅ الحالات الجديدة للمشاكل
-  const [isFollowMode, setIsFollowMode] = useState(true); // للتحكم في حركة الخريطة
-  const [showPaymentOptions, setShowPaymentOptions] = useState(false); // خيارات الشحن
+  const [isFollowMode, setIsFollowMode] = useState(true); 
 
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -139,58 +135,66 @@ export default function DriverDashboard() {
     enabled: !!driverInfo?.id && activeTab === "wallet",
   });
 
-  // ✅ جلب إعدادات النظام للحصول على العمولة الحالية ديناميكياً
   const { data: settings } = useQuery<{ commissionAmount: number }>({
     queryKey: ["/api/admin/settings"],
   });
 
-  // ✅ التعديل الجوهري: ربط دالة الشحن ببوابة زين كاش مباشرة
   const handleDeposit = async (method: 'zain' | 'master') => {
     if (!driverInfo) return;
+
+    // جلب المبلغ من الحقل أو استخدام 25000 كقيمة افتراضية
+    const amountInput = document.querySelector('input[type="number"]') as HTMLInputElement;
+    const amount = amountInput?.value ? Number(amountInput.value) : 25000;
+
+    if (amount < 1000) {
+      toast({ variant: "destructive", title: "مبلغ غير كافٍ", description: "أقل مبلغ للشحن هو 1000 دينار" });
+      return;
+    }
+
     setIsDepositing(true);
     try {
-      const amount = 25000; // المبلغ الافتراضي للشحن
-      
-      // 1. طلب إنشاء عملية دفع من السيرفر
-      const res = await apiRequest("POST", "/api/zain-cash/initiate", {
+      // توجيه الطلب للمسار الموحد الصحيح مع تمييز نوع المستخدم (سائق)
+      const res = await apiRequest("POST", "/api/zaincash/initiate", {
         amount,
-        driverId: driverInfo.id,
-        method: method
+        userId: driverInfo.id,
+        userType: "driver"
       });
-      
-      const data = await res.json();
-      
-      if (data.transactionId) {
-        toast({ title: "جاري التوجيه...", description: "سيتم فتح بوابة الدفع الآمنة الآن" });
-        // 2. التوجيه الفوري لرابط الدفع الخاص بزين كاش (أو رابط التست حالياً)
-        window.location.href = `https://test.zaincash.iq/transaction/pay?id=${data.transactionId}`;
-      } else {
-        throw new Error("لم يتم استلام معرف العملية");
-      }
 
+      const data = await res.json();
+
+      if (data.url) {
+        toast({ title: "جاري التوجيه...", description: "سيتم فتح بوابة الدفع الآمنة" });
+        // استخدام الرابط المباشر المرسل من السيرفر لضمان صحة الـ ID والبيئة
+        setTimeout(() => {
+          window.location.href = data.url;
+        }, 800);
+      } else {
+        throw new Error("لم يتم استلام رابط الدفع");
+      }
     } catch (err) {
-      toast({ variant: "destructive", title: "فشل الاتصال بالبوابة", description: "يرجى المحاولة مرة أخرى أو مراجعة الإدارة" });
-    } finally { setIsDepositing(false); }
+      toast({ 
+        variant: "destructive", 
+        title: "فشل الربط", 
+        description: "تعذر إنشاء عملية دفع جديدة، تأكد من إعدادات السيرفر" 
+      });
+    } finally { 
+      setIsDepositing(false); 
+    }
   };
 
-  // ✅ الحل 3: معالجة رفع الصورة الشخصية وتثبيتها
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !driverInfo) return;
-
     const formData = new FormData();
     formData.append("image", file);
-
     try {
       toast({ title: "جاري الرفع...", description: "يتم الآن حفظ صورتك الجديدة" });
       const res = await fetch(`/api/drivers/${driverInfo.id}/upload-avatar`, {
         method: "POST",
         body: formData,
       });
-      
       if (res.ok) {
         const data = await res.json();
-        // تحديث الرابط في قاعدة البيانات
         await apiRequest("PATCH", `/api/drivers/${driverInfo.id}`, { avatarUrl: data.url });
         await refetch();
         toast({ title: "نجاح", description: "تم تحديث الصورة الشخصية بنجاح" });
@@ -218,7 +222,6 @@ export default function DriverDashboard() {
   };
 
   const handleAcceptOrder = async (req: any) => {
-    // تم تحديث التحقق ليعتمد على قيمة العمولة من الإعدادات
     const currentCommission = settings?.commissionAmount || 1000;
     if (Number(driverInfo?.walletBalance) < currentCommission) {
       toast({ 
@@ -237,16 +240,12 @@ export default function DriverDashboard() {
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude, heading: deviceHeading } = pos.coords;
-        
         setCurrentCoords(prev => {
            if (!prev) return [latitude, longitude];
            const dist = Math.sqrt(Math.pow(latitude - prev[0], 2) + Math.pow(longitude - prev[1], 2));
-           // تحديث فقط إذا كانت الحركة ملموسة لتقليل الارتجاج
            return dist > 0.00002 ? [latitude, longitude] : prev;
         });
-
         if (deviceHeading !== null && deviceHeading !== undefined) setHeading(deviceHeading);
-        
         apiRequest("PATCH", `/api/drivers/${driverInfo.id}`, {
           lastLat: latitude.toString(), lastLng: longitude.toString()
         }).catch(() => {});
@@ -273,7 +272,6 @@ export default function DriverDashboard() {
     } finally { setIsUpdatingStatus(false); }
   };
 
-  // ✅ تعديل دالة التحديث لجلب الطلبات وفلترتها حسب المدينة برمجياً
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
@@ -281,7 +279,6 @@ export default function DriverDashboard() {
       const response = await fetch('/api/requests');
       if (response.ok) {
         const allRequests = await response.json();
-        // فلترة دقيقة حسب المدينة وحالة الطلب
         const myCityRequests = allRequests.filter((req: any) => 
           req.city?.trim() === driverInfo?.city?.trim() && req.status === "pending"
         );
@@ -349,7 +346,7 @@ if (!driverInfo || driverInfo.status !== "approved") {
 
   return (
     <div className="h-screen w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative font-sans" dir="rtl">
-      
+
       <Sidebar 
         isOpen={isSidebarOpen} 
         onClose={() => setSidebarOpen(false)} 
@@ -372,7 +369,7 @@ if (!driverInfo || driverInfo.status !== "approved") {
       </header>
 
       <div className="flex-1 relative flex flex-col">
-        
+
         {activeTab === "map" && (
           <>
             <div className={`absolute inset-0 z-0 transition-all duration-1000 ${driverInfo.isOnline ? 'opacity-100' : 'opacity-40 grayscale'}`}>
@@ -381,7 +378,6 @@ if (!driverInfo || driverInfo.status !== "approved") {
                 zoom={15} 
                 style={{ height: "100%", width: "100%" }} 
                 zoomControl={false}
-                // حل الارتجاج: تعطيل التتبع التلقائي فقط عند السحب اليدوي المتعمد
                 onDragstart={() => setIsFollowMode(false)}
               >
                 <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="© Google Maps" detectRetina={true} />
@@ -467,60 +463,124 @@ if (!driverInfo || driverInfo.status !== "approved") {
         )}
 
         {activeTab === "wallet" && (
-          <motion.div initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} className="absolute inset-0 z-[2000] bg-white flex flex-col">
-            <div className="p-6 flex items-center gap-4 border-b"><Button variant="ghost" size="icon" onClick={() => setActiveTab("map")} className="rounded-full bg-gray-50"><ArrowRight className="w-6 h-6"/></Button><h2 className="text-2xl font-black italic">المحفظة المالية</h2></div>
-            <div className="p-8 overflow-y-auto flex-1">
-              <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-10 rounded-[45px] text-white shadow-2xl shadow-orange-100 mb-6 text-center"><p className="text-orange-100 font-bold mb-2 text-lg">الرصيد الحالي</p><h3 className="text-6xl font-black">{driverInfo?.walletBalance} <span className="text-xl italic">د.ع</span></h3></div>
-              
-              {/* ✅ تنبيه العمولة الديناميكية المحدث */}
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="bg-orange-50 border border-orange-100 rounded-[25px] p-4 flex items-center gap-4 mb-8 shadow-sm"
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            className="absolute inset-0 z-[2000] bg-white flex flex-col font-sans text-right"
+            dir="rtl"
+          >
+            {/* الترويسة العلوية النظيفة */}
+            <div className="p-6 flex items-center justify-between border-b border-gray-50 bg-white">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setActiveTab("map")} 
+                className="rounded-full bg-gray-100 h-10 w-10"
               >
-                <div className="bg-orange-500 p-2.5 rounded-xl">
-                  <Info className="w-5 h-5 text-white" />
-                </div>
-                <div className="flex flex-col">
-                  <p className="text-[11px] font-black text-orange-800 uppercase tracking-tighter">نظام العمولات الحالي</p>
-                  <p className="text-xs font-bold text-orange-600">
-                    يتم استقطاع <span className="font-black underline decoration-2">{(settings?.commissionAmount || 1000).toLocaleString()} د.ع</span> عن كل رحلة تكتمل بنجاح.
-                  </p>
-                </div>
-              </motion.div>
+                <ArrowRight className="w-6 h-6 text-black" />
+              </Button>
+              <h2 className="text-xl font-black text-gray-800 italic">المحفظة</h2>
+              <div className="w-10"></div>
+            </div>
 
-              <div className="grid grid-cols-1 gap-4 mb-10">
-                {!showPaymentOptions ? (
-                  <Button onClick={() => setShowPaymentOptions(true)} className="w-full h-20 rounded-[30px] bg-black hover:bg-gray-900 text-white font-black text-xl shadow-xl flex items-center justify-center gap-4 transition-all">
-                    <PlusCircle className="w-6 h-6" /> شحن رصيد المحفظة
-                  </Button>
-                ) : (
-                  <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4">
-                    <Button disabled={isDepositing} onClick={() => handleDeposit('zain')} className="w-full h-16 rounded-2xl bg-[#000] text-white font-black flex items-center justify-center gap-3">
-                       <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center text-[10px]">Z</div> زين كاش
-                    </Button>
-                    <Button disabled={isDepositing} onClick={() => handleDeposit('master')} className="w-full h-16 rounded-2xl bg-blue-600 text-white font-black flex items-center justify-center gap-3">
-                       <CreditCard className="w-6 h-6" /> ماستر كارد / فيزا
-                    </Button>
-                    <Button variant="ghost" onClick={() => setShowPaymentOptions(false)} className="w-full text-gray-400 font-bold">إلغاء</Button>
-                  </div>
-                )}
+            <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8">
+
+              {/* بطاقة الرصيد المستطيلة - ممتدة أفقياً */}
+              <div className="bg-[#FF7A00] p-7 rounded-[30px] text-white shadow-lg relative overflow-hidden">
+                <p className="text-white/80 text-xs font-bold mb-1">رصيدك الحالي المتاح</p>
+                <div className="flex items-baseline gap-2">
+                  <h3 className="text-4xl font-black tracking-tight">
+                    {Number(driverInfo?.walletBalance || 0).toLocaleString()}
+                  </h3>
+                  <span className="text-lg font-bold opacity-90">د.ع</span>
+                </div>
+                <div className="absolute -left-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
               </div>
 
-              <h4 className="font-black text-gray-800 mb-4 px-2 flex items-center gap-2"><History className="w-5 h-5 text-orange-500" /> سجل العمليات</h4>
+              {/* خانة إدخال مبلغ الشحن */}
               <div className="space-y-3">
-                {transactions?.map((tx) => (
-                  <div key={tx.id} className="p-5 bg-gray-50 rounded-[25px] flex justify-between items-center border border-gray-100">
-                    <div className="text-right">
-                      <p className="font-black text-gray-700">{tx.type === 'deposit' ? 'شحن رصيد' : 'عمولة رحلة'}</p>
-                      <p className="text-[10px] text-gray-400">{new Date(tx.createdAt).toLocaleString('ar-EG')}</p>
-                    </div>
-                    <span className={`font-black text-lg ${tx.amount > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {tx.amount > 0 ? `+${tx.amount}` : tx.amount} د.ع
-                    </span>
-                  </div>
-                ))}
+                <label className="text-gray-500 text-sm font-bold block px-2">مبلغ الشحن المطلوب</label>
+                <div className="relative">
+                  <input 
+                    type="number" 
+                    placeholder="أدخل المبلغ بالدينار..."
+                    className="w-full h-16 bg-gray-50 border-2 border-gray-100 rounded-[22px] px-6 text-xl font-black text-gray-800 focus:border-orange-500 focus:outline-none transition-all placeholder:text-gray-300"
+                  />
+                </div>
               </div>
+
+              {/* خيارات الدفع - نسخة واجهة الزبون */}
+              <div className="space-y-4">
+                <h4 className="text-gray-800 font-black text-lg pr-2">وسائل الشحن</h4>
+
+                {/* خيار زين كاش */}
+                <button 
+                  disabled={isDepositing}
+                  onClick={() => { setPaymentMethod('zain'); handleDeposit('zain'); }}
+                  className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between active:scale-[0.98] transition-all group ${paymentMethod === 'zain' ? 'border-orange-500 bg-orange-50/20' : 'border-gray-100'}`}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center p-1 overflow-hidden border border-gray-800 shadow-sm">
+                      <img src="/zain-logo.png" className="w-full h-full object-contain" alt="Zain" />
+                    </div>
+                    <span className="font-bold text-gray-700 text-lg">زين كاش</span>
+                  </div>
+                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${paymentMethod === 'zain' ? 'border-orange-500' : 'border-gray-200'}`}>
+                    {paymentMethod === 'zain' && <div className="w-3 h-3 bg-orange-500 rounded-full"></div>}
+                  </div>
+                </button>
+
+                {/* خيار ماستر كارد */}
+                <button 
+                  disabled={isDepositing}
+                  onClick={() => { setPaymentMethod('card'); handleDeposit('master'); }}
+                  className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between active:scale-[0.98] transition-all group ${paymentMethod === 'card' ? 'border-blue-500 bg-blue-50/20' : 'border-gray-100'}`}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-sm border border-blue-500">
+                      <CreditCard className="w-6 h-6" />
+                    </div>
+                    <span className="font-bold text-gray-700 text-lg">ماستر كارد / فيزا</span>
+                  </div>
+                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${paymentMethod === 'card' ? 'border-blue-500' : 'border-gray-200'}`}>
+                    {paymentMethod === 'card' && <div className="w-3 h-3 bg-blue-500 rounded-full"></div>}
+                  </div>
+                </button>
+              </div>
+
+              {/* سجل النشاط المالي النظيف */}
+              <div className="pt-4 pb-20">
+                <h4 className="text-gray-800 font-black text-lg pr-2 mb-4 flex items-center gap-2">
+                   سجل العمليات
+                </h4>
+                <div className="space-y-0">
+                  {transactions && transactions.length > 0 ? (
+                    transactions.map((tx) => (
+                      <div key={tx.id} className="flex items-center justify-between py-5 border-b border-gray-50 px-2">
+                        <div className="text-right">
+                          <p className="font-bold text-gray-800">{tx.type === 'deposit' ? 'شحن رصيد' : 'عمولة رحلة'}</p>
+                          <p className="text-[11px] text-gray-400 font-bold">{new Date(tx.createdAt).toLocaleDateString('ar-EG')}</p>
+                        </div>
+                        <div className={`text-lg font-black ${tx.amount > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {tx.amount > 0 ? `+${tx.amount.toLocaleString()}` : tx.amount.toLocaleString()}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-10 opacity-30 italic font-bold">لا توجد عمليات مسجلة حالياً</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 bg-white border-t border-gray-50 pb-8">
+              <Button 
+                disabled={isDepositing}
+                onClick={() => handleDeposit(paymentMethod === 'card' ? 'master' : 'zain')}
+                className="w-full h-16 rounded-[22px] bg-orange-500 hover:bg-orange-600 text-white text-xl font-black shadow-lg shadow-orange-100 transition-all active:scale-[0.97]"
+              >
+                {isDepositing ? "جاري الاتصال..." : "تأكيد عملية الشحن"}
+              </Button>
             </div>
           </motion.div>
         )}
@@ -666,7 +726,7 @@ if (!driverInfo || driverInfo.status !== "approved") {
         )}
 
       </div>
-      
+
       <AnimatePresence>
         {notification.show && (
           <motion.div initial={{ y: -100 }} animate={{ y: 20 }} exit={{ y: -100 }} className="fixed top-0 left-0 right-0 z-[6000] flex justify-center px-6">

@@ -8,7 +8,16 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import express from "express";
-import { Server as SocketIOServer } from "socket.io"; // إضافة مكتبة السوكيت
+import { Server as SocketIOServer } from "socket.io";
+import jwt from "jsonwebtoken"; // إضافة مكتبة JWT للتعامل مع زين كاش
+
+// === إعدادات زين كاش (بيانات الاختبار من التوثيق) ===
+const ZAIN_CASH_CONFIG = {
+  merchantId: "5ffacf6612b5777c6d44266f",
+  merchantSecret: "$2y$10$hHbAZo2GfSSvyqAyV2SaqOfYewgYpfR1O19gIh4SqyGWdmySZYPuS",
+  msisdn: "9647835077893",
+  isTest: true
+};
 
 // === إعدادات رفع الصور (بدون تغيير) ===
 const uploadDir = path.resolve(process.cwd(), "public/uploads/avatars");
@@ -31,7 +40,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   const app: Express = arg1.post ? arg1 : arg2;
   const httpServer: Server = arg1.post ? arg2 : arg1;
 
-  // === إعداد Socket.io لضمان وصول التنبيهات فوراً للسائقين ===
+  // === إعداد Socket.io ===
   const io = new SocketIOServer(httpServer, {
     cors: { origin: "*" },
     pingInterval: 10000,
@@ -39,18 +48,112 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   });
 
   io.on("connection", (socket) => {
-    // تمكين الغرف للمحادثة بين السائق والزبون مستقبلاً
     socket.on("join_order", (orderId) => {
       socket.join(`order_${orderId}`);
     });
   });
 
-  // إعداد الملفات العامة
   app.use('/uploads', express.static(path.resolve(process.cwd(), "public/uploads")));
   app.use(express.static(path.resolve(process.cwd(), "public")));
 
+  // --- مسارات زين كاش المطورة (تم التعديل للجمع بين السائق والزبون) ---
+
+  // 1. بدء عملية الدفع (تم تصحيح المسار ليتوافق مع واجهة السائق مع الحفاظ على المنطق)
+  app.post(["/api/zaincash/initiate", "/api/zain-cash/initiate"], async (req, res) => {
+    try {
+      const { amount, userId, userType } = req.body; // userType: 'driver' or 'customer'
+      if (!amount || amount < 1000) {
+        return res.status(400).json({ message: "أقل مبلغ للشحن هو 1000 دينار" });
+      }
+
+      // تحديد البادئة للتمييز عند العودة
+      const prefix = userType === "driver" ? "DRV" : "USR";
+
+      const data = {
+        amount: Number(amount),
+        serviceType: userType === "driver" ? "شحن محفظة السائق" : "شحن رصيد الزبون",
+        msisdn: ZAIN_CASH_CONFIG.msisdn,
+        orderId: `${prefix}_${userId}_${Date.now()}`,
+        redirectUrl: `${req.protocol}://${req.get('host')}/api/zaincash/callback`,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + (60 * 60 * 4)
+      };
+
+      const token = jwt.sign(data, ZAIN_CASH_CONFIG.merchantSecret);
+      const initUrl = ZAIN_CASH_CONFIG.isTest ? "https://test.zaincash.iq/transaction/init" : "https://api.zaincash.iq/transaction/init";
+
+      const response = await fetch(initUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          token: token,
+          merchantId: ZAIN_CASH_CONFIG.merchantId,
+          lang: "ar"
+        })
+      });
+
+      const result: any = await response.json();
+      if (!result.id) throw new Error("فشل في الحصول على معرف العملية من زين كاش");
+
+      const payUrl = ZAIN_CASH_CONFIG.isTest 
+        ? `https://test.zaincash.iq/transaction/pay?id=${result.id}` 
+        : `https://api.zaincash.iq/transaction/pay?id=${result.id}`;
+
+      // إرسال الـ url و transactionId لضمان عمل الواجهتين القديمة والجديدة
+      res.json({ url: payUrl, transactionId: result.id, status: "success" });
+    } catch (err: any) {
+      res.status(500).json({ message: "فشل بدء عملية الدفع: " + err.message });
+    }
+  });
+
+  // 2. معالجة العودة وتحديث الرصيد بناءً على نوع المستخدم
+  app.get("/api/zaincash/callback", async (req, res) => {
+    const { token } = req.query;
+    if (!token) return res.status(400).send("التوكن مفقود");
+
+    try {
+      const decoded: any = jwt.verify(token as string, ZAIN_CASH_CONFIG.merchantSecret);
+
+      if (decoded.status === "success") {
+        const orderParts = decoded.orderid.split("_");
+        const type = orderParts[0]; // DRV or USR
+        const userId = Number(orderParts[1]);
+        const amount = Number(decoded.amount);
+
+        if (type === "DRV") {
+          // تحديث محفظة السائق
+          const driver = await storage.getDriver(userId);
+          if (driver) {
+            const newBalance = (Number(driver.walletBalance) + amount).toString();
+            await storage.updateDriver(userId, { walletBalance: newBalance });
+            await storage.createTransaction({
+              driverId: userId,
+              amount: amount.toString(),
+              type: "deposit",
+              referenceId: `ZAIN_${decoded.id}`,
+            });
+            io.emit(`driver_wallet_updated_${userId}`, { newBalance });
+          }
+        } else {
+          // تحديث محفظة الزبون
+          const user = await storage.getUser(userId);
+          if (user) {
+            await storage.updateCustomerWallet(user.phone, amount);
+            io.emit(`wallet_updated_${userId}`, { newBalance: amount });
+          }
+        }
+
+        res.send(`<html><script>window.location.href="/payment-success";</script></html>`);
+      } else {
+        res.send(`<html><script>window.location.href="/payment-failed?msg=${decoded.msg}";</script></html>`);
+      }
+    } catch (err) {
+      res.status(500).send("خطأ في التحقق من العملية");
+    }
+  });
+
   // --- مسارات الزبائن (Users/Customers) ---
-  
+
   app.post("/api/register", async (req, res) => {
     try {
       const input = insertUserSchema.parse(req.body);
@@ -257,10 +360,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       }
 
       const request = await storage.createRequest(validatedData);
-
-      // ✅ إضافة: إرسال الطلب فوراً لجميع السائقين المتصلين عبر السوكيت
       io.emit("receive_request", request);
-
       res.status(201).json(request);
     } catch (err: any) {
       console.error("خطأ في السيرفر عند إنشاء الطلب:", err);
@@ -268,13 +368,10 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // التعديل 1: جعل العمولة ديناميكية عند قبول الطلب
   app.post("/api/drivers/:id/accept/:requestId", async (req, res) => {
     try {
       const driverId = Number(req.params.id);
       const driver = await storage.getDriver(driverId);
-      
-      // جلب العمولة الحالية من الإعدادات
       const systemSettings = await storage.getSettings();
       const currentCommission = systemSettings.commissionAmount;
 
@@ -284,23 +381,17 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         });
       }
       const result = await storage.acceptRequest(driverId, Number(req.params.requestId));
-      
-      // ✅ إضافة: إبلاغ الزبون أن السائق قد قبل الطلب
       io.emit(`order_status_${req.params.requestId}`, { status: "accepted", driverId });
-      
       res.json(result);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
     }
   });
 
-  // التعديل 2: خصم العمولة الديناميكية عند إكمال الطلب
   app.post("/api/drivers/:id/complete/:requestId", async (req, res) => {
     try {
       const driverId = Number(req.params.id);
       const requestId = Number(req.params.requestId);
-      
-      // جلب العمولة من قاعدة البيانات بدلاً من رقم 1000 الثابت
       const systemSettings = await storage.getSettings();
       const fee = systemSettings.commissionAmount; 
 
@@ -315,9 +406,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         referenceId: `REQ-${requestId}`
       });
 
-      // ✅ إضافة: إبلاغ الزبون بإكمال الرحلة
       io.emit(`order_status_${requestId}`, { status: "completed" });
-
       res.json({ message: "تم إكمال الطلب وخصم العمولة", balance: newBalance });
     } catch (err: any) {
       res.status(500).json({ message: "فشل في إكمال الطلب" });
@@ -335,7 +424,18 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
   // --- مسارات الإدارة (Admin) ---
 
-  // التعديل 3: إضافة مسارات إدارة العمولة الجديدة للمدير
+  app.post("/api/admin/customers/adjust-wallet", async (req, res) => {
+    try {
+      const { customerPhone, amount } = req.body;
+      if (!customerPhone) return res.status(400).json({ message: "رقم هاتف الزبون مطلوب" });
+      const updated = await storage.updateCustomerWallet(customerPhone, Number(amount));
+      res.json(updated);
+    } catch (err: any) {
+      console.error("خطأ في تحديث محفظة الزبون:", err);
+      res.status(500).json({ message: "فشل في تحديث محفظة الزبون" });
+    }
+  });
+
   app.get("/api/admin/settings", async (_req, res) => {
     try {
       const settings = await storage.getSettings();
@@ -376,7 +476,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // --- دالة الـ Seed (البيانات الأولية) ---
+  // --- دالة الـ Seed ---
   const seed = async () => {
     const driversList = await storage.getDrivers();
     if (driversList.length === 0) {
@@ -391,7 +491,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         });
       } catch (e) { console.log("Seed failed"); }
     }
-    // التعديل 4: ضمان وجود سجل الإعدادات عند بدء تشغيل التطبيق
     await storage.getSettings();
   };
   seed().catch(console.error);
