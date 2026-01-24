@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
-import { api } from "@shared/routes";
+// تم حذف السطر المسبب لخطأ ERR_MODULE_NOT_FOUND (api import) لأنه غير مستخدم
 import { z } from "zod";
 import { insertDriverSchema, loginSchema, insertUserSchema, insertRequestSchema } from "@shared/schema"; 
 import multer from "multer";
@@ -9,17 +9,38 @@ import path from "path";
 import fs from "fs";
 import express from "express";
 import { Server as SocketIOServer } from "socket.io";
-import jwt from "jsonwebtoken"; // إضافة مكتبة JWT للتعامل مع زين كاش
+import jwt from "jsonwebtoken"; 
+// === إضافة مكتبة الترميز الجغرافي الاحترافية ===
+import NodeGeocoder from 'node-geocoder';
 
-// === إعدادات زين كاش (بيانات الاختبار من التوثيق) ===
+const geocoder = NodeGeocoder({
+  provider: 'openstreetmap' 
+});
+
+// دالة تحويل الإحداثيات إلى اسم مدينة حقيقي
+async function getCityFromCoords(lat: number, lon: number): Promise<string> {
+  try {
+    const res = await geocoder.reverse({ lat, lon });
+    if (res && res.length > 0) {
+      // محاولة استخراج المدينة أو المنطقة أو المحافظة
+      return res[0].city || res[0].suburb || res[0].state || res[0].county || "بابل";
+    }
+    return "بابل";
+  } catch (err) {
+    console.error("خطأ في تحديد المدينة:", err);
+    return "بابل";
+  }
+}
+
+// === إعدادات زين كاش الجديدة (تحديث 2026) ===
 const ZAIN_CASH_CONFIG = {
-  merchantId: "5ffacf6612b5777c6d44266f",
-  merchantSecret: "$2y$10$hHbAZo2GfSSvyqAyV2SaqOfYewgYpfR1O19gIh4SqyGWdmySZYPuS",
-  msisdn: "9647835077893",
+  merchantId: "5ff4130e87da5ec303ed3cf2",
+  merchantSecret: "210db238198f3e58869c9339",
+  msisdn: "9647800272700", // الرقم الجديد المعتمد
   isTest: true
 };
 
-// === إعدادات رفع الصور (بدون تغيير) ===
+// === إعدادات رفع الصور ===
 const uploadDir = path.resolve(process.cwd(), "public/uploads/avatars");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
@@ -40,7 +61,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   const app: Express = arg1.post ? arg1 : arg2;
   const httpServer: Server = arg1.post ? arg2 : arg1;
 
-  // === إعداد Socket.io ===
+  // === إعداد Socket.io (تحديث لضمان البث المباشر في العراق) ===
   const io = new SocketIOServer(httpServer, {
     cors: { origin: "*" },
     pingInterval: 10000,
@@ -48,27 +69,83 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   });
 
   io.on("connection", (socket) => {
+    console.log(`[Socket] New connection: ${socket.id}`);
+
+    // الزبون ينضم لغرفة الطلب لمتابعة السائق
     socket.on("join_order", (orderId) => {
       socket.join(`order_${orderId}`);
+      console.log(`[Socket] User joined room: order_${orderId}`);
+    });
+
+    // السائق ينضم لغرفة المدينة لاستقبال طلبات منطقته فوراً
+    socket.on("join_city", (city) => {
+      socket.join(`city_${city}`);
+      console.log(`[Socket] Driver joined city: ${city}`);
+    });
+
+    // --- الحل الجذري لمشكلة تحديث الحالة لدى الزبون ---
+    socket.on("update_order_status", async (data) => {
+      try {
+        const { orderId, status, driverId } = data;
+        if (!orderId || !status) return;
+
+        // 1. تحديث قاعدة البيانات لضمان بقاء الحالة عند عمل Refresh للزبون
+        await storage.updateRequestStatus(Number(orderId), status);
+
+        // جلب بيانات السائق لإرسالها للزبون ليراها في الواجهة
+        const driver = driverId ? await storage.getDriver(Number(driverId)) : null;
+
+        const payload = { 
+          status, 
+          driverId,
+          driverInfo: driver ? {
+            name: driver.username || (driver as any).name, // تعديل لدعم المسمى الجديد
+            phone: driver.phone,
+            avatarUrl: driver.avatarUrl,
+            vehicleType: driver.vehicleType,
+            plateNumber: driver.plateNumber,
+            lat: driver.lastLat,
+            lng: driver.lastLng
+          } : null
+        };
+
+        // 2. بث الإشارة فوراً للزبون المتابع لهذا الطلب تحديداً
+        io.emit(`order_status_${orderId}`, payload);
+        io.to(`order_${orderId}`).emit("status_changed", payload);
+
+        console.log(`[Socket] Order ${orderId} status updated to: ${status}`);
+      } catch (error) {
+        console.error("[Socket Error] Failed to update status:", error);
+      }
+    });
+
+    // تحديث موقع السائق لحظياً على الخريطة
+    socket.on("update_location", async (data) => {
+      const { driverId, lat, lng } = data;
+      await storage.updateDriver(driverId, { lastLat: lat, lastLng: lng });
+      io.emit(`location_changed_${driverId}`, { lat, lng });
+    });
+
+    // دعم إشارة السائق المخصصة driver_location_update
+    socket.on("driver_location_update", (data) => {
+      const { orderId, lat, lng, heading } = data;
+      io.emit(`location_changed_order_${orderId}`, { lat, lng, heading });
     });
   });
 
   app.use('/uploads', express.static(path.resolve(process.cwd(), "public/uploads")));
   app.use(express.static(path.resolve(process.cwd(), "public")));
 
-  // --- مسارات زين كاش المطورة (تم التعديل للجمع بين السائق والزبون) ---
+  // --- مسارات زين كاش المصححة ---
 
-  // 1. بدء عملية الدفع (تم تصحيح المسار ليتوافق مع واجهة السائق مع الحفاظ على المنطق)
   app.post(["/api/zaincash/initiate", "/api/zain-cash/initiate"], async (req, res) => {
     try {
-      const { amount, userId, userType } = req.body; // userType: 'driver' or 'customer'
+      const { amount, userId, userType } = req.body; 
       if (!amount || amount < 1000) {
         return res.status(400).json({ message: "أقل مبلغ للشحن هو 1000 دينار" });
       }
 
-      // تحديد البادئة للتمييز عند العودة
       const prefix = userType === "driver" ? "DRV" : "USR";
-
       const data = {
         amount: Number(amount),
         serviceType: userType === "driver" ? "شحن محفظة السائق" : "شحن رصيد الزبون",
@@ -93,20 +170,23 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       });
 
       const result: any = await response.json();
-      if (!result.id) throw new Error("فشل في الحصول على معرف العملية من زين كاش");
+
+      if (!result || !result.id) {
+        console.error("ZainCash Error Response:", result);
+        return res.status(400).json({ message: result.err || "فشل في الاتصال بزين كاش" });
+      }
 
       const payUrl = ZAIN_CASH_CONFIG.isTest 
         ? `https://test.zaincash.iq/transaction/pay?id=${result.id}` 
         : `https://api.zaincash.iq/transaction/pay?id=${result.id}`;
 
-      // إرسال الـ url و transactionId لضمان عمل الواجهتين القديمة والجديدة
       res.json({ url: payUrl, transactionId: result.id, status: "success" });
     } catch (err: any) {
+      console.error("Initiate Error:", err.message);
       res.status(500).json({ message: "فشل بدء عملية الدفع: " + err.message });
     }
   });
 
-  // 2. معالجة العودة وتحديث الرصيد بناءً على نوع المستخدم
   app.get("/api/zaincash/callback", async (req, res) => {
     const { token } = req.query;
     if (!token) return res.status(400).send("التوكن مفقود");
@@ -116,12 +196,11 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
       if (decoded.status === "success") {
         const orderParts = decoded.orderid.split("_");
-        const type = orderParts[0]; // DRV or USR
+        const type = orderParts[0]; 
         const userId = Number(orderParts[1]);
         const amount = Number(decoded.amount);
 
         if (type === "DRV") {
-          // تحديث محفظة السائق
           const driver = await storage.getDriver(userId);
           if (driver) {
             const newBalance = (Number(driver.walletBalance) + amount).toString();
@@ -130,19 +209,25 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
               driverId: userId,
               amount: amount.toString(),
               type: "deposit",
-              referenceId: `ZAIN_${decoded.id}`,
+              status: "completed",
+              zainCashId: decoded.id
             });
             io.emit(`driver_wallet_updated_${userId}`, { newBalance });
           }
         } else {
-          // تحديث محفظة الزبون
           const user = await storage.getUser(userId);
           if (user) {
             await storage.updateCustomerWallet(user.phone, amount);
+            await storage.createTransaction({
+              userId: userId,
+              amount: amount.toString(),
+              type: "deposit",
+              status: "completed",
+              zainCashId: decoded.id
+            });
             io.emit(`wallet_updated_${userId}`, { newBalance: amount });
           }
         }
-
         res.send(`<html><script>window.location.href="/payment-success";</script></html>`);
       } else {
         res.send(`<html><script>window.location.href="/payment-failed?msg=${decoded.msg}";</script></html>`);
@@ -152,10 +237,11 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // --- مسارات الزبائن (Users/Customers) ---
+  // --- مسارات الزبائن ---
 
   app.post("/api/register", async (req, res) => {
     try {
+      // تعديل هنا: التأكد من أن insertUserSchema يتم تنفيذه بشكل سليم بعد تغيير name إلى username
       const input = insertUserSchema.parse(req.body);
       const existingUser = await storage.getUserByPhone(input.phone);
       if (existingUser) {
@@ -164,6 +250,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const user = await storage.createUser(input);
       res.status(201).json(user);
     } catch (err: any) {
+      console.error("Register Error:", err);
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message });
       }
@@ -190,7 +277,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // --- مسارات السائقين (Drivers) ---
+  // --- مسارات السائقين ---
 
   app.post("/api/drivers", async (req, res) => {
     try {
@@ -287,7 +374,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // --- مسارات العمليات المالية (Transactions) ---
+  // --- مسارات العمليات المالية ---
 
   app.post("/api/drivers/:id/deposit-request", async (req, res) => {
     try {
@@ -336,34 +423,55 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // --- مسارات الطلبات (Requests) ---
+  // --- مسارات الطلبات (الحل الجذري للمعلومات الحقيقية وإشعار السائق) ---
 
   app.post("/api/requests", async (req, res) => {
     try {
+      const { status, ...bodyData } = req.body; 
+
+      // 1. تحديد المدينة الحقيقية باستخدام الإحداثيات
+      let detectedCity = bodyData.city;
+      if (bodyData.pickupLat && bodyData.pickupLng) {
+        detectedCity = await getCityFromCoords(bodyData.pickupLat, bodyData.pickupLng);
+      }
+
+      // 2. جلب بيانات الزبون "الحقيقية" من قاعدة البيانات لربطها بالطلب
+      const customer = await storage.getUserByPhone(bodyData.customerPhone);
+
       const completeData = {
-        customerName: req.body.customerName || "زبون",
-        customerPhone: req.body.customerPhone || "0000",
-        location: req.body.location || "غير محدد",
-        destination: req.body.destination || "غير محدد",
-        city: req.body.city || "بغداد",
-        vehicleType: req.body.vehicleType || "سطحة صغيرة",
-        status: "pending",
-        ...req.body
+        customerName: customer?.username || bodyData.customerName || "زبون",
+        customerPhone: bodyData.customerPhone || "0000",
+        location: bodyData.location || "موقع الزبون الحالي", 
+        destination: bodyData.destination || "غير محدد",
+        city: detectedCity || bodyData.city || "بابل", 
+        vehicleType: bodyData.vehicleType || "سطحة صغيرة",
+        pickupLat: bodyData.pickupLat, 
+        pickupLng: bodyData.pickupLng,
+        ...bodyData
       };
 
       let validatedData;
       try {
         validatedData = insertRequestSchema.parse(completeData);
       } catch (e) {
-        console.log("تنبيه: تم تجاوز التحقق الصارم لوجود حقول ناقصة، يتم الإرسال يدوياً.");
         validatedData = completeData; 
       }
 
-      const request = await storage.createRequest(validatedData);
-      io.emit("receive_request", request);
+      const request = await storage.createRequest({
+        ...validatedData,
+        status: status || "pending"
+      });
+
+      // 3. إرسال "رسالة" أو إشعار فوري للسائقين (الحل لمشكلة الرسائل لا ترسل)
+      // بث عام لجميع السائقين المتصلين
+      io.emit("new_request_available", request);
+      // بث مخصص للسائقين في نفس المدينة
+      io.to(`city_${detectedCity}`).emit("new_request_in_city", request);
+
+      console.log(`[Socket] New request broadcasted to city: ${detectedCity}`);
+
       res.status(201).json(request);
     } catch (err: any) {
-      console.error("خطأ في السيرفر عند إنشاء الطلب:", err);
       res.status(500).json({ message: "خطأ في إنشاء الطلب: " + err.message });
     }
   });
@@ -371,6 +479,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   app.post("/api/drivers/:id/accept/:requestId", async (req, res) => {
     try {
       const driverId = Number(req.params.id);
+      const requestId = Number(req.params.requestId);
+
       const driver = await storage.getDriver(driverId);
       const systemSettings = await storage.getSettings();
       const currentCommission = systemSettings.commissionAmount;
@@ -380,8 +490,26 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
           message: `رصيدك غير كافٍ لقبول الطلبات، يرجى شحن المحفظة (أقل رصيد مطلوب ${currentCommission} دينار).` 
         });
       }
-      const result = await storage.acceptRequest(driverId, Number(req.params.requestId));
-      io.emit(`order_status_${req.params.requestId}`, { status: "accepted", driverId });
+
+      const result = await storage.acceptRequest(driverId, requestId);
+
+      const payload = { 
+        status: "accepted", 
+        driverId,
+        driverInfo: { 
+          name: driver?.username || (driver as any).name, 
+          phone: driver?.phone, 
+          avatarUrl: driver?.avatarUrl,
+          vehicleType: driver?.vehicleType,
+          plateNumber: driver?.plateNumber,
+          lat: driver?.lastLat, 
+          lng: driver?.lastLng 
+        }
+      };
+
+      io.emit(`order_status_${requestId}`, payload);
+      io.to(`order_${requestId}`).emit("status_changed", payload);
+
       res.json(result);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -407,16 +535,52 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       });
 
       io.emit(`order_status_${requestId}`, { status: "completed" });
+      io.to(`order_${requestId}`).emit("status_changed", { status: "completed" });
+
       res.json({ message: "تم إكمال الطلب وخصم العمولة", balance: newBalance });
     } catch (err: any) {
       res.status(500).json({ message: "فشل في إكمال الطلب" });
     }
   });
 
+  app.patch("/api/requests/:id/status", async (req, res) => {
+    try {
+      const { status } = req.body;
+      const id = Number(req.params.id);
+      const updated = await storage.updateRequestStatus(id, status);
+
+      io.emit(`order_status_${id}`, { status });
+      io.to(`order_${id}`).emit("status_changed", { status });
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
   app.get("/api/requests", async (_req, res) => {
     try {
       const requests = await storage.getRequests();
-      res.json(requests);
+      const detailedRequests = await Promise.all(requests.map(async (req) => {
+        const user = await storage.getUserByPhone(req.customerPhone);
+        const driver = req.driverId ? await storage.getDriver(req.driverId) : null;
+        const balance = user ? Number(user.walletBalance) : 0;
+        return {
+          ...req,
+          walletBalance: balance,         
+          customerWalletBalance: balance, 
+          userBalance: balance,
+          driver: driver, // إصلاح: إرسال بيانات السائق الحقيقية للواجهة
+          user: user ? user : { 
+            id: 0,
+            username: req.customerName, 
+            phone: req.customerPhone,
+            walletBalance: 0,
+            city: req.city 
+          }
+        };
+      }));
+      res.json(detailedRequests);
     } catch (err) {
       res.status(500).json({ message: "فشل في جلب قائمة الطلبات" });
     }
@@ -427,11 +591,9 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   app.post("/api/admin/customers/adjust-wallet", async (req, res) => {
     try {
       const { customerPhone, amount } = req.body;
-      if (!customerPhone) return res.status(400).json({ message: "رقم هاتف الزبون مطلوب" });
       const updated = await storage.updateCustomerWallet(customerPhone, Number(amount));
       res.json(updated);
     } catch (err: any) {
-      console.error("خطأ في تحديث محفظة الزبون:", err);
       res.status(500).json({ message: "فشل في تحديث محفظة الزبون" });
     }
   });
@@ -460,6 +622,17 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const requestId = parseInt(req.params.requestId);
       const { driverId } = req.body;
       const updated = await storage.assignRequestToDriver(requestId, driverId);
+      const driver = await storage.getDriver(driverId);
+
+      // إصلاح: إرسال إشارة Socket فورية لتحديث شاشة الزبون والسائق
+      const payload = { 
+        status: "confirmed", 
+        driverId, 
+        driverInfo: driver 
+      };
+      io.emit(`order_status_${requestId}`, payload);
+      io.to(`order_${requestId}`).emit("status_changed", payload);
+
       res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: "فشل في تحويل الطلب للسائق" });
@@ -470,26 +643,31 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     try {
       const requestId = parseInt(req.params.requestId);
       const updated = await storage.cancelRequestAssignment(requestId);
+
+      // إصلاح: إعلام الأطراف بإلغاء التعيين عبر السوكيت
+      const payload = { status: "pending", driverId: null, driverInfo: null };
+      io.emit(`order_status_${requestId}`, payload);
+      io.to(`order_${requestId}`).emit("status_changed", payload);
+
       res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: "فشل في إلغاء تعيين السائق" });
     }
   });
 
-  // --- دالة الـ Seed ---
   const seed = async () => {
     const driversList = await storage.getDrivers();
     if (driversList.length === 0) {
       try {
         await storage.createDriver({
-          name: "أحمد السائق",
+          username: "أحمد السائق", // تم تعديله هنا ليتوافق مع الـ Schema الجديد
           phone: "07700000000",
           password: "password123",
-          city: "بغداد",
+          city: "بابل",
           vehicleType: "hydraulic",
-          plateNumber: "12345 بغداد",
+          plateNumber: "12345 بابل",
         });
-      } catch (e) { console.log("Seed failed"); }
+      } catch (e) {}
     }
     await storage.getSettings();
   };

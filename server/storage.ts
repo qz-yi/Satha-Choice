@@ -4,14 +4,15 @@ import {
   drivers,
   users,
   transactions,
-  settings, // إضافة جدول الإعدادات
+  settings,
   type InsertRequest,
   type Request,
   type Driver,
   type InsertDriver,
   type User,
   type InsertUser,
-  type Setting, // إضافة نوع الإعدادات
+  type Setting,
+  type Transaction,
 } from "@shared/schema";
 import { eq, desc, sql, and } from "drizzle-orm";
 
@@ -20,7 +21,6 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   getUser(id: number): Promise<User | undefined>;
   getUserByPhone(phone: string): Promise<User | undefined>;
-  // ✅ إضافة التعديل هنا: تحديث محفظة الزبون
   updateCustomerWallet(phone: string, amount: number): Promise<User>;
 
   // --- طلبات الزبائن ---
@@ -29,7 +29,7 @@ export interface IStorage {
   getRequest(id: number): Promise<Request | undefined>;
   assignRequestToDriver(requestId: number, driverId: number): Promise<Request>;
   cancelRequestAssignment(requestId: number): Promise<Request>;
-  
+
   // --- السائقين والمحفظة ---
   createDriver(driver: InsertDriver): Promise<Driver>;
   getDriver(id: number): Promise<Driver | undefined>;
@@ -39,26 +39,31 @@ export interface IStorage {
   updateDriver(id: number, update: Partial<Driver>): Promise<Driver>;
   deleteDriver(id: number): Promise<void>;
   updateDriverApprovalStatus(id: number, status: string): Promise<Driver>;
-  
+
   // --- دوال العمليات المالية ---
   createTransaction(data: any): Promise<any>;
   getDriverTransactions(driverId: number): Promise<any[]>;
-  
+  getTransactionByZainCashId(id: string): Promise<Transaction | undefined>;
+  completeZainCashDeposit(transactionId: number, driverId: number, amount: number, externalData: any): Promise<void>;
+
   // --- منطق الرحلات والماليات ---
   updateRequestStatus(id: number, status: string, rating?: number, paymentMethod?: string): Promise<Request>;
   refundToCustomer(driverId: number, requestId: number, amount: number): Promise<{ driver: Driver; user: any }>;
   acceptRequest(driverId: number, requestId: number): Promise<{ request: Request; driver: Driver }>;
 
-  // --- التعديل الجديد: إعدادات النظام ---
+  // --- إعدادات النظام ---
   getSettings(): Promise<Setting>;
   updateCommission(amount: number): Promise<Setting>;
 }
 
 export class DatabaseStorage implements IStorage {
-  // ✅ إدارة الزبائن
   async createUser(user: InsertUser): Promise<User> {
+    // تم التعديل هنا لضمان استخدام username بدلاً من name
     const [newUser] = await db.insert(users).values({
-      ...user,
+      username: user.username, 
+      phone: user.phone,
+      password: user.password,
+      city: user.city || "قيد التحديد",
       walletBalance: "0.00"
     }).returning();
     return newUser;
@@ -74,7 +79,6 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  // ✅ إضافة التعديل: تنفيذ تحديث محفظة الزبون
   async updateCustomerWallet(phone: string, amount: number): Promise<User> {
     const [user] = await db.select().from(users).where(eq(users.phone, phone));
     if (!user) throw new Error("Customer not found");
@@ -87,13 +91,15 @@ export class DatabaseStorage implements IStorage {
       .set({ walletBalance: newBalance })
       .where(eq(users.phone, phone))
       .returning();
-    
+
     return updatedUser;
   }
 
-  // 1. إدارة الطلبات
   async createRequest(request: InsertRequest): Promise<Request> {
-    const [newRequest] = await db.insert(requests).values(request).returning();
+    const [newRequest] = await db.insert(requests).values({
+      ...request,
+      city: request.city || "قيد التحديد..."
+    }).returning();
     return newRequest;
   }
 
@@ -132,7 +138,6 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  // 2. إدارة السائقين
   async createDriver(driver: InsertDriver): Promise<Driver> {
     const [newDriver] = await db.insert(drivers).values({
       ...driver,
@@ -182,13 +187,20 @@ export class DatabaseStorage implements IStorage {
       .set({ status: status } as any) 
       .where(eq(drivers.id, id))
       .returning();
+    if (!updated) throw new Error("Driver not found");
     return updated;
   }
 
-  // 4. العمليات المالية
-  async createTransaction(data: { driverId: number; amount: string; type: string; referenceId: string }): Promise<any> {
+  async createTransaction(data: any): Promise<any> {
     const [tx] = await db.insert(transactions).values({
-      ...data,
+      driverId: data.driverId || null,
+      userId: data.userId || null,
+      amount: data.amount.toString(),
+      type: data.type,
+      status: data.status || "pending",
+      zainCashId: data.zainCashId || data.referenceId || null,
+      operationId: data.operationId || null,
+      msisdn: data.msisdn || null,
       createdAt: new Date()
     }).returning();
     return tx;
@@ -202,39 +214,64 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(transactions.id));
   }
 
-  // 5. منطق الرحلات
+  async getTransactionByZainCashId(id: string): Promise<Transaction | undefined> {
+    const [tx] = await db.select().from(transactions).where(eq(transactions.zainCashId, id));
+    return tx;
+  }
+
+  async completeZainCashDeposit(transactionId: number, driverId: number, amount: number, externalData: any): Promise<void> {
+    await db.transaction(async (tx) => {
+      await tx.update(transactions)
+        .set({ 
+          status: "completed",
+          operationId: externalData.operationId,
+          msisdn: externalData.msisdn
+        })
+        .where(eq(transactions.id, transactionId));
+
+      const [driver] = await tx.select().from(drivers).where(eq(drivers.id, driverId));
+      if (!driver) throw new Error("Driver not found");
+
+      const currentBalance = parseFloat(driver.walletBalance || "0");
+      const newBalance = (currentBalance + amount).toFixed(2);
+
+      await tx.update(drivers)
+        .set({ walletBalance: newBalance })
+        .where(eq(drivers.id, driverId));
+    });
+  }
+
   async updateRequestStatus(id: number, status: string, rating?: number, paymentMethod?: string): Promise<Request> {
     const [updated] = await db.update(requests).set({ status, rating, paymentMethod }).where(eq(requests.id, id)).returning();
     return updated;
   }
 
-  // 6. استرجاع الأموال
   async refundToCustomer(driverId: number, requestId: number, amount: number): Promise<{ driver: Driver; user: any }> {
     return await db.transaction(async (tx) => {
       const [driver] = await tx.select().from(drivers).where(eq(drivers.id, driverId));
       if (!driver) throw new Error("Driver not found");
-      
+
       const [request] = await tx.select().from(requests).where(eq(requests.id, requestId));
       if (!request) throw new Error("Request not found");
 
-      const newDriverBalance = (parseFloat(driver.walletBalance) - amount).toFixed(2);
+      const newDriverBalance = (parseFloat(driver.walletBalance || "0") - amount).toFixed(2);
       const [updatedDriver] = await tx.update(drivers).set({ walletBalance: newDriverBalance }).where(eq(drivers.id, driverId)).returning();
-      
-      const [user] = await tx.select().from(users).limit(1);
-      const newUserBalance = (parseFloat(user.walletBalance) + amount).toFixed(2);
-      const [updatedUser] = await tx.update(users).set({ walletBalance: newUserBalance }).returning();
-      
+
+      // تم تعديل البحث هنا ليعتمد على هاتف الزبون الموجود في الطلب
+      const [user] = await tx.select().from(users).where(eq(users.phone, request.customerPhone || ""));
+      if (!user) throw new Error("Customer associated with request not found");
+
+      const newUserBalance = (parseFloat(user.walletBalance || "0") + amount).toFixed(2);
+      const [updatedUser] = await tx.update(users).set({ walletBalance: newUserBalance }).where(eq(users.id, user.id)).returning();
+
       await tx.update(requests).set({ isRefunded: true }).where(eq(requests.id, requestId));
 
       return { driver: updatedDriver, user: updatedUser };
     });
   }
 
-  // 🛠️ التعديل الجذري: سحب العمولة ديناميكياً من قاعدة البيانات
   async getSettings(): Promise<Setting> {
     let [systemSettings] = await db.select().from(settings).limit(1);
-    
-    // في حال كان الجدول فارغاً (أول تشغيل)، نقوم بإنشاء سجل افتراضي
     if (!systemSettings) {
       [systemSettings] = await db.insert(settings).values({
         commissionAmount: 1000,
@@ -253,19 +290,16 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  // 7. قبول الطلب (معدلة لتستخدم العمولة الديناميكية)
   async acceptRequest(driverId: number, requestId: number): Promise<{ request: Request; driver: Driver }> {
     return await db.transaction(async (tx) => {
-      // جلب العمولة الحالية من الإعدادات
       const systemSettings = await this.getSettings();
       const currentCommission = systemSettings.commissionAmount;
 
       const [driver] = await tx.select().from(drivers).where(eq(drivers.id, driverId));
       if (!driver) throw new Error("Driver not found");
-      
-      const balance = parseFloat(driver.walletBalance);
-      
-      // استخدام المتغير currentCommission بدلاً من 1000 الثابتة
+
+      const balance = parseFloat(driver.walletBalance || "0");
+
       if (balance < currentCommission) {
         throw new Error(`رصيدك غير كافٍ. يرجى شحن المحفظة (أقل رصيد مطلوب ${currentCommission} دينار).`);
       }

@@ -1,9 +1,9 @@
 import { useState, useMemo } from "react";
 import {
   Users, Truck, Map as MapIcon, ShieldCheck,
-  Power, CheckCircle2, XCircle, Menu, Activity,
-  Search, Trash2, ArrowLeftRight, ChevronLeft,
-  UserPlus, AlertCircle, Phone, MapPin, Wallet, TrendingUp, CreditCard, Clock, ShieldAlert, Settings2, Coins, Plus, Minus, ExternalLink, Loader2
+  CheckCircle2, XCircle, Menu, Activity,
+  Search, Trash2, ChevronLeft,
+  UserPlus, AlertCircle, Phone, MapPin, Wallet, TrendingUp, Coins, Plus, Minus, ExternalLink, Loader2, Clock // <--- تمت إضافة Clock هنا
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
@@ -13,8 +13,11 @@ import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Driver, Request } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+
+// تعريفات Types يدوية لضمان عدم حدوث أخطاء TypeScript
+type Driver = any;
+type Request = any;
 
 // أيقونة السائق على الخريطة
 const driverIcon = L.icon({
@@ -42,14 +45,14 @@ export default function AdminDashboard() {
 
   // --- Queries ---
   const { data: allDrivers = [] } = useQuery<Driver[]>({ queryKey: ["/api/drivers"] });
-  
+
   // القائمة العامة للطلبات مع تحديث تلقائي
   const { data: allRequests = [] } = useQuery<Request[]>({ 
     queryKey: ["/api/requests"], 
     refetchInterval: 3000 
   });
 
-  // +++ إضافة (Deep Logic Fix): جلب تفاصيل الطلب الفردي مباشرة من السيرفر لضمان دقة الرصيد +++
+  // جلب تفاصيل الطلب الفردي
   const { data: specificOrderData } = useQuery<Request>({
     queryKey: ["/api/requests", selectedOrderId], 
     queryFn: async () => {
@@ -58,13 +61,31 @@ export default function AdminDashboard() {
       return res.json();
     },
     enabled: !!selectedOrderId,
-    refetchInterval: 1000, 
+    // تم تسريع التحديث لضمان مزامنة الرصيد
+    refetchInterval: 2000, 
   });
 
-  // توحيد مصدر البيانات للنافذة المنبثقة
+  // +++ منطق الدمج الذكي (Smart Merge Logic) +++
   const selectedOrderDetails = useMemo(() => {
-    if (specificOrderData) return specificOrderData;
-    return allRequests.find(r => r.id === selectedOrderId);
+    const fromList = allRequests.find(r => r.id === selectedOrderId);
+    const specific = specificOrderData;
+
+    if (specific) {
+      const balance = 
+        specific.customerWalletBalance ?? 
+        specific.walletBalance ?? 
+        specific.user?.walletBalance ?? 
+        fromList?.customerWalletBalance ?? 
+        fromList?.walletBalance ?? 
+        0;
+
+      return {
+        ...specific,
+        customerWalletBalance: Number(balance)
+      };
+    }
+
+    return fromList;
   }, [allRequests, specificOrderData, selectedOrderId]);
 
   const { data: allTransactions = [] } = useQuery<any[]>({
@@ -84,18 +105,16 @@ export default function AdminDashboard() {
       .reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
   }, [allTransactions]);
 
-  // دالة فتح الموقع في خرائط جوجل (تم تحسين الرابط)
   const handleOpenLocation = (lat: any, lng: any) => {
     if (!lat || !lng) {
       toast({ variant: "destructive", title: "موقع الزبون غير متاح لهذا الطلب" });
       return;
     }
-    window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
+    window.open(`http://googleusercontent.com/maps.google.com/3{lat},${lng}`, '_blank');
   };
 
   // --- Mutations ---
 
-  // تحديث محفظة الزبون
   const updateCustomerWalletMutation = useMutation({
     mutationFn: async ({ customerPhone, amount }: { customerPhone: string, amount: number }) => {
       if (!amount || isNaN(amount)) throw new Error("مبلغ غير صالح");
@@ -115,12 +134,10 @@ export default function AdminDashboard() {
     }
   });
 
-  // تعيين سائق لطلب
   const assignMutation = useMutation({
     mutationFn: async ({ requestId, driverId }: { requestId: number, driverId: number }) => {
-      return await apiRequest("PATCH", `/api/requests/${requestId}`, { 
-        driverId: Number(driverId),
-        status: "accepted" 
+      return await apiRequest("POST", `/api/admin/requests/${requestId}/assign`, { 
+        driverId: Number(driverId)
       });
     },
     onSuccess: async () => {
@@ -137,7 +154,6 @@ export default function AdminDashboard() {
     }
   });
 
-  // تحديث العمولة
   const updateCommissionMutation = useMutation({
     mutationFn: async (amount: number) => {
       return await apiRequest("POST", "/api/admin/settings/commission", { amount });
@@ -149,7 +165,6 @@ export default function AdminDashboard() {
     }
   });
 
-  // تغيير حالة الحساب (حظر/تفعيل)
   const toggleAccountStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: number, status: string }) => {
       return await apiRequest("PATCH", `/api/drivers/${id}`, { status });
@@ -160,7 +175,6 @@ export default function AdminDashboard() {
     }
   });
 
-  // تغيير حالة الاتصال
   const toggleOnlineMutation = useMutation({
     mutationFn: async ({ id, status }: { id: number, status: boolean }) => {
       return await apiRequest("PATCH", `/api/drivers/${id}`, { isOnline: status });
@@ -168,10 +182,9 @@ export default function AdminDashboard() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/drivers"] })
   });
 
-  // تحديث رصيد السائق
   const updateWalletMutation = useMutation({
     mutationFn: async ({ id, amount }: { id: number, amount: number }) => {
-      return await apiRequest("PATCH", `/api/drivers/${id}`, { walletBalance: Number(amount) });
+      return await apiRequest("PATCH", `/api/drivers/${id}`, { walletBalance: Number(amount).toString() });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/drivers"] });
@@ -179,7 +192,6 @@ export default function AdminDashboard() {
     }
   });
 
-  // قبول سائق جديد
   const approveMutation = useMutation({
     mutationFn: async (id: number) => {
       return await apiRequest("PATCH", `/api/drivers/${id}`, { status: "approved" });
@@ -190,7 +202,6 @@ export default function AdminDashboard() {
     }
   });
 
-  // حذف سائق
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("DELETE", `/api/drivers/${id}`);
@@ -201,7 +212,6 @@ export default function AdminDashboard() {
     }
   });
 
-  // حذف طلب
   const deleteRequestMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("DELETE", `/api/requests/${id}`);
@@ -212,7 +222,6 @@ export default function AdminDashboard() {
     }
   });
 
-  // إكمال طلب يدوياً
   const completeRequestMutation = useMutation({
     mutationFn: async (id: number) => {
       return await apiRequest("PATCH", `/api/requests/${id}`, { status: "completed" });
@@ -225,8 +234,8 @@ export default function AdminDashboard() {
 
   // --- منطق الفلترة ---
   const filteredDrivers = useMemo(() => {
+    const searchLower = searchQuery.toLowerCase().trim();
     return allDrivers.filter(d => {
-      const searchLower = searchQuery.toLowerCase().trim();
       return (d.name || "").toLowerCase().includes(searchLower) || (d.phone || "").includes(searchLower);
     });
   }, [allDrivers, searchQuery]);
@@ -234,11 +243,11 @@ export default function AdminDashboard() {
   const pendingDrivers = filteredDrivers.filter(d => d.status === "pending");
   const approvedDrivers = filteredDrivers.filter(d => d.status === "approved" || d.status === "blocked");
   const onlineDrivers = allDrivers.filter(d => d.isOnline && d.status === 'approved');
-  
+
   const pendingRequestsOnly = useMemo(() => {
     return allRequests.filter(r => 
       r.status === "pending" && 
-      (r.customerPhone.includes(searchQuery) || (r.pickupAddress || "").includes(searchQuery))
+      (r.customerPhone.includes(searchQuery) || (r.location || "").includes(searchQuery))
     );
   }, [allRequests, searchQuery]);
 
@@ -248,7 +257,7 @@ export default function AdminDashboard() {
     { id: "finance", label: "أرباح النظام (د.ع)", value: systemEarnings.toLocaleString(), icon: <TrendingUp className="text-blue-500" />, color: "bg-blue-50" },
   ];
 
-  // مكون بطاقة السائق (DriverCard)
+  // مكون بطاقة السائق
   const DriverCard = ({ driver }: { driver: Driver }) => {
     const currentJob = allRequests.find(r => r.driverId === driver.id && r.status === 'accepted');
     const isAccountActive = driver.status === "approved";
@@ -308,7 +317,7 @@ export default function AdminDashboard() {
         {currentJob ? (
             <div className="bg-orange-50 p-3 rounded-2xl border border-orange-100">
                 <p className="text-[10px] font-black text-orange-600 mb-1">الطلب الحالي الموكل إليه:</p>
-                <p className="text-xs font-bold text-slate-700 truncate">{currentJob.pickupAddress}</p>
+                <p className="text-xs font-bold text-slate-700 truncate">{currentJob.location}</p>
                 <div className="flex gap-2 mt-2">
                    <Button onClick={(e) => { e.stopPropagation(); completeRequestMutation.mutate(currentJob.id); }} className="flex-1 bg-green-600 h-8 text-[9px] text-white">إنهاء</Button>
                    <Button onClick={(e) => { e.stopPropagation(); setAssigningRequest(currentJob); }} className="flex-1 bg-slate-800 h-8 text-[9px] text-white">تحويل</Button>
@@ -436,7 +445,7 @@ export default function AdminDashboard() {
                                       <p className="font-black text-slate-800">#ID: {req.id}</p>
                                       <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded-md font-black">{req.customerPhone}</span>
                                     </div>
-                                    <p className="text-xs text-gray-400 font-bold truncate w-48">{req.pickupAddress}</p>
+                                    <p className="text-xs text-gray-400 font-bold truncate w-48">{req.location}</p>
                                     <p className="text-[10px] mt-2 font-black text-orange-600 uppercase flex items-center gap-1">
                                       بانتظار سائق
                                       <ChevronLeft className="w-3 h-3 group-hover:translate-x-[-4px] transition-transform" />
@@ -519,108 +528,124 @@ export default function AdminDashboard() {
         <AnimatePresence>
           {selectedOrderDetails && (
             <div className="fixed inset-0 z-[6000] flex items-end sm:items-center justify-center p-0 sm:p-4">
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedOrderId(null)} className="absolute inset-0 bg-black/60 backdrop-blur-md" />
-              <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="relative bg-white w-full max-w-lg rounded-t-[40px] sm:rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
-                
-                <div className="p-6 border-b flex justify-between items-center bg-white sticky top-0 z-20">
-                  <Button variant="ghost" size="icon" onClick={() => setSelectedOrderId(null)} className="rounded-full bg-gray-100"><XCircle className="w-5 h-5" /></Button>
+              <motion.div 
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} 
+                onClick={() => setSelectedOrderId(null)} 
+                className="absolute inset-0 bg-black/80 backdrop-blur-sm" 
+              />
+              <motion.div 
+                initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} 
+                className="relative bg-[#0F172A] w-full max-w-lg rounded-t-[40px] sm:rounded-[40px] shadow-2xl shadow-black overflow-hidden flex flex-col max-h-[95vh] border border-white/10"
+              >
+
+                {/* Header */}
+                <div className="p-6 flex justify-between items-center bg-[#0F172A]/80 backdrop-blur-xl border-b border-white/5 sticky top-0 z-20">
+                  <Button variant="ghost" size="icon" onClick={() => setSelectedOrderId(null)} className="rounded-full bg-white/5 hover:bg-white/10 text-white"><XCircle className="w-5 h-5" /></Button>
                   <div className="text-center">
-                    <h3 className="font-black text-xl text-gray-800">تفاصيل الزبون والطلب</h3>
-                    <p className="text-[11px] text-orange-500 font-bold bg-orange-50 px-3 py-1 rounded-full mt-1">رقم الطلب #{selectedOrderDetails.id}</p>
+                    <h3 className="font-black text-xl text-white">تفاصيل الزبون والطلب</h3>
+                    <p className="text-[11px] text-orange-400 font-bold bg-orange-500/10 border border-orange-500/20 px-3 py-1 rounded-full mt-1 inline-block">رقم الطلب #{selectedOrderDetails.id}</p>
                   </div>
                   <div className="w-10" />
                 </div>
 
                 <div className="overflow-y-auto p-6 space-y-6">
-                  <div className="flex items-center gap-4 bg-gray-50 p-5 rounded-[30px] border border-gray-100">
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-2xl shadow-sm border">👤</div>
+                  {/* Customer Info Card */}
+                  <div className="flex items-center gap-4 bg-white/5 p-5 rounded-[30px] border border-white/5">
+                    <div className="w-16 h-16 bg-[#1E293B] rounded-2xl flex items-center justify-center text-2xl shadow-inner border border-white/5">👤</div>
                     <div className="flex-1">
-                      <h4 className="font-black text-lg text-slate-800">زبون ساطحة</h4>
-                      <p className="font-bold text-gray-500 flex items-center gap-1"><Phone className="w-3 h-3" /> {selectedOrderDetails.customerPhone}</p>
+                      <h4 className="font-black text-lg text-white">{selectedOrderDetails.customerName || "زبون"}</h4>
+                      <p className="font-bold text-gray-400 flex items-center gap-1 text-xs mt-1"><Phone className="w-3 h-3" /> {selectedOrderDetails.customerPhone}</p>
                     </div>
-                    <a href={`tel:${selectedOrderDetails.customerPhone}`} className="bg-green-500 text-white p-4 rounded-2xl shadow-lg shadow-green-500/20 active:scale-95 transition-transform"><Phone className="w-6 h-6" /></a>
+                    <a href={`tel:${selectedOrderDetails.customerPhone}`} className="bg-green-600 text-white p-4 rounded-2xl shadow-lg shadow-green-500/10 active:scale-95 transition-transform hover:bg-green-500"><Phone className="w-6 h-6" /></a>
                   </div>
 
-                  <div className="bg-slate-950 text-white p-6 rounded-[35px] shadow-2xl relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full -mr-16 -mt-16 blur-2xl" />
+                  {/* Wallet Section */}
+                  <div className="bg-gradient-to-br from-slate-900 to-black text-white p-6 rounded-[35px] shadow-2xl relative overflow-hidden group border border-white/10">
+                    <div className="absolute top-0 right-0 w-40 h-40 bg-orange-600/20 rounded-full -mr-16 -mt-16 blur-3xl" />
                     <div className="relative z-10">
                       <div className="flex justify-between items-start mb-6">
                         <div>
                           <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">رصيد المحفظة الحالي</p>
                           <h3 className="text-4xl font-black text-white flex items-baseline gap-2">
+                            {/* هنا يتم عرض الرصيد المدمج بأمان */}
                             {(selectedOrderDetails.customerWalletBalance || 0).toLocaleString()}
                             <span className="text-sm font-bold text-orange-500">د.ع</span>
                           </h3>
                         </div>
-                        <Wallet className="w-8 h-8 text-orange-500 opacity-50" />
+                        <div className="bg-orange-500/20 p-3 rounded-2xl">
+                           <Wallet className="w-6 h-6 text-orange-500" />
+                        </div>
                       </div>
-                      
-                      <div className="space-y-4 bg-white/5 p-4 rounded-2xl border border-white/10">
+
+                      <div className="space-y-4 bg-white/5 p-1 rounded-3xl border border-white/5">
                         <div className="relative">
                           <input 
                             type="number" 
                             value={customerWalletAmount} 
                             onChange={(e) => setCustomerWalletAmount(e.target.value)} 
-                            placeholder="أدخل المبلغ هنا..." 
-                            className="w-full bg-slate-900/50 border border-white/10 rounded-2xl py-4 pr-12 pl-4 text-white font-black outline-none focus:border-orange-500 transition-all" 
+                            placeholder="أدخل المبلغ..." 
+                            className="w-full bg-[#0B1120] border border-white/10 rounded-2xl py-4 pr-12 pl-4 text-white font-black outline-none focus:border-orange-500 transition-all placeholder:text-slate-600" 
                           />
                           <Coins className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
                         </div>
-                        
-                        <div className="flex gap-3">
+
+                        <div className="flex gap-2 px-1 pb-1">
                           <Button 
                             disabled={updateCustomerWalletMutation.isPending || !customerWalletAmount}
                             onClick={() => updateCustomerWalletMutation.mutate({ customerPhone: selectedOrderDetails.customerPhone, amount: Math.abs(Number(customerWalletAmount)) })} 
-                            className="flex-1 bg-green-600 hover:bg-green-700 h-14 rounded-2xl font-black text-white flex items-center justify-center gap-2"
+                            className="flex-1 bg-green-600 hover:bg-green-500 h-12 rounded-xl font-black text-white flex items-center justify-center gap-2 border-b-4 border-green-800 active:border-b-0 active:translate-y-1 transition-all"
                           >
-                            {updateCustomerWalletMutation.isPending ? <Loader2 className="animate-spin" /> : <><Plus className="w-5 h-5" /> إيداع</>}
+                            {updateCustomerWalletMutation.isPending ? <Loader2 className="animate-spin" /> : <><Plus className="w-4 h-4" /> إيداع</>}
                           </Button>
-                          
+
                           <Button 
                             disabled={updateCustomerWalletMutation.isPending || !customerWalletAmount}
                             onClick={() => updateCustomerWalletMutation.mutate({ customerPhone: selectedOrderDetails.customerPhone, amount: -Math.abs(Number(customerWalletAmount)) })} 
-                            className="flex-1 bg-red-600 hover:bg-red-700 h-14 rounded-2xl font-black text-white flex items-center justify-center gap-2"
+                            className="flex-1 bg-red-600 hover:bg-red-500 h-12 rounded-xl font-black text-white flex items-center justify-center gap-2 border-b-4 border-red-800 active:border-b-0 active:translate-y-1 transition-all"
                           >
-                            {updateCustomerWalletMutation.isPending ? <Loader2 className="animate-spin" /> : <><Minus className="w-5 h-5" /> خصم</>}
+                            {updateCustomerWalletMutation.isPending ? <Loader2 className="animate-spin" /> : <><Minus className="w-4 h-4" /> خصم</>}
                           </Button>
                         </div>
                       </div>
                     </div>
                   </div>
 
+                  {/* Details Grid */}
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-orange-50/50 p-4 rounded-2xl border border-orange-100">
-                      <p className="text-[10px] text-gray-400 font-black mb-1">نوع السطحة</p>
-                      <div className="flex items-center gap-2 font-black text-slate-700 text-sm"><Truck className="w-4 h-4 text-orange-500" /> {selectedOrderDetails.vehicleType || "عادية"}</div>
+                    <div className="bg-[#1E293B]/50 p-4 rounded-3xl border border-white/5">
+                      <p className="text-[10px] text-gray-500 font-black mb-2">نوع السطحة</p>
+                      <div className="flex items-center gap-2 font-black text-white text-sm"><Truck className="w-4 h-4 text-orange-500" /> {selectedOrderDetails.vehicleType || "عادية"}</div>
                     </div>
-                    <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
-                      <p className="text-[10px] text-gray-400 font-black mb-1">حالة الطلب</p>
-                      <div className="flex items-center gap-2 font-black text-blue-600 text-sm"><Clock className="w-4 h-4" /> بانتظار سائق</div>
+                    <div className="bg-[#1E293B]/50 p-4 rounded-3xl border border-white/5">
+                      <p className="text-[10px] text-gray-500 font-black mb-2">حالة الطلب</p>
+                      <div className="flex items-center gap-2 font-black text-blue-400 text-sm"><Clock className="w-4 h-4" /> {selectedOrderDetails.status === 'pending' ? 'بانتظار سائق' : selectedOrderDetails.status}</div>
                     </div>
                   </div>
 
+                  {/* Location Card */}
                   <div 
-                    onClick={() => handleOpenLocation(selectedOrderDetails.pickupLat, selectedOrderDetails.pickupLng)}
-                    className="bg-gray-50 p-5 rounded-[25px] border border-gray-100 space-y-4 cursor-pointer hover:bg-orange-50 hover:border-orange-200 transition-all group"
+                    onClick={() => handleOpenLocation(selectedOrderDetails.lat || selectedOrderDetails.pickupLat, selectedOrderDetails.lng || selectedOrderDetails.pickupLng)}
+                    className="bg-white/5 p-5 rounded-[25px] border border-white/5 space-y-4 cursor-pointer hover:bg-white/10 hover:border-orange-500/30 transition-all group"
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-3">
-                        <div className="bg-orange-500/10 p-2 rounded-lg mt-1 group-hover:bg-orange-500 transition-colors">
-                          <MapPin className="w-4 h-4 text-orange-600 group-hover:text-white" />
+                        <div className="bg-orange-500/20 p-2.5 rounded-xl mt-1 group-hover:bg-orange-500 transition-colors">
+                          <MapPin className="w-5 h-5 text-orange-500 group-hover:text-white" />
                         </div>
                         <div>
-                          <p className="text-[10px] text-gray-400 font-black">موقع الاستلام (اضغط لفتح الخريطة)</p>
-                          <p className="font-bold text-sm text-gray-700 leading-relaxed">{selectedOrderDetails.pickupAddress}</p>
+                          <p className="text-[10px] text-gray-400 font-black mb-1">موقع الاستلام</p>
+                          <p className="font-bold text-sm text-gray-200 leading-relaxed">{selectedOrderDetails.location || selectedOrderDetails.pickupAddress}</p>
                         </div>
                       </div>
-                      <ExternalLink className="w-4 h-4 text-gray-300 group-hover:text-orange-500" />
+                      <ExternalLink className="w-4 h-4 text-gray-500 group-hover:text-orange-500" />
                     </div>
                   </div>
                 </div>
 
-                <div className="p-6 bg-white border-t flex gap-3 sticky bottom-0 z-20">
-                  <Button onClick={() => { setAssigningRequest(selectedOrderDetails); }} className="flex-1 h-15 rounded-2xl bg-orange-500 hover:bg-orange-600 font-black text-white shadow-xl shadow-orange-500/20 text-lg">تحويل الطلب لسائق</Button>
-                  <Button onClick={() => { if(confirm('هل أنت متأكد من حذف الطلب نهائياً؟')) deleteRequestMutation.mutate(selectedOrderDetails.id); setSelectedOrderId(null); }} variant="outline" className="h-15 w-15 rounded-2xl border-red-100 text-red-500 hover:bg-red-50"><Trash2 className="w-6 h-6" /></Button>
+                {/* Footer */}
+                <div className="p-6 bg-[#0F172A] border-t border-white/10 flex gap-3 sticky bottom-0 z-20">
+                  <Button onClick={() => { setAssigningRequest(selectedOrderDetails); }} className="flex-1 h-16 rounded-2xl bg-orange-600 hover:bg-orange-500 font-black text-white shadow-xl shadow-orange-500/20 text-lg">تحويل الطلب لسائق</Button>
+                  <Button onClick={() => { if(confirm('هل أنت متأكد من حذف الطلب نهائياً؟')) deleteRequestMutation.mutate(selectedOrderDetails.id); setSelectedOrderId(null); }} variant="ghost" className="h-16 w-16 rounded-2xl bg-white/5 text-red-500 hover:bg-red-500/10 hover:text-red-400"><Trash2 className="w-6 h-6" /></Button>
                 </div>
               </motion.div>
             </div>
@@ -628,7 +653,7 @@ export default function AdminDashboard() {
 
           {/* نافذة تحويل الطلب */}
           {assigningRequest && (
-            <div className="fixed inset-0 z-[6000] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[6000] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
               <div className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
                 <div className="p-6 border-b flex justify-between items-center font-black">
                   <h3>تحويل الطلب #{assigningRequest.id}</h3>

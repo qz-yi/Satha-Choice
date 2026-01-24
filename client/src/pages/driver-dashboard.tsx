@@ -114,6 +114,7 @@ export default function DriverDashboard() {
   const [showVehicleDetails, setShowVehicleDetails] = useState(false);
   const [isDepositing, setIsDepositing] = useState(false); 
   const [paymentMethod, setPaymentMethod] = useState<'zain' | 'card' | null>(null);
+  const [depositAmount, setDepositAmount] = useState<string>("25000"); 
 
   const [isFollowMode, setIsFollowMode] = useState(true); 
 
@@ -140,42 +141,48 @@ export default function DriverDashboard() {
   });
 
   const handleDeposit = async (method: 'zain' | 'master') => {
-    if (!driverInfo) return;
+    if (!driverInfo) {
+      toast({ variant: "destructive", title: "خطأ", description: "لم يتم العثور على بيانات السائق" });
+      return;
+    }
 
-    // جلب المبلغ من الحقل أو استخدام 25000 كقيمة افتراضية
-    const amountInput = document.querySelector('input[type="number"]') as HTMLInputElement;
-    const amount = amountInput?.value ? Number(amountInput.value) : 25000;
+    const amountValue = parseInt(depositAmount);
 
-    if (amount < 1000) {
-      toast({ variant: "destructive", title: "مبلغ غير كافٍ", description: "أقل مبلغ للشحن هو 1000 دينار" });
+    if (isNaN(amountValue) || amountValue < 1000) {
+      toast({ variant: "destructive", title: "مبلغ غير صحيح", description: "أقل مبلغ للشحن هو 1000 دينار" });
       return;
     }
 
     setIsDepositing(true);
     try {
-      // توجيه الطلب للمسار الموحد الصحيح مع تمييز نوع المستخدم (سائق)
-      const res = await apiRequest("POST", "/api/zaincash/initiate", {
-        amount,
-        userId: driverInfo.id,
-        userType: "driver"
+      const response = await fetch("/api/zaincash/initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: amountValue,
+          userId: Number(driverInfo.id),
+          userType: "driver"
+        }),
       });
 
-      const data = await res.json();
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "فشل السيرفر في معالجة الطلب");
+      }
+
+      const data = await response.json();
 
       if (data.url) {
-        toast({ title: "جاري التوجيه...", description: "سيتم فتح بوابة الدفع الآمنة" });
-        // استخدام الرابط المباشر المرسل من السيرفر لضمان صحة الـ ID والبيئة
-        setTimeout(() => {
-          window.location.href = data.url;
-        }, 800);
+        window.location.assign(data.url);
       } else {
-        throw new Error("لم يتم استلام رابط الدفع");
+        throw new Error("لم يتم استلام رابط الدفع من البوابة");
       }
-    } catch (err) {
+    } catch (err: any) {
+      console.error("Deposit Error:", err);
       toast({ 
         variant: "destructive", 
-        title: "فشل الربط", 
-        description: "تعذر إنشاء عملية دفع جديدة، تأكد من إعدادات السيرفر" 
+        title: "فشل في عملية الربط", 
+        description: err.message || "تأكد من إعدادات السيرفر وحاول مجدداً" 
       });
     } finally { 
       setIsDepositing(false); 
@@ -210,6 +217,12 @@ export default function DriverDashboard() {
     try {
       const res = await apiRequest("POST", `/api/drivers/${driverInfo.id}/complete/${activeOrder.id}`);
       if (res.ok) {
+        // إرسال إشارة اكتمال واضحة للزبون
+        socket.emit("update_order_status", { 
+          orderId: activeOrder.id, 
+          status: "completed" 
+        });
+
         setNotification({ show: true, message: "تم إكمال الطلب وخصم العمولة بنجاح", type: "success" });
         setActiveOrder(null);
         setOrderStage("heading_to_pickup");
@@ -232,7 +245,34 @@ export default function DriverDashboard() {
       setActiveTab("wallet");
       return;
     }
+
+    // تجهيز بيانات السائق الكاملة
+    const driverPayload = {
+      id: driverInfo?.id,
+      name: driverInfo?.name,
+      phone: driverInfo?.phone,
+      avatarUrl: driverInfo?.avatarUrl,
+      vehicleType: driverInfo?.vehicleType,
+      lat: currentCoords?.[0],
+      lng: currentCoords?.[1]
+    };
+
+    // إرسال إشارة القبول مع بيانات السائق الكاملة ليراها الزبون فوراً
+    socket.emit("accept_order", { 
+      orderId: req.id, 
+      driverId: driverInfo?.id,
+      driverInfo: driverPayload
+    });
+
+    // إرسال تحديث حالة صريح ليغير واجهة الزبون
+    socket.emit("update_order_status", {
+      orderId: req.id,
+      status: "accepted",
+      driverInfo: driverPayload
+    });
+
     setActiveOrder(req);
+    setOrderStage("heading_to_pickup");
   };
 
   useEffect(() => {
@@ -246,15 +286,30 @@ export default function DriverDashboard() {
            return dist > 0.00002 ? [latitude, longitude] : prev;
         });
         if (deviceHeading !== null && deviceHeading !== undefined) setHeading(deviceHeading);
+
+        // تحديث الموقع في قاعدة البيانات
         apiRequest("PATCH", `/api/drivers/${driverInfo.id}`, {
           lastLat: latitude.toString(), lastLng: longitude.toString()
         }).catch(() => {});
+
+        // إرسال الموقع المباشر للسوكيت ليراه الزبون فوراً
+        if (activeOrder) {
+          socket.emit("driver_location_update", {
+            orderId: activeOrder.id,
+            driverId: driverInfo.id,
+            lat: latitude,
+            lng: longitude,
+            heading: deviceHeading || 0,
+            driverName: driverInfo.name,
+            driverAvatar: driverInfo.avatarUrl
+          });
+        }
       },
       (err) => console.error(err),
       { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
     );
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [driverInfo?.isOnline, driverInfo?.id]);
+  }, [driverInfo?.isOnline, driverInfo?.id, activeOrder]);
 
   const toggleOnlineStatus = async () => {
     if (!driverInfo || isUpdatingStatus) return;
@@ -295,17 +350,22 @@ export default function DriverDashboard() {
 
   useEffect(() => {
     if (driverInfo?.isOnline && driverInfo?.status === "approved") {
-      socket.on("receive_request", (data: any) => {
+      socket.on("new_request_available", (data: any) => { 
         if (!activeOrder && data.city?.trim() === driverInfo?.city?.trim()) {
-          setAvailableRequests(prev => [...prev, data]);
+          setAvailableRequests(prev => {
+             if (prev.find(r => r.id === data.id)) return prev;
+             return [data, ...prev];
+          });
         }
       });
+
       socket.on("receive_message", (msg: any) => {
         setMessages(prev => [...prev, { ...msg, id: Date.now() }]);
         if (!isChatOpen) setUnreadCount(prev => prev + 1);
       });
+
       return () => { 
-        socket.off("receive_request"); 
+        socket.off("new_request_available"); 
         socket.off("receive_message");
       };
     }
@@ -469,7 +529,6 @@ if (!driverInfo || driverInfo.status !== "approved") {
             className="absolute inset-0 z-[2000] bg-white flex flex-col font-sans text-right"
             dir="rtl"
           >
-            {/* الترويسة العلوية النظيفة */}
             <div className="p-6 flex items-center justify-between border-b border-gray-50 bg-white">
               <Button 
                 variant="ghost" 
@@ -485,7 +544,6 @@ if (!driverInfo || driverInfo.status !== "approved") {
 
             <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8">
 
-              {/* بطاقة الرصيد المستطيلة - ممتدة أفقياً */}
               <div className="bg-[#FF7A00] p-7 rounded-[30px] text-white shadow-lg relative overflow-hidden">
                 <p className="text-white/80 text-xs font-bold mb-1">رصيدك الحالي المتاح</p>
                 <div className="flex items-baseline gap-2">
@@ -497,11 +555,12 @@ if (!driverInfo || driverInfo.status !== "approved") {
                 <div className="absolute -left-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
               </div>
 
-              {/* خانة إدخال مبلغ الشحن */}
               <div className="space-y-3">
                 <label className="text-gray-500 text-sm font-bold block px-2">مبلغ الشحن المطلوب</label>
                 <div className="relative">
                   <input 
+                    value={depositAmount}
+                    onChange={(e) => setDepositAmount(e.target.value)}
                     type="number" 
                     placeholder="أدخل المبلغ بالدينار..."
                     className="w-full h-16 bg-gray-50 border-2 border-gray-100 rounded-[22px] px-6 text-xl font-black text-gray-800 focus:border-orange-500 focus:outline-none transition-all placeholder:text-gray-300"
@@ -509,14 +568,12 @@ if (!driverInfo || driverInfo.status !== "approved") {
                 </div>
               </div>
 
-              {/* خيارات الدفع - نسخة واجهة الزبون */}
               <div className="space-y-4">
                 <h4 className="text-gray-800 font-black text-lg pr-2">وسائل الشحن</h4>
 
-                {/* خيار زين كاش */}
                 <button 
                   disabled={isDepositing}
-                  onClick={() => { setPaymentMethod('zain'); handleDeposit('zain'); }}
+                  onClick={() => setPaymentMethod('zain')}
                   className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between active:scale-[0.98] transition-all group ${paymentMethod === 'zain' ? 'border-orange-500 bg-orange-50/20' : 'border-gray-100'}`}
                 >
                   <div className="flex items-center gap-4">
@@ -530,10 +587,9 @@ if (!driverInfo || driverInfo.status !== "approved") {
                   </div>
                 </button>
 
-                {/* خيار ماستر كارد */}
                 <button 
                   disabled={isDepositing}
-                  onClick={() => { setPaymentMethod('card'); handleDeposit('master'); }}
+                  onClick={() => setPaymentMethod('card')}
                   className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between active:scale-[0.98] transition-all group ${paymentMethod === 'card' ? 'border-blue-500 bg-blue-50/20' : 'border-gray-100'}`}
                 >
                   <div className="flex items-center gap-4">
@@ -548,7 +604,6 @@ if (!driverInfo || driverInfo.status !== "approved") {
                 </button>
               </div>
 
-              {/* سجل النشاط المالي النظيف */}
               <div className="pt-4 pb-20">
                 <h4 className="text-gray-800 font-black text-lg pr-2 mb-4 flex items-center gap-2">
                    سجل العمليات
@@ -575,11 +630,11 @@ if (!driverInfo || driverInfo.status !== "approved") {
 
             <div className="p-6 bg-white border-t border-gray-50 pb-8">
               <Button 
-                disabled={isDepositing}
+                disabled={isDepositing || !paymentMethod}
                 onClick={() => handleDeposit(paymentMethod === 'card' ? 'master' : 'zain')}
                 className="w-full h-16 rounded-[22px] bg-orange-500 hover:bg-orange-600 text-white text-xl font-black shadow-lg shadow-orange-100 transition-all active:scale-[0.97]"
               >
-                {isDepositing ? "جاري الاتصال..." : "تأكيد عملية الشحن"}
+                {isDepositing ? <Loader2 className="w-6 h-6 animate-spin" /> : "تأكيد عملية الشحن"}
               </Button>
             </div>
           </motion.div>
@@ -660,7 +715,7 @@ if (!driverInfo || driverInfo.status !== "approved") {
                 <div className="w-16 h-16 bg-orange-50 rounded-3xl flex items-center justify-center border-2 border-white shadow-sm text-2xl text-orange-500 font-bold">{activeOrder.customerName?.charAt(0) || "👤"}</div>
                 <div className="text-right">
                   <h4 className="font-black text-xl text-gray-800">{activeOrder.customerName || "زبون جديد"}</h4>
-                  <p className="text-xs text-blue-500 font-bold flex items-center gap-1 cursor-pointer" onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${activeOrder.pickupLat},${activeOrder.pickupLng}`)}>فتح الخريطة الخارجية <ExternalLink className="w-3 h-3"/></p>
+                  <p className="text-xs text-blue-500 font-bold flex items-center gap-1 cursor-pointer" onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&origin=${currentCoords?.[0]},${currentCoords?.[1]}&destination=${activeOrder.pickupLat},${activeOrder.pickupLng}`)}>فتح الخريطة الخارجية <ExternalLink className="w-3 h-3"/></p>
                 </div>
               </div>
               <div className="flex gap-2">
@@ -674,9 +729,27 @@ if (!driverInfo || driverInfo.status !== "approved") {
               </div>
             </div>
             <Button onClick={() => {
-                if (orderStage === "heading_to_pickup") setOrderStage("arrived_pickup");
-                else if (orderStage === "arrived_pickup") setOrderStage("heading_to_dropoff");
-                else setOrderStage("payment");
+                let nextStage = "";
+                let nextStatus = "";
+
+                if (orderStage === "heading_to_pickup") {
+                    nextStage = "arrived_pickup";
+                    nextStatus = "arrived";
+                } else if (orderStage === "arrived_pickup") {
+                    nextStage = "heading_to_dropoff";
+                    nextStatus = "in_progress";
+                } else {
+                    nextStage = "payment";
+                    nextStatus = "arrived_dropoff";
+                }
+
+                setOrderStage(nextStage);
+                socket.emit("update_order_status", { 
+                  orderId: activeOrder.id, 
+                  status: nextStatus,
+                  driverId: driverInfo.id
+                });
+
             }} className="w-full h-18 bg-black hover:bg-orange-600 text-white rounded-[26px] font-black text-xl shadow-xl py-4">
               {orderStage === "heading_to_pickup" ? "وصلت لموقع الزبون" : orderStage === "arrived_pickup" ? "تأكيد رفع السيارة" : "إتمام الرحلة"}
             </Button>

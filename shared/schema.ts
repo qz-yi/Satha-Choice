@@ -3,39 +3,24 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
 
-// === TABLE DEFINITIONS ===
-
+// === 1. إعدادات النظام (Settings) ===
 export const settings = pgTable("settings", {
   id: serial("id").primaryKey(),
   commissionAmount: integer("commission_amount").notNull().default(1000),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export const requests = pgTable("requests", {
+// === 2. جدول المستخدمين (Users) ===
+export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  customerName: text("customer_name").default("زبون"), 
-  customerPhone: text("customer_phone").default("07700000000"),
-  // +++ التعديل الجوهري: إضافة حقل الرصيد هنا لكي يظهر في لوحة الإدارة +++
-  customerWalletBalance: decimal("customer_wallet_balance", { precision: 10, scale: 2 }).default("0.00"),
-  vehicleType: text("vehicle_type").notNull(), 
-  price: text("price").notNull(),
-  location: text("location").default("لم يحدد العنوان"), 
-  pickupAddress: text("pickup_address"), 
-  pickupLat: text("pickup_lat"),
-  pickupLng: text("pickup_lng"),
-  destination: text("destination").default("غير محدد"),
-  destLat: text("dest_lat"),
-  destLng: text("dest_lng"),
-  city: text("city").default("بغداد"), 
-  scheduledAt: timestamp("scheduled_at"),
-  status: text("status").default("pending"),
-  driverId: integer("driver_id").references(() => drivers.id), 
-  createdAt: timestamp("created_at").defaultNow(),
-  rating: integer("rating"),
-  paymentMethod: text("payment_method"),
-  isRefunded: boolean("is_refunded").default(sql`false`),
+  username: text("username").notNull(), // تم التعديل من name إلى username ليتوافق مع السيرفر
+  phone: text("phone").notNull().unique(), 
+  password: text("password").notNull(), 
+  city: text("city").default("غير محدد"), 
+  walletBalance: decimal("wallet_balance", { precision: 10, scale: 2 }).notNull().default("0.00"),
 });
 
+// === 3. جدول السائقين (Drivers) ===
 export const drivers = pgTable("drivers", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -53,25 +38,46 @@ export const drivers = pgTable("drivers", {
   avatarUrl: text("avatar_url"), 
 });
 
+// === 4. جدول الطلبات (Requests) ===
+export const requests = pgTable("requests", {
+  id: serial("id").primaryKey(),
+  customerName: text("customer_name").default("زبون"), 
+  customerPhone: text("customer_phone").default("07700000000"),
+  customerWalletBalance: decimal("customer_wallet_balance", { precision: 10, scale: 2 }).default("0.00"),
+  vehicleType: text("vehicle_type").notNull(), 
+  price: text("price").notNull(),
+  location: text("location").default("لم يحدد العنوان"), 
+  pickupAddress: text("pickup_address"), 
+  pickupLat: text("pickup_lat"),
+  pickupLng: text("pickup_lng"),
+  destination: text("destination").default("غير محدد"),
+  destLat: text("dest_lat"),
+  destLng: text("dest_lng"),
+  city: text("city"), 
+  scheduledAt: timestamp("scheduled_at"),
+  status: text("status").default("pending"),
+  driverId: integer("driver_id").references(() => drivers.id), 
+  createdAt: timestamp("created_at").defaultNow(),
+  rating: integer("rating"),
+  paymentMethod: text("payment_method"),
+  isRefunded: boolean("is_refunded").default(sql`false`),
+});
+
+// === 5. جدول العمليات المالية (Transactions) ===
 export const transactions = pgTable("transactions", {
   id: serial("id").primaryKey(),
-  driverId: integer("driver_id").references(() => drivers.id).notNull(),
+  driverId: integer("driver_id").references(() => drivers.id), 
+  userId: integer("user_id").references(() => users.id), 
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(), 
   type: text("type").notNull(), 
   status: text("status").notNull().default("pending"), 
   zainCashId: text("zain_cash_id"), 
+  msisdn: text("msisdn"), 
+  operationId: text("operation_id"), 
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  phone: text("phone").notNull().unique(), 
-  password: text("password").notNull(), 
-  walletBalance: decimal("wallet_balance", { precision: 10, scale: 2 }).notNull().default("0.00"),
-});
-
-// === BASE SCHEMAS & VALIDATION ===
+// === قواعد التحقق (Validation Schemas) ===
 
 export const insertSettingsSchema = createInsertSchema(settings).omit({
   id: true,
@@ -86,14 +92,18 @@ export const insertRequestSchema = createInsertSchema(requests, {
   destination: z.string().optional().nullable(),
   vehicleType: z.string().optional().nullable(),
   price: z.string().optional().nullable(),
+  driverId: z.number().optional().nullable(),
 }).omit({ 
   id: true, 
   status: true, 
   createdAt: true,
-  customerWalletBalance: true // لا نريده عند إنشاء الطلب
+  // تمت إزالة omit لـ customerWalletBalance للسماح للسيرفر بتحديثها عند الحاجة
 });
 
-export const insertUserSchema = createInsertSchema(users).omit({
+export const insertUserSchema = createInsertSchema(users, {
+  username: z.string().min(2, "الاسم مطلوب"),
+  city: z.string().optional().nullable(),
+}).omit({
   id: true,
   walletBalance: true
 });
@@ -126,7 +136,7 @@ export const loginSchema = z.object({
   password: z.string().min(6, "كلمة المرور قصيرة جداً"),
 });
 
-// === EXPLICIT API CONTRACT TYPES ===
+// === أنواع البيانات (Types) ===
 export type Setting = typeof settings.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -137,6 +147,7 @@ export type InsertDriver = z.infer<typeof insertDriverSchema>;
 export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 
+// خيارات السيارات
 export const VEHICLE_OPTIONS = [
   { id: "small", label: "سطحة صغيرة", price: "25,000 د.ع", priceValue: 25000, description: "Small Flatbed" },
   { id: "large", label: "سطحة كبيرة (لوري)", price: "50,000 د.ع", priceValue: 50000, description: "Large Flatbed" },
