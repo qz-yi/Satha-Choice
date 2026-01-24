@@ -117,6 +117,8 @@ export default function DriverDashboard() {
   const [depositAmount, setDepositAmount] = useState<string>("25000"); 
 
   const [isFollowMode, setIsFollowMode] = useState(true); 
+  // الحالة الجديدة للتحكم في ظهور واختفاء قائمة الطلبات
+  const [isRequestsSheetOpen, setIsRequestsSheetOpen] = useState(true);
 
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -476,14 +478,39 @@ if (!driverInfo || driverInfo.status !== "approved") {
             )}
             <AnimatePresence>
               {driverInfo.isOnline && !activeOrder && (
-                <motion.div drag="y" dragConstraints={{ top: 0, bottom: 400 }} initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="absolute inset-x-0 bottom-0 z-[1200] bg-white rounded-t-[45px] shadow-[0_-20px_60px_rgba(0,0,0,0.15)] flex flex-col max-h-[70vh]">
-                  <div className="w-full flex flex-col items-center py-4 cursor-grab active:cursor-grabbing">
-                    <div className="w-12 h-1.5 bg-gray-200 rounded-full mb-1" /><GripHorizontal className="w-5 h-5 text-gray-300" />
+                <motion.div 
+                  drag="y" 
+                  dragConstraints={{ top: 0, bottom: 0 }} 
+                  dragElastic={0.1}
+                  // التحكم في الموقع: إذا كانت مغلقة، تنزل للأسفل ويبقى 70 بكسل فقط
+                  animate={{ y: isRequestsSheetOpen ? 0 : "calc(100% - 70px)" }}
+                  onDragEnd={(e, info) => {
+                    // إذا سحب المستخدم للأسفل بقوة أو مسافة كافية، يتم الإغلاق الجزئي
+                    if (info.offset.y > 100) {
+                      setIsRequestsSheetOpen(false);
+                    } else if (info.offset.y < -50) {
+                      setIsRequestsSheetOpen(true);
+                    }
+                  }}
+                  className="absolute inset-x-0 bottom-0 z-[1200] bg-white rounded-t-[45px] shadow-[0_-20px_60px_rgba(0,0,0,0.15)] flex flex-col max-h-[70vh] transition-colors duration-300"
+                >
+                  {/* منطقة المقبض: الآن تعمل كزر أيضاً عند الضغط */}
+                  <div 
+                    className="w-full flex flex-col items-center py-4 cursor-grab active:cursor-grabbing"
+                    onClick={() => setIsRequestsSheetOpen(!isRequestsSheetOpen)}
+                  >
+                    <div className="w-12 h-1.5 bg-gray-200 rounded-full mb-1" />
+                    <GripHorizontal className={`w-5 h-5 transition-transform duration-300 ${isRequestsSheetOpen ? 'text-gray-300' : 'text-orange-500 rotate-180'}`} />
+                    {!isRequestsSheetOpen && (
+                      <span className="text-[10px] font-black text-orange-500 mt-1 animate-pulse">اسحب للأعلى لرؤية الطلبات</span>
+                    )}
                   </div>
+
                   <div className="px-6 flex justify-between items-center mb-4">
                     <div className="flex items-center gap-2"><span className="bg-orange-500 w-2 h-6 rounded-full" /><h3 className="text-lg font-black text-gray-800">طلبات السحب المتاحة</h3></div>
                     <Button onClick={handleRefresh} variant="ghost" disabled={isRefreshing} className="bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-2xl gap-2 font-bold px-4"><RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} /> تحديث</Button>
                   </div>
+
                   <div className="overflow-y-auto px-6 pb-12 space-y-4">
                     {availableRequests.length === 0 ? (
                       <div className="py-10 text-center opacity-40"><Navigation className="w-12 h-12 mx-auto mb-2 text-gray-300" /><p className="font-bold text-gray-400">لا توجد طلبات حالياً، اضغط تحديث</p></div>

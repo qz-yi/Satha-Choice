@@ -5,6 +5,7 @@ import {
   users,
   transactions,
   settings,
+  messages, // إضافة جدول الرسائل
   type InsertRequest,
   type Request,
   type Driver,
@@ -13,6 +14,8 @@ import {
   type InsertUser,
   type Setting,
   type Transaction,
+  type Message, // إضافة نوع الرسالة
+  type InsertMessage, // إضافة نوع إدخال الرسالة
 } from "@shared/schema";
 import { eq, desc, sql, and } from "drizzle-orm";
 
@@ -54,11 +57,35 @@ export interface IStorage {
   // --- إعدادات النظام ---
   getSettings(): Promise<Setting>;
   updateCommission(amount: number): Promise<Setting>;
+
+  // --- نظام الدردشة (الجديد) ---
+  createMessage(message: InsertMessage): Promise<Message>;
+  getMessagesByOrder(orderId: number): Promise<Message[]>;
 }
 
 export class DatabaseStorage implements IStorage {
+  // --- نظام الدردشة (تطبيق الدوال) ---
+  async createMessage(message: InsertMessage): Promise<Message> {
+    const [newMessage] = await db.insert(messages).values({
+      orderId: message.orderId,
+      senderId: message.senderId,
+      senderType: message.senderType,
+      senderName: message.senderName,
+      content: message.content,
+    }).returning();
+    return newMessage;
+  }
+
+  async getMessagesByOrder(orderId: number): Promise<Message[]> {
+    return await db
+      .select()
+      .from(messages)
+      .where(eq(messages.orderId, orderId))
+      .orderBy(messages.timestamp);
+  }
+
+  // --- الزبائن (Users) ---
   async createUser(user: InsertUser): Promise<User> {
-    // تم التعديل هنا لضمان استخدام username بدلاً من name
     const [newUser] = await db.insert(users).values({
       username: user.username, 
       phone: user.phone,
@@ -95,6 +122,7 @@ export class DatabaseStorage implements IStorage {
     return updatedUser;
   }
 
+  // --- طلبات الزبائن ---
   async createRequest(request: InsertRequest): Promise<Request> {
     const [newRequest] = await db.insert(requests).values({
       ...request,
@@ -138,6 +166,7 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  // --- السائقين ---
   async createDriver(driver: InsertDriver): Promise<Driver> {
     const [newDriver] = await db.insert(drivers).values({
       ...driver,
@@ -191,6 +220,7 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  // --- العمليات المالية ---
   async createTransaction(data: any): Promise<any> {
     const [tx] = await db.insert(transactions).values({
       driverId: data.driverId || null,
@@ -241,6 +271,7 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  // --- منطق الرحلات ---
   async updateRequestStatus(id: number, status: string, rating?: number, paymentMethod?: string): Promise<Request> {
     const [updated] = await db.update(requests).set({ status, rating, paymentMethod }).where(eq(requests.id, id)).returning();
     return updated;
@@ -257,7 +288,6 @@ export class DatabaseStorage implements IStorage {
       const newDriverBalance = (parseFloat(driver.walletBalance || "0") - amount).toFixed(2);
       const [updatedDriver] = await tx.update(drivers).set({ walletBalance: newDriverBalance }).where(eq(drivers.id, driverId)).returning();
 
-      // تم تعديل البحث هنا ليعتمد على هاتف الزبون الموجود في الطلب
       const [user] = await tx.select().from(users).where(eq(users.phone, request.customerPhone || ""));
       if (!user) throw new Error("Customer associated with request not found");
 

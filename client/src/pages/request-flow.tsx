@@ -49,7 +49,7 @@ const normalizeCity = (city: string): string => {
 
 function FlyToMarker({ center, shouldFly }: { center: [number, number], shouldFly: boolean }) {
   const map = useMap();
-  useEffect(() => { if (shouldFly) map.flyTo(center, 16, { duration: 1.5 }); }, [center, map, shouldFly]);
+  useEffect(() => { if (shouldFly && center) map.flyTo(center, 16, { duration: 1.5 }); }, [center, map, shouldFly]);
   return null;
 }
 
@@ -116,11 +116,16 @@ export default function RequestFlow() {
   const [chargeAmount, setChargeAmount] = useState(""); 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
   const [formData, setFormData] = useState({
     location: "", destination: "", pickupLat: 32.4846, pickupLng: 44.4209, 
     destLat: 32.4846, destLng: 44.4209, vehicleType: "", price: "", timeMode: "now" as "now" | "later",
     city: "بابل" 
   });
+
+  const scrollChatToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   const refreshUserData = useCallback(async (userId: number) => {
     try {
@@ -133,45 +138,61 @@ export default function RequestFlow() {
         const data = await response.json();
         const updatedProfile = { 
           ...userProfile, 
-          wallet: data.walletBalance?.toString() || "0" 
+          wallet: data.walletBalance?.toString() || "0",
+          trips: data.tripsCount?.toString() || userProfile.trips
         };
         setUserProfile(updatedProfile);
         localStorage.setItem("sat7a_user", JSON.stringify(updatedProfile));
       }
     } catch (err) {
-      console.error("خطأ في تحديث بيانات المحفظة", err);
+      console.error("خطأ في تحديث البيانات", err);
     }
   }, [userProfile.phone, userProfile.password, userProfile]);
 
+  // جلب الرسائل القديمة عند فتح الدردشة
   useEffect(() => {
-    const saved = localStorage.getItem("sat7a_user");
+    if (isChatOpen && activeOrderId) {
+      fetch(`/api/requests/${activeOrderId}/messages`)
+        .then(res => res.json())
+        .then(data => {
+          setMessages(data);
+          setTimeout(scrollChatToBottom, 100);
+        })
+        .catch(err => console.error("Error fetching messages:", err));
+    }
+  }, [isChatOpen, activeOrderId]);
+
+  // استعادة الجلسة والبحث عن طلبات نشطة عند التحميل
+  useEffect(() => {
+    const savedUser = localStorage.getItem("sat7a_user");
     const sessionActive = localStorage.getItem("sat7a_session_active");
-    if (saved && sessionActive === "true") { 
-      const parsed = JSON.parse(saved);
+    const savedOrderId = localStorage.getItem("sat7a_active_order_id");
+
+    if (savedUser && sessionActive === "true") { 
+      const parsed = JSON.parse(savedUser);
       setUserProfile(parsed); 
       setIsLoggedIn(true); 
       if (parsed.id) refreshUserData(parsed.id);
+
+      // إذا كان هناك طلب نشط، حاول استعادته
+      if (savedOrderId) {
+        setActiveOrderId(Number(savedOrderId));
+        setViewState("tracking");
+      }
     }
   }, []);
 
   useEffect(() => {
-    if (isWalletOpen && userProfile.id) {
-      refreshUserData(userProfile.id);
-    }
-  }, [isWalletOpen, userProfile.id, refreshUserData]);
-
-  useEffect(() => {
     if (activeOrderId) {
       socket.emit("join_order", activeOrderId);
+      localStorage.setItem("sat7a_active_order_id", activeOrderId.toString());
 
       const handleStatusChange = (data: any) => {
         if (data.status) {
           setRequestStatus(data.status);
 
-          // عند القبول: استلام بيانات السائق الحقيقية المرسلة من كود السائق
           if (data.status === "accepted" || data.driverInfo) {
             setViewState("tracking");
-
             const info = data.driverInfo || data;
             setDriverInfo({
               id: info.driverId || info.id,
@@ -197,6 +218,7 @@ export default function RequestFlow() {
 
           if (data.status === "completed") {
             toast({ title: "وصلت بالسلامة", description: "تم إكمال الطلب بنجاح" });
+            localStorage.removeItem("sat7a_active_order_id");
             setTimeout(() => {
               setViewState("booking");
               setActiveOrderId(null);
@@ -210,20 +232,10 @@ export default function RequestFlow() {
       socket.on("status_changed", handleStatusChange);
       socket.on(`order_status_${activeOrderId}`, handleStatusChange);
 
-      // الاستماع لتحديث الموقع المباشر (تطابق مع كود السائق)
       socket.on("driver_location_update", (data: any) => {
           if (Number(data.orderId) === Number(activeOrderId)) {
               setDriverLocation([Number(data.lat), Number(data.lng)]);
               if (data.heading !== undefined) setDriverHeading(data.heading);
-
-              // تحديث بيانات السائق احتياطاً إذا لم تكن موجودة
-              if (!driverInfo && data.driverName) {
-                  setDriverInfo({
-                      name: data.driverName,
-                      avatarUrl: data.driverAvatar,
-                      id: data.driverId
-                  });
-              }
           }
       });
 
@@ -233,17 +245,40 @@ export default function RequestFlow() {
         socket.off("driver_location_update");
       };
     }
-  }, [activeOrderId, toast, driverInfo]);
+  }, [activeOrderId, toast]);
 
+  // تحديث السوكيت لاستقبال الرسائل بنظام 2026 المحسن
   useEffect(() => {
-    socket.on("receive_message", (msg: any) => {
+    const handleNewMessage = (msg: any) => {
       if (Number(msg.orderId) === Number(activeOrderId)) {
-        setMessages(prev => [...prev, { ...msg, id: Date.now() }]);
+        setMessages(prev => {
+          const exists = prev.find(m => m.id === msg.id);
+          if (exists) return prev;
+          return [...prev, msg];
+        });
         if (!isChatOpen) setUnreadCount(prev => prev + 1);
+        setTimeout(scrollChatToBottom, 100);
       }
-    });
-    return () => { socket.off("receive_message"); };
+    };
+
+    socket.on("new_message", handleNewMessage);
+    return () => { socket.off("new_message", handleNewMessage); };
   }, [isChatOpen, activeOrderId]);
+
+  const handleSendMessage = () => {
+    if (!chatMessage.trim() || !activeOrderId) return;
+
+    const payload = {
+      orderId: activeOrderId,
+      message: chatMessage,
+      senderId: userProfile.id,
+      senderType: 'customer',
+      senderName: userProfile.username
+    };
+
+    socket.emit("send_message", payload);
+    setChatMessage("");
+  };
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -252,7 +287,7 @@ export default function RequestFlow() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          username: userProfile.username, // التعديل الجذري: إرسال username بدلاً من name
+          username: userProfile.username,
           phone: userProfile.phone,
           password: userProfile.password,
           city: normalizeCity(formData.city)
@@ -267,7 +302,7 @@ export default function RequestFlow() {
       localStorage.setItem("sat7a_session_active", "true");
       setIsLoggedIn(true);
     } catch (err: any) {
-      alert(err.message);
+      toast({ variant: "destructive", title: "خطأ", description: err.message });
     }
   };
 
@@ -285,22 +320,25 @@ export default function RequestFlow() {
       const completeProfile = { 
         ...userProfile, 
         id: data.id, 
-        username: data.username || data.name, // دعم كلا المسميين
-        wallet: data.walletBalance?.toString() || "0" 
+        username: data.username || data.name,
+        wallet: data.walletBalance?.toString() || "0",
+        trips: data.tripsCount?.toString() || "0"
       };
       setUserProfile(completeProfile);
       localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
       localStorage.setItem("sat7a_session_active", "true");
       setIsLoggedIn(true);
     } catch (err: any) {
-      alert(err.message);
+      toast({ variant: "destructive", title: "فشل الدخول", description: err.message });
     }
   };
 
   const handleLogout = () => {
-    localStorage.setItem("sat7a_session_active", "false");
+    localStorage.removeItem("sat7a_session_active");
+    localStorage.removeItem("sat7a_active_order_id");
     setIsLoggedIn(false); 
     setAuthMode("choice");
+    setActiveOrderId(null);
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -337,11 +375,15 @@ export default function RequestFlow() {
       const data = await res.json();
       if (data.address) {
         const detectedCity = data.address.state || data.address.city || data.address.province || data.address.governorate || "بابل";
-        setFormData(prev => ({ ...prev, city: normalizeCity(detectedCity) }));
+        const locationName = data.display_name.split(',')[0];
+        setFormData(prev => ({ 
+          ...prev, 
+          city: normalizeCity(detectedCity),
+          ...(step === "pickup" ? { location: locationName } : { destination: locationName })
+        }));
       }
     } catch (err) {
-      console.error("فشل في تحديد المحافظة:", err);
-      setFormData(prev => ({ ...prev, city: "بابل" }));
+      console.error("فشل في تحديد العنوان:", err);
     }
   };
 
@@ -354,8 +396,10 @@ export default function RequestFlow() {
         setFormData(p => ({ ...p, pickupLat: latitude, pickupLng: longitude }));
         reverseGeocode(latitude, longitude); 
       }
-      else setFormData(p => ({ ...p, destLat: latitude, destLng: longitude }));
-
+      else {
+        setFormData(p => ({ ...p, destLat: latitude, destLng: longitude }));
+        reverseGeocode(latitude, longitude);
+      }
       setTimeout(() => setShouldFly(false), 2000);
     });
   };
@@ -400,7 +444,7 @@ export default function RequestFlow() {
         toast({ variant: "destructive", title: "فشل الاتصال بزين كاش", description: err.message });
       } finally { setIsCharging(false); }
     } else {
-      alert(`سيتم توجيهك الآن لبوابة ${method} لإتمام عملية الدفع وتعبئة رصيدك.`);
+      alert(`بوابة ${method} ستتوفر قريباً.`);
     }
   };
 
@@ -412,7 +456,8 @@ export default function RequestFlow() {
 
     const numericPrice = parseFloat(formData.price.replace(/[^\d]/g, ''));
     if (paymentMethod === "wallet" && parseFloat(userProfile.wallet) < numericPrice) {
-      alert("عذراً، رصيد محفظتك غير كافٍ لهذه الرحلة."); return;
+      toast({ variant: "destructive", title: "رصيد غير كافٍ", description: "يرجى شحن محفظتك أو اختيار الدفع النقدي." });
+      return;
     }
 
     try {
@@ -450,6 +495,7 @@ export default function RequestFlow() {
     }
   };
 
+  // شاشات الحالة المختلفة (تسجيل الدخول، النجاح، التتبع)
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-white flex flex-col p-6 relative overflow-hidden font-sans" dir="rtl">
@@ -559,7 +605,7 @@ export default function RequestFlow() {
             </MapContainer>
         </div>
         <header className="absolute top-6 inset-x-6 z-[1000] flex justify-between items-center">
-            <Button onClick={() => setViewState("booking")} className="bg-white/90 backdrop-blur-md text-black rounded-2xl w-12 h-12 shadow-xl border-none"><X className="w-5 h-5" /></Button>
+            <Button onClick={() => { setViewState("booking"); localStorage.removeItem("sat7a_active_order_id"); setActiveOrderId(null); }} className="bg-white/90 backdrop-blur-md text-black rounded-2xl w-12 h-12 shadow-xl border-none"><X className="w-5 h-5" /></Button>
             <div className="bg-orange-500 text-white px-4 py-2 rounded-2xl shadow-xl font-black italic flex items-center gap-2"><Navigation className="w-4 h-4 animate-pulse" /> مباشر</div>
         </header>
 
@@ -578,32 +624,31 @@ export default function RequestFlow() {
                 </div>
                 <Button variant="ghost" onClick={() => setIsChatOpen(false)} className="rounded-2xl"><X className="w-6 h-6"/></Button>
               </div>
+
               <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
-                {messages.map((msg) => (
-                  <div key={msg.id} className={`flex ${msg.sender === 'customer' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`p-4 rounded-2xl max-w-[80%] font-bold shadow-sm ${msg.sender === 'customer' ? 'bg-orange-500 text-white rounded-br-none' : 'bg-white text-gray-800 rounded-bl-none'}`}>{msg.text}</div>
+                {messages.map((msg, index) => (
+                  <div key={msg.id || index} className={`flex ${msg.senderType === 'customer' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`p-4 rounded-2xl max-w-[80%] font-bold shadow-sm ${msg.senderType === 'customer' ? 'bg-orange-500 text-white rounded-br-none' : 'bg-white text-gray-800 rounded-bl-none'}`}>
+                      {msg.content || msg.text}
+                      <p className={`text-[8px] mt-1 opacity-60 ${msg.senderType === 'customer' ? 'text-right' : 'text-left'}`}>
+                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
                   </div>
                 ))}
+                <div ref={chatEndRef} />
               </div>
+
               <div className="p-4 border-t flex gap-2 bg-white pb-10">
                 <input 
                   type="text" 
                   value={chatMessage} 
                   onChange={(e) => setChatMessage(e.target.value)} 
-                  onKeyPress={(e) => e.key === 'Enter' && chatMessage.trim() && (function(){
-                    const newMsg = { text: chatMessage, sender: 'customer', id: Date.now(), orderId: activeOrderId };
-                    socket.emit("send_message", newMsg);
-                    setMessages(prev => [...prev, newMsg]); setChatMessage("");
-                  })()}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
                   placeholder="اكتب رسالة للكابتن..." 
                   className="flex-1 bg-gray-100 rounded-2xl px-5 text-right font-bold outline-none border-2 border-transparent focus:border-orange-200 transition-all"
                 />
-                <Button onClick={() => {
-                  if(!chatMessage.trim()) return;
-                  const newMsg = { text: chatMessage, sender: 'customer', id: Date.now(), orderId: activeOrderId };
-                  socket.emit("send_message", newMsg);
-                  setMessages(prev => [...prev, newMsg]); setChatMessage("");
-                }} className="bg-orange-500 rounded-2xl w-14 h-14 shadow-lg shadow-orange-100"><Send className="w-5 h-5 rotate-180"/></Button>
+                <Button onClick={handleSendMessage} className="bg-orange-500 rounded-2xl w-14 h-14 shadow-lg shadow-orange-100"><Send className="w-5 h-5 rotate-180"/></Button>
               </div>
             </motion.div>
           )}
@@ -715,6 +760,7 @@ export default function RequestFlow() {
                    reverseGeocode(center.lat, center.lng); 
                  } else {
                    setFormData(prev => ({...prev, destLat: center.lat, destLng: center.lng}));
+                   reverseGeocode(center.lat, center.lng);
                  }
               }} />
             </MapContainer>

@@ -13,7 +13,7 @@ export const settings = pgTable("settings", {
 // === 2. جدول المستخدمين (Users) ===
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  username: text("username").notNull(), // تم التعديل من name إلى username ليتوافق مع السيرفر
+  username: text("username").notNull(), 
   phone: text("phone").notNull().unique(), 
   password: text("password").notNull(), 
   city: text("city").default("غير محدد"), 
@@ -77,6 +77,17 @@ export const transactions = pgTable("transactions", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// === 6. جدول الرسائل والدردشة (Messages) - الإضافة الجديدة ===
+export const messages = pgTable("messages", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull().references(() => requests.id), // ربط الرسالة بالطلب
+  senderId: integer("sender_id").notNull(), // قد يكون ID سائق أو مستخدم
+  senderType: text("sender_type").notNull(), // 'user' أو 'driver'
+  senderName: text("sender_name").notNull(),
+  content: text("content").notNull(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+});
+
 // === قواعد التحقق (Validation Schemas) ===
 
 export const insertSettingsSchema = createInsertSchema(settings).omit({
@@ -97,7 +108,6 @@ export const insertRequestSchema = createInsertSchema(requests, {
   id: true, 
   status: true, 
   createdAt: true,
-  // تمت إزالة omit لـ customerWalletBalance للسماح للسيرفر بتحديثها عند الحاجة
 });
 
 export const insertUserSchema = createInsertSchema(users, {
@@ -131,6 +141,12 @@ export const insertTransactionSchema = createInsertSchema(transactions).omit({
   createdAt: true
 });
 
+// سكيمة إدخال الرسائل الجديدة
+export const insertMessageSchema = createInsertSchema(messages).omit({
+  id: true,
+  timestamp: true
+});
+
 export const loginSchema = z.object({
   phone: z.string().min(10, "رقم الهاتف غير صحيح"),
   password: z.string().min(6, "كلمة المرور قصيرة جداً"),
@@ -146,6 +162,8 @@ export type Driver = typeof drivers.$inferSelect;
 export type InsertDriver = z.infer<typeof insertDriverSchema>;
 export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
+export type Message = typeof messages.$inferSelect;
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
 
 // خيارات السيارات
 export const VEHICLE_OPTIONS = [

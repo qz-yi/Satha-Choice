@@ -61,7 +61,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   const app: Express = arg1.post ? arg1 : arg2;
   const httpServer: Server = arg1.post ? arg2 : arg1;
 
-  // === إعداد Socket.io (تحديث لضمان البث المباشر في العراق) ===
+  // === إعداد Socket.io (تحديث لضمان البث المباشر والدردشة) ===
   const io = new SocketIOServer(httpServer, {
     cors: { origin: "*" },
     pingInterval: 10000,
@@ -83,6 +83,29 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       console.log(`[Socket] Driver joined city: ${city}`);
     });
 
+    // --- نظام الدردشة المباشرة مع الحفظ الدائم (تحديث) ---
+    socket.on("send_message", async (data) => {
+      try {
+        const { orderId, message, senderId, senderType, senderName } = data;
+        if (!orderId || !message) return;
+
+        // حفظ الرسالة في قاعدة البيانات لضمان البقاء
+        const savedMsg = await storage.createMessage({
+          orderId: Number(orderId),
+          content: message,
+          senderId: Number(senderId),
+          senderType,
+          senderName
+        });
+
+        // بث الرسالة المحفوظة (بما في ذلك التوقيت والـ ID من قاعدة البيانات)
+        io.to(`order_${orderId}`).emit("new_message", savedMsg);
+        console.log(`[Chat] Message saved and broadcasted for Order ${orderId}`);
+      } catch (err) {
+        console.error("[Socket Chat Error]:", err);
+      }
+    });
+
     // --- الحل الجذري لمشكلة تحديث الحالة لدى الزبون ---
     socket.on("update_order_status", async (data) => {
       try {
@@ -92,14 +115,14 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         // 1. تحديث قاعدة البيانات لضمان بقاء الحالة عند عمل Refresh للزبون
         await storage.updateRequestStatus(Number(orderId), status);
 
-        // جلب بيانات السائق لإرسالها للزبون ليراها في الواجهة
+        // جلب بيانات السائق كاملة (الاسم، الهاتف، الصورة) لإرسالها للزبون
         const driver = driverId ? await storage.getDriver(Number(driverId)) : null;
 
         const payload = { 
           status, 
           driverId,
           driverInfo: driver ? {
-            name: driver.username || (driver as any).name, // تعديل لدعم المسمى الجديد
+            name: driver.username || (driver as any).name, 
             phone: driver.phone,
             avatarUrl: driver.avatarUrl,
             vehicleType: driver.vehicleType,
@@ -109,9 +132,10 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
           } : null
         };
 
-        // 2. بث الإشارة فوراً للزبون المتابع لهذا الطلب تحديداً
-        io.emit(`order_status_${orderId}`, payload);
+        // 2. بث الإشارة فوراً للزبون المتابع لهذا الطلب تحديداً عبر الغرفة
         io.to(`order_${orderId}`).emit("status_changed", payload);
+        // بث عام لضمان التحديث في القوائم
+        io.emit(`order_status_${orderId}`, payload);
 
         console.log(`[Socket] Order ${orderId} status updated to: ${status}`);
       } catch (error) {
@@ -119,17 +143,18 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       }
     });
 
-    // تحديث موقع السائق لحظياً على الخريطة
+    // تحديث موقع السائق لحظياً على الخريطة (العام)
     socket.on("update_location", async (data) => {
       const { driverId, lat, lng } = data;
       await storage.updateDriver(driverId, { lastLat: lat, lastLng: lng });
       io.emit(`location_changed_${driverId}`, { lat, lng });
     });
 
-    // دعم إشارة السائق المخصصة driver_location_update
+    // دعم تتبع الموقع المتقدم (داخل الغرفة الخاصة بالطلب)
     socket.on("driver_location_update", (data) => {
       const { orderId, lat, lng, heading } = data;
-      io.emit(`location_changed_order_${orderId}`, { lat, lng, heading });
+      // البث حصرياً لغرفة الطلب لتقليل استهلاك البيانات وضمان السرعة
+      io.to(`order_${orderId}`).emit(`location_changed_order_${orderId}`, { lat, lng, heading });
     });
   });
 
@@ -237,11 +262,21 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
+  // --- مسارات الدردشة (الجديد) ---
+  app.get("/api/requests/:orderId/messages", async (req, res) => {
+    try {
+      const orderId = Number(req.params.orderId);
+      const messages = await storage.getMessagesByOrder(orderId);
+      res.json(messages);
+    } catch (err) {
+      res.status(500).json({ message: "فشل في جلب سجل المحادثة" });
+    }
+  });
+
   // --- مسارات الزبائن ---
 
   app.post("/api/register", async (req, res) => {
     try {
-      // تعديل هنا: التأكد من أن insertUserSchema يتم تنفيذه بشكل سليم بعد تغيير name إلى username
       const input = insertUserSchema.parse(req.body);
       const existingUser = await storage.getUserByPhone(input.phone);
       if (existingUser) {
@@ -462,10 +497,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         status: status || "pending"
       });
 
-      // 3. إرسال "رسالة" أو إشعار فوري للسائقين (الحل لمشكلة الرسائل لا ترسل)
-      // بث عام لجميع السائقين المتصلين
+      // 3. إرسال "رسالة" أو إشعار فوري للسائقين
       io.emit("new_request_available", request);
-      // بث مخصص للسائقين في نفس المدينة
       io.to(`city_${detectedCity}`).emit("new_request_in_city", request);
 
       console.log(`[Socket] New request broadcasted to city: ${detectedCity}`);
@@ -507,8 +540,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         }
       };
 
-      io.emit(`order_status_${requestId}`, payload);
       io.to(`order_${requestId}`).emit("status_changed", payload);
+      io.emit(`order_status_${requestId}`, payload);
 
       res.json(result);
     } catch (err: any) {
@@ -534,8 +567,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         referenceId: `REQ-${requestId}`
       });
 
-      io.emit(`order_status_${requestId}`, { status: "completed" });
       io.to(`order_${requestId}`).emit("status_changed", { status: "completed" });
+      io.emit(`order_status_${requestId}`, { status: "completed" });
 
       res.json({ message: "تم إكمال الطلب وخصم العمولة", balance: newBalance });
     } catch (err: any) {
@@ -549,8 +582,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const id = Number(req.params.id);
       const updated = await storage.updateRequestStatus(id, status);
 
-      io.emit(`order_status_${id}`, { status });
       io.to(`order_${id}`).emit("status_changed", { status });
+      io.emit(`order_status_${id}`, { status });
 
       res.json(updated);
     } catch (err: any) {
@@ -570,7 +603,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
           walletBalance: balance,         
           customerWalletBalance: balance, 
           userBalance: balance,
-          driver: driver, // إصلاح: إرسال بيانات السائق الحقيقية للواجهة
+          driver: driver, 
           user: user ? user : { 
             id: 0,
             username: req.customerName, 
@@ -624,14 +657,13 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const updated = await storage.assignRequestToDriver(requestId, driverId);
       const driver = await storage.getDriver(driverId);
 
-      // إصلاح: إرسال إشارة Socket فورية لتحديث شاشة الزبون والسائق
       const payload = { 
         status: "confirmed", 
         driverId, 
         driverInfo: driver 
       };
-      io.emit(`order_status_${requestId}`, payload);
       io.to(`order_${requestId}`).emit("status_changed", payload);
+      io.emit(`order_status_${requestId}`, payload);
 
       res.json(updated);
     } catch (err: any) {
@@ -644,10 +676,9 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const requestId = parseInt(req.params.requestId);
       const updated = await storage.cancelRequestAssignment(requestId);
 
-      // إصلاح: إعلام الأطراف بإلغاء التعيين عبر السوكيت
       const payload = { status: "pending", driverId: null, driverInfo: null };
-      io.emit(`order_status_${requestId}`, payload);
       io.to(`order_${requestId}`).emit("status_changed", payload);
+      io.emit(`order_status_${requestId}`, payload);
 
       res.json(updated);
     } catch (err: any) {
@@ -660,7 +691,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     if (driversList.length === 0) {
       try {
         await storage.createDriver({
-          username: "أحمد السائق", // تم تعديله هنا ليتوافق مع الـ Schema الجديد
+          username: "أحمد السائق", 
           phone: "07700000000",
           password: "password123",
           city: "بابل",
