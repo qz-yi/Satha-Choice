@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
-// تم حذف السطر المسبب لخطأ ERR_MODULE_NOT_FOUND (api import) لأنه غير مستخدم
+// تم الحفاظ على الكود كما هو واضافة التحسينات المنطقية فقط
 import { z } from "zod";
 import { insertDriverSchema, loginSchema, insertUserSchema, insertRequestSchema } from "@shared/schema"; 
 import multer from "multer";
@@ -83,6 +83,12 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       console.log(`[Socket] Driver joined city: ${city}`);
     });
 
+    // [هام جداً] السائق ينضم لقناة خاصة به لاستقبال التعيينات المباشرة من المدير
+    socket.on("join_driver_room", (driverId) => {
+      socket.join(`driver_${driverId}`);
+      console.log(`[Socket] Driver joined private room: driver_${driverId}`);
+    });
+
     // --- نظام الدردشة المباشرة مع الحفظ الدائم (تحديث) ---
     socket.on("send_message", async (data) => {
       try {
@@ -136,6 +142,9 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         io.to(`order_${orderId}`).emit("status_changed", payload);
         // بث عام لضمان التحديث في القوائم
         io.emit(`order_status_${orderId}`, payload);
+
+        // بث عام لتحديث قوائم المدير فوراً
+        io.emit("request_updated", { id: orderId, ...payload });
 
         console.log(`[Socket] Order ${orderId} status updated to: ${status}`);
       } catch (error) {
@@ -501,6 +510,9 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       io.emit("new_request_available", request);
       io.to(`city_${detectedCity}`).emit("new_request_in_city", request);
 
+      // إشعار المدير فوراً بوجود طلب جديد
+      io.emit("request_updated", { id: request.id, status: "pending", ...request });
+
       console.log(`[Socket] New request broadcasted to city: ${detectedCity}`);
 
       res.status(201).json(request);
@@ -540,8 +552,12 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         }
       };
 
+      // إشعار الزبون
       io.to(`order_${requestId}`).emit("status_changed", payload);
       io.emit(`order_status_${requestId}`, payload);
+
+      // [تصحيح] إشعار لوحة تحكم المدير فوراً لتحديث القائمة دون Refresh
+      io.emit("request_updated", { id: requestId, ...payload });
 
       res.json(result);
     } catch (err: any) {
@@ -570,6 +586,9 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       io.to(`order_${requestId}`).emit("status_changed", { status: "completed" });
       io.emit(`order_status_${requestId}`, { status: "completed" });
 
+      // إشعار المدير باكتمال الطلب
+      io.emit("request_updated", { id: requestId, status: "completed" });
+
       res.json({ message: "تم إكمال الطلب وخصم العمولة", balance: newBalance });
     } catch (err: any) {
       res.status(500).json({ message: "فشل في إكمال الطلب" });
@@ -584,6 +603,9 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
       io.to(`order_${id}`).emit("status_changed", { status });
       io.emit(`order_status_${id}`, { status });
+
+      // إشعار المدير
+      io.emit("request_updated", { id, status });
 
       res.json(updated);
     } catch (err: any) {
@@ -657,13 +679,32 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const updated = await storage.assignRequestToDriver(requestId, driverId);
       const driver = await storage.getDriver(driverId);
 
+      // جلب بيانات الطلب الكاملة لإرسالها للسائق
+      // (نحتاج أن يعرف السائق تفاصيل الطلب ليعرضه)
+      const requestDetails = await storage.getRequest(requestId); 
+
       const payload = { 
         status: "confirmed", 
         driverId, 
         driverInfo: driver 
       };
+
+      // إشعار الزبون
       io.to(`order_${requestId}`).emit("status_changed", payload);
       io.emit(`order_status_${requestId}`, payload);
+
+      // [الحل الجذري] إشعار السائق المحدد فوراً ليفتح الطلب لديه
+      // نرسل له تفاصيل الطلب + علامة (flag) بأنه تم تعيينه
+      if (driverId) {
+        io.to(`driver_${driverId}`).emit("new_request_assigned", {
+           ...requestDetails,
+           assignedByAdmin: true
+        });
+        console.log(`[Socket] Admin assigned Request ${requestId} to Driver ${driverId}`);
+      }
+
+      // إشعار لوحة المدير لتحديث الواجهة
+      io.emit("request_updated", { id: requestId, ...payload });
 
       res.json(updated);
     } catch (err: any) {
@@ -674,11 +715,24 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   app.post("/api/admin/requests/:requestId/cancel-assignment", async (req, res) => {
     try {
       const requestId = parseInt(req.params.requestId);
+
+      // قبل الإلغاء، نحتاج معرفة السائق القديم لنخبره بأن الطلب سحب منه
+      const oldRequest = await storage.getRequest(requestId);
+      const oldDriverId = oldRequest?.driverId;
+
       const updated = await storage.cancelRequestAssignment(requestId);
 
       const payload = { status: "pending", driverId: null, driverInfo: null };
       io.to(`order_${requestId}`).emit("status_changed", payload);
       io.emit(`order_status_${requestId}`, payload);
+
+      // إشعار السائق القديم بأن الطلب أُلغي من عنده
+      if (oldDriverId) {
+         io.to(`driver_${oldDriverId}`).emit("request_cancelled_by_admin", { requestId });
+      }
+
+      // إشعار المدير
+      io.emit("request_updated", { id: requestId, ...payload });
 
       res.json(updated);
     } catch (err: any) {

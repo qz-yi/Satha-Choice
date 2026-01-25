@@ -352,12 +352,34 @@ export default function DriverDashboard() {
 
   useEffect(() => {
     if (driverInfo?.isOnline && driverInfo?.status === "approved") {
+
+      // 1. المستمع العادي للطلبات العامة (حسب المدينة)
       socket.on("new_request_available", (data: any) => { 
         if (!activeOrder && data.city?.trim() === driverInfo?.city?.trim()) {
           setAvailableRequests(prev => {
              if (prev.find(r => r.id === data.id)) return prev;
              return [data, ...prev];
           });
+        }
+      });
+
+      // 2. إصلاح المشكلة: مستمع خاص للطلبات التي يسندها المدير مباشرة
+      // هذا المستمع يستقبل الطلب حتى لو لم يتطابق اسم المدينة، ويعرضه فوراً
+      socket.on("order_assigned", (data: any) => {
+        if (!activeOrder) {
+           setAvailableRequests(prev => {
+             // التحقق من عدم التكرار
+             const exists = prev.find(r => r.id === data.id);
+             if (exists) return prev;
+             // إضافة الطلب في بداية القائمة
+             return [data, ...prev];
+           });
+
+           // تنبيه السائق بأن هذا طلب خاص من الإدارة
+           setNotification({ show: true, message: "تم تحويل طلب خاص لك من الإدارة", type: "success" });
+
+           // فتح القائمة المنسدلة تلقائياً ليرى الطلب
+           setIsRequestsSheetOpen(true);
         }
       });
 
@@ -368,6 +390,7 @@ export default function DriverDashboard() {
 
       return () => { 
         socket.off("new_request_available"); 
+        socket.off("order_assigned"); // تنظيف المستمع الجديد
         socket.off("receive_message");
       };
     }
