@@ -230,8 +230,15 @@ export default function DriverDashboard() {
         driverId: dId
       });
 
+      // إظهار التنبيه
       setNotification({ show: true, message: "تم إكمال الطلب بنجاح", type: "success" });
 
+      // أهم خطوة: إخفاء التنبيه تلقائياً بعد 3 ثوانٍ لكي لا يحجب الشاشة
+      setTimeout(() => {
+        setNotification(n => ({ ...n, show: false }));
+      }, 3500);
+
+      // تنظيف حالة الطلب فوراً لإخفاء واجهة الدفع
       setActiveOrder(null);
       setOrderStage("heading_to_pickup");
       setActiveTab("map");
@@ -806,7 +813,7 @@ export default function DriverDashboard() {
                 </div>
               </div>
 
-              {/* تنبيه العمولة الماشي مع التصميم العالمي */}
+              {/* تنبيه العمولة المباشر */}
               <div className="flex items-center gap-3 bg-blue-50/50 p-4 rounded-2xl mb-10 text-right">
                 <div className="bg-blue-500 p-2 rounded-lg text-white">
                   <ShieldCheck className="w-4 h-4" />
@@ -835,8 +842,13 @@ export default function DriverDashboard() {
 
       <AnimatePresence>
         {notification.show && (
-          <motion.div initial={{ y: -100 }} animate={{ y: 20 }} exit={{ y: -100 }} className="fixed top-0 left-0 right-0 z-[6000] flex justify-center px-6">
-            <div className={`px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-md ${notification.type === 'success' ? 'bg-green-500/90 text-white' : 'bg-red-500/90 text-white'}`}>
+          <motion.div 
+            initial={{ y: -100 }} 
+            animate={{ y: 20 }} 
+            exit={{ y: -100 }} 
+            className="fixed top-0 left-0 right-0 z-[10000] flex justify-center px-6 pointer-events-none"
+          >
+            <div className={`px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-md pointer-events-auto ${notification.type === 'success' ? 'bg-green-500/90 text-white' : 'bg-red-500/90 text-white'}`}>
                {notification.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <X className="w-5 h-5" />}
                <span className="font-black text-sm">{notification.message}</span>
             </div>
