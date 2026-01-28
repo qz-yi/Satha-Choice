@@ -49,7 +49,11 @@ const normalizeCity = (city: string): string => {
 
 function FlyToMarker({ center, shouldFly }: { center: [number, number], shouldFly: boolean }) {
   const map = useMap();
-  useEffect(() => { if (shouldFly && center) map.flyTo(center, 16, { duration: 1.5 }); }, [center, map, shouldFly]);
+  useEffect(() => { 
+    if (shouldFly && center && center[0] && center[1]) {
+      map.flyTo(center, 16, { duration: 1.5 }); 
+    }
+  }, [center, map, shouldFly]);
   return null;
 }
 
@@ -127,19 +131,23 @@ export default function RequestFlow() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const refreshUserData = useCallback(async (userId: number) => {
+  const refreshUserData = useCallback(async (phone: string, pass: string) => {
     try {
       const response = await fetch(`/api/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: userProfile.phone, password: userProfile.password }),
+        body: JSON.stringify({ phone: phone, password: pass }),
       });
       if (response.ok) {
         const data = await response.json();
         const updatedProfile = { 
           ...userProfile, 
+          id: data.id,
+          username: data.username || data.name,
+          phone: phone,
+          password: pass,
           wallet: data.walletBalance?.toString() || "0",
-          trips: data.tripsCount?.toString() || userProfile.trips
+          trips: data.tripsCount?.toString() || "0"
         };
         setUserProfile(updatedProfile);
         localStorage.setItem("sat7a_user", JSON.stringify(updatedProfile));
@@ -147,7 +155,7 @@ export default function RequestFlow() {
     } catch (err) {
       console.error("خطأ في تحديث البيانات", err);
     }
-  }, [userProfile.phone, userProfile.password, userProfile]);
+  }, [userProfile]);
 
   // جلب الرسائل القديمة عند فتح الدردشة
   useEffect(() => {
@@ -172,9 +180,8 @@ export default function RequestFlow() {
       const parsed = JSON.parse(savedUser);
       setUserProfile(parsed); 
       setIsLoggedIn(true); 
-      if (parsed.id) refreshUserData(parsed.id);
+      if (parsed.phone && parsed.password) refreshUserData(parsed.phone, parsed.password);
 
-      // إذا كان هناك طلب نشط، حاول استعادته
       if (savedOrderId) {
         setActiveOrderId(Number(savedOrderId));
         setViewState("tracking");
@@ -191,7 +198,7 @@ export default function RequestFlow() {
         if (data.status) {
           setRequestStatus(data.status);
 
-          if (data.status === "accepted" || data.driverInfo) {
+          if (data.status === "accepted" || data.driverInfo || data.status === "arrived" || data.status === "picked_up") {
             setViewState("tracking");
             const info = data.driverInfo || data;
             setDriverInfo({
@@ -247,12 +254,11 @@ export default function RequestFlow() {
     }
   }, [activeOrderId, toast]);
 
-  // تحديث السوكيت لاستقبال الرسائل بنظام 2026 المحسن
   useEffect(() => {
     const handleNewMessage = (msg: any) => {
       if (Number(msg.orderId) === Number(activeOrderId)) {
         setMessages(prev => {
-          const exists = prev.find(m => m.id === msg.id);
+          const exists = prev.find(m => m.id === msg.id || (m.content === msg.content && Math.abs(new Date(m.timestamp).getTime() - new Date(msg.timestamp).getTime()) < 1000));
           if (exists) return prev;
           return [...prev, msg];
         });
@@ -347,13 +353,11 @@ export default function RequestFlow() {
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64 = reader.result as string;
-        setUserProfile(prev => ({ ...prev, image: base64 }));
-        const saved = localStorage.getItem("sat7a_user");
-        if(saved) {
-          const parsed = JSON.parse(saved);
-          parsed.image = base64;
-          localStorage.setItem("sat7a_user", JSON.stringify(parsed));
-        }
+        setUserProfile(prev => {
+           const updated = { ...prev, image: base64 };
+           localStorage.setItem("sat7a_user", JSON.stringify(updated));
+           return updated;
+        });
       };
       reader.readAsDataURL(file);
     }
@@ -444,17 +448,17 @@ export default function RequestFlow() {
         toast({ variant: "destructive", title: "فشل الاتصال بزين كاش", description: err.message });
       } finally { setIsCharging(false); }
     } else {
-      alert(`بوابة ${method} ستتوفر قريباً.`);
+      toast({ title: "قريباً", description: `بوابة ${method} ستتوفر قريباً.` });
     }
   };
 
   const handleFinalOrder = async () => {
     if (!userProfile.id) {
-      alert("يرجى تسجيل الدخول مجدداً لإتمام عملية الطلب.");
+      toast({ title: "تنبيه", description: "يرجى تسجيل الدخول مجدداً لإتمام عملية الطلب." });
       setIsLoggedIn(false); setAuthMode("login"); return;
     }
 
-    const numericPrice = parseFloat(formData.price.replace(/[^\d]/g, ''));
+    const numericPrice = parseFloat(formData.price.replace(/[^\d]/g, '')) || 0;
     if (paymentMethod === "wallet" && parseFloat(userProfile.wallet) < numericPrice) {
       toast({ variant: "destructive", title: "رصيد غير كافٍ", description: "يرجى شحن محفظتك أو اختيار الدفع النقدي." });
       return;
@@ -495,7 +499,6 @@ export default function RequestFlow() {
     }
   };
 
-  // شاشات الحالة المختلفة (تسجيل الدخول، النجاح، التتبع)
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-white flex flex-col p-6 relative overflow-hidden font-sans" dir="rtl">
@@ -601,7 +604,7 @@ export default function RequestFlow() {
                 <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="&copy; Google Maps" detectRetina={true} tileSize={256}/>
                 {driverLocation && <Marker position={driverLocation} icon={getOrangeArrowIcon(driverHeading)} />}
                 <Marker position={[formData.pickupLat, formData.pickupLng]} />
-                <FlyToMarker center={driverLocation || [formData.pickupLat, formData.pickupLng]} shouldFly={!!driverLocation} />
+                <FlyToMarker center={driverLocation || [formData.pickupLat, formData.pickupLng]} shouldFly={!!driverLocation || shouldFly} />
             </MapContainer>
         </div>
         <header className="absolute top-6 inset-x-6 z-[1000] flex justify-between items-center">
