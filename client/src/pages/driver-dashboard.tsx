@@ -233,7 +233,6 @@ export default function DriverDashboard() {
       // إظهار التنبيه
       setNotification({ show: true, message: "تم إكمال الطلب بنجاح", type: "success" });
 
-      // أهم خطوة: إخفاء التنبيه تلقائياً بعد 3 ثوانٍ لكي لا يحجب الشاشة
       setTimeout(() => {
         setNotification(n => ({ ...n, show: false }));
       }, 3500);
@@ -275,6 +274,9 @@ export default function DriverDashboard() {
       lat: currentCoords?.[0],
       lng: currentCoords?.[1]
     };
+
+    // --- الحل الجوهري: حذف الطلب فوراً من القائمة محلياً ---
+    setAvailableRequests(prev => prev.filter(r => r.id !== req.id));
 
     socket.emit("accept_order", { 
       orderId: req.id, 
@@ -365,6 +367,7 @@ export default function DriverDashboard() {
 
   useEffect(() => {
     if (driverInfo?.isOnline && driverInfo?.status === "approved") {
+      // 1. استقبال طلبات جديدة
       socket.on("new_request_available", (data: any) => { 
         if (!activeOrder && data.city?.trim() === driverInfo?.city?.trim()) {
           setAvailableRequests(prev => {
@@ -372,6 +375,18 @@ export default function DriverDashboard() {
              return [data, ...prev];
           });
         }
+      });
+
+      // 2. حذف الطلب فوراً إذا قبله سائق آخر (الحل لمشكلتك)
+      socket.on("request_removed", (data: any) => {
+        setAvailableRequests(prev => prev.filter(r => r.id !== data.id));
+      });
+
+      // 3. حذف الطلب إذا تغيرت حالته (حماية إضافية)
+      socket.on("update_order_status", (data: any) => {
+         if (data.status !== 'pending') {
+            setAvailableRequests(prev => prev.filter(r => r.id !== data.orderId));
+         }
       });
 
       socket.on("order_assigned", (data: any) => {
@@ -393,6 +408,8 @@ export default function DriverDashboard() {
 
       return () => { 
         socket.off("new_request_available"); 
+        socket.off("request_removed"); // تنظيف المستمع
+        socket.off("update_order_status"); // تنظيف المستمع
         socket.off("order_assigned"); 
         socket.off("receive_message");
       };
