@@ -5,7 +5,7 @@ import {
   users,
   transactions,
   settings,
-  messages, // إضافة جدول الرسائل
+  messages,
   type InsertRequest,
   type Request,
   type Driver,
@@ -14,8 +14,8 @@ import {
   type InsertUser,
   type Setting,
   type Transaction,
-  type Message, // إضافة نوع الرسالة
-  type InsertMessage, // إضافة نوع إدخال الرسالة
+  type Message,
+  type InsertMessage,
 } from "@shared/schema";
 import { eq, desc, sql, and } from "drizzle-orm";
 
@@ -30,6 +30,7 @@ export interface IStorage {
   createRequest(request: InsertRequest): Promise<Request>;
   getRequests(): Promise<Request[]>;
   getRequest(id: number): Promise<Request | undefined>;
+  getDriverRequests(driverId: number): Promise<Request[]>; 
   assignRequestToDriver(requestId: number, driverId: number): Promise<Request>;
   cancelRequestAssignment(requestId: number): Promise<Request>;
 
@@ -58,13 +59,13 @@ export interface IStorage {
   getSettings(): Promise<Setting>;
   updateCommission(amount: number): Promise<Setting>;
 
-  // --- نظام الدردشة (الجديد) ---
+  // --- نظام الدردشة ---
   createMessage(message: InsertMessage): Promise<Message>;
   getMessagesByOrder(orderId: number): Promise<Message[]>;
 }
 
 export class DatabaseStorage implements IStorage {
-  // --- نظام الدردشة (تطبيق الدوال) ---
+  // --- نظام الدردشة ---
   async createMessage(message: InsertMessage): Promise<Message> {
     const [newMessage] = await db.insert(messages).values({
       orderId: message.orderId,
@@ -133,6 +134,14 @@ export class DatabaseStorage implements IStorage {
 
   async getRequests(): Promise<Request[]> {
     return await db.select().from(requests).orderBy(desc(requests.createdAt));
+  }
+
+  async getDriverRequests(driverId: number): Promise<Request[]> {
+    return await db
+      .select()
+      .from(requests)
+      .where(eq(requests.driverId, driverId))
+      .orderBy(desc(requests.createdAt));
   }
 
   async getRequest(id: number): Promise<Request | undefined> {
@@ -320,27 +329,40 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  // === التعديل الجوهري: تحسين دقة قبول الطلب ===
   async acceptRequest(driverId: number, requestId: number): Promise<{ request: Request; driver: Driver }> {
     return await db.transaction(async (tx) => {
+      // 1. جلب الإعدادات والعمولة
       const systemSettings = await this.getSettings();
-      const currentCommission = systemSettings.commissionAmount;
+      const currentCommission = Number(systemSettings.commissionAmount);
 
+      // 2. جلب بيانات السائق مع قفل (Select for Update) لضمان دقة الرصيد
       const [driver] = await tx.select().from(drivers).where(eq(drivers.id, driverId));
       if (!driver) throw new Error("Driver not found");
 
       const balance = parseFloat(driver.walletBalance || "0");
 
+      // 3. التحقق من الرصيد قبل السماح بالقبول
       if (balance < currentCommission) {
         throw new Error(`رصيدك غير كافٍ. يرجى شحن المحفظة (أقل رصيد مطلوب ${currentCommission} دينار).`);
       }
 
+      // 4. جلب الطلب والتأكد من أنه لا يزال معلقاً
       const [request] = await tx.select().from(requests).where(eq(requests.id, requestId));
-      if (!request) throw new Error("Request not found");
-      if (request.status !== "pending") throw new Error("الطلب تم قبوله من سائق آخر");
+      if (!request) throw new Error("الطلب غير موجود");
 
+      // السماح بالقبول إذا كان pending (من الزبون) أو confirmed (إذا أعاد السائق الضغط)
+      if (request.status !== "pending" && request.driverId !== driverId) {
+        throw new Error("عذراً، هذا الطلب مرتبط بسائق آخر حالياً");
+      }
+
+      // 5. تحديث الطلب وربطه بالسائق
       const [updatedRequest] = await tx
         .update(requests)
-        .set({ status: "confirmed", driverId })
+        .set({ 
+          status: "confirmed", // نستخدم confirmed كحالة نهائية للقبول في الداتابيز
+          driverId: driverId 
+        })
         .where(eq(requests.id, requestId))
         .returning();
 

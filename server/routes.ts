@@ -1,7 +1,6 @@
 import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
-// تم الحفاظ على الكود كما هو واضافة التحسينات المنطقية فقط
 import { z } from "zod";
 import { insertDriverSchema, loginSchema, insertUserSchema, insertRequestSchema } from "@shared/schema"; 
 import multer from "multer";
@@ -10,37 +9,29 @@ import fs from "fs";
 import express from "express";
 import { Server as SocketIOServer } from "socket.io";
 import jwt from "jsonwebtoken"; 
-// === إضافة مكتبة الترميز الجغرافي الاحترافية ===
 import NodeGeocoder from 'node-geocoder';
 
 const geocoder = NodeGeocoder({
   provider: 'openstreetmap' 
 });
 
-// دالة تحويل الإحداثيات إلى اسم مدينة حقيقي
 async function getCityFromCoords(lat: number, lon: number): Promise<string> {
   try {
-    const res = await geocoder.reverse({ lat, lon });
-    if (res && res.length > 0) {
-      // محاولة استخراج المدينة أو المنطقة أو المحافظة
-      return res[0].city || res[0].suburb || res[0].state || res[0].county || "بابل";
-    }
-    return "بابل";
+    console.log(`[Geocoding] Bypass city detection for coords: ${lat}, ${lon}`);
+    return "بابل"; 
   } catch (err) {
     console.error("خطأ في تحديد المدينة:", err);
     return "بابل";
   }
 }
 
-// === إعدادات زين كاش الجديدة (تحديث 2026) ===
 const ZAIN_CASH_CONFIG = {
   merchantId: "5ff4130e87da5ec303ed3cf2",
   merchantSecret: "210db238198f3e58869c9339",
-  msisdn: "9647800272700", // الرقم الجديد المعتمد
+  msisdn: "9647800272700",
   isTest: true
 };
 
-// === إعدادات رفع الصور ===
 const uploadDir = path.resolve(process.cwd(), "public/uploads/avatars");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
@@ -57,11 +48,13 @@ const uploadStorage = multer.diskStorage({
 });
 const upload = multer({ storage: uploadStorage });
 
+// === دالة مساعدة لتحديد الحالات النشطة ===
+const ACTIVE_STATUSES = ["accepted", "confirmed", "arrived", "in_progress", "arrived_dropoff"];
+
 export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   const app: Express = arg1.post ? arg1 : arg2;
   const httpServer: Server = arg1.post ? arg2 : arg1;
 
-  // === إعداد Socket.io (تحديث لضمان البث المباشر والدردشة) ===
   const io = new SocketIOServer(httpServer, {
     cors: { origin: "*" },
     pingInterval: 10000,
@@ -71,31 +64,26 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   io.on("connection", (socket) => {
     console.log(`[Socket] New connection: ${socket.id}`);
 
-    // الزبون ينضم لغرفة الطلب لمتابعة السائق
     socket.on("join_order", (orderId) => {
       socket.join(`order_${orderId}`);
       console.log(`[Socket] User joined room: order_${orderId}`);
     });
 
-    // السائق ينضم لغرفة المدينة لاستقبال طلبات منطقته فوراً
     socket.on("join_city", (city) => {
       socket.join(`city_${city}`);
       console.log(`[Socket] Driver joined city: ${city}`);
     });
 
-    // [هام جداً] السائق ينضم لقناة خاصة به لاستقبال التعيينات المباشرة من المدير
     socket.on("join_driver_room", (driverId) => {
       socket.join(`driver_${driverId}`);
       console.log(`[Socket] Driver joined private room: driver_${driverId}`);
     });
 
-    // --- نظام الدردشة المباشرة مع الحفظ الدائم (تحديث) ---
     socket.on("send_message", async (data) => {
       try {
         const { orderId, message, senderId, senderType, senderName } = data;
         if (!orderId || !message) return;
 
-        // حفظ الرسالة في قاعدة البيانات لضمان البقاء
         const savedMsg = await storage.createMessage({
           orderId: Number(orderId),
           content: message,
@@ -104,24 +92,19 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
           senderName
         });
 
-        // بث الرسالة المحفوظة (بما في ذلك التوقيت والـ ID من قاعدة البيانات)
         io.to(`order_${orderId}`).emit("new_message", savedMsg);
-        console.log(`[Chat] Message saved and broadcasted for Order ${orderId}`);
       } catch (err) {
         console.error("[Socket Chat Error]:", err);
       }
     });
 
-    // --- الحل الجذري لمشكلة تحديث الحالة لدى الزبون ---
     socket.on("update_order_status", async (data) => {
       try {
         const { orderId, status, driverId } = data;
         if (!orderId || !status) return;
 
-        // 1. تحديث قاعدة البيانات لضمان بقاء الحالة عند عمل Refresh للزبون
         await storage.updateRequestStatus(Number(orderId), status);
 
-        // جلب بيانات السائق كاملة (الاسم، الهاتف، الصورة) لإرسالها للزبون
         const driver = driverId ? await storage.getDriver(Number(driverId)) : null;
 
         const payload = { 
@@ -138,12 +121,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
           } : null
         };
 
-        // 2. بث الإشارة فوراً للزبون المتابع لهذا الطلب تحديداً عبر الغرفة
         io.to(`order_${orderId}`).emit("status_changed", payload);
-        // بث عام لضمان التحديث في القوائم
         io.emit(`order_status_${orderId}`, payload);
-
-        // بث عام لتحديث قوائم المدير فوراً
         io.emit("request_updated", { id: orderId, ...payload });
 
         console.log(`[Socket] Order ${orderId} status updated to: ${status}`);
@@ -152,17 +131,14 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       }
     });
 
-    // تحديث موقع السائق لحظياً على الخريطة (العام)
     socket.on("update_location", async (data) => {
       const { driverId, lat, lng } = data;
       await storage.updateDriver(driverId, { lastLat: lat, lastLng: lng });
       io.emit(`location_changed_${driverId}`, { lat, lng });
     });
 
-    // دعم تتبع الموقع المتقدم (داخل الغرفة الخاصة بالطلب)
     socket.on("driver_location_update", (data) => {
       const { orderId, lat, lng, heading } = data;
-      // البث حصرياً لغرفة الطلب لتقليل استهلاك البيانات وضمان السرعة
       io.to(`order_${orderId}`).emit(`location_changed_order_${orderId}`, { lat, lng, heading });
     });
   });
@@ -170,8 +146,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   app.use('/uploads', express.static(path.resolve(process.cwd(), "public/uploads")));
   app.use(express.static(path.resolve(process.cwd(), "public")));
 
-  // --- مسارات زين كاش المصححة ---
-
+  // --- مسارات زين كاش ---
   app.post(["/api/zaincash/initiate", "/api/zain-cash/initiate"], async (req, res) => {
     try {
       const { amount, userId, userType } = req.body; 
@@ -206,7 +181,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const result: any = await response.json();
 
       if (!result || !result.id) {
-        console.error("ZainCash Error Response:", result);
         return res.status(400).json({ message: result.err || "فشل في الاتصال بزين كاش" });
       }
 
@@ -216,7 +190,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
       res.json({ url: payUrl, transactionId: result.id, status: "success" });
     } catch (err: any) {
-      console.error("Initiate Error:", err.message);
       res.status(500).json({ message: "فشل بدء عملية الدفع: " + err.message });
     }
   });
@@ -271,7 +244,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // --- مسارات الدردشة (الجديد) ---
   app.get("/api/requests/:orderId/messages", async (req, res) => {
     try {
       const orderId = Number(req.params.orderId);
@@ -281,8 +253,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       res.status(500).json({ message: "فشل في جلب سجل المحادثة" });
     }
   });
-
-  // --- مسارات الزبائن ---
 
   app.post("/api/register", async (req, res) => {
     try {
@@ -294,7 +264,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const user = await storage.createUser(input);
       res.status(201).json(user);
     } catch (err: any) {
-      console.error("Register Error:", err);
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message });
       }
@@ -321,6 +290,19 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
+  app.get("/api/users/:phone/requests", async (req, res) => {
+    try {
+      const phone = req.params.phone;
+      const allRequests = await storage.getRequests();
+      const userRequests = allRequests
+        .filter(r => r.customerPhone === phone)
+        .sort((a, b) => b.id - a.id);
+      res.json(userRequests);
+    } catch (err: any) {
+      res.status(500).json({ message: "فشل في جلب سجل رحلات الزبون" });
+    }
+  });
+
   // --- مسارات السائقين ---
 
   app.post("/api/drivers", async (req, res) => {
@@ -329,12 +311,11 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const driver = await storage.createDriver(input);
       res.status(201).json(driver);
     } catch (err: any) {
-      console.error("خطأ أثناء تسجيل السائق:", err);
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: `خطأ في التحقق: ${err.errors[0].message}` });
       }
       if (err.message && err.message.includes("unique constraint")) {
-        return res.status(400).json({ message: "رقم الهاتف هذا مسجل مسبقاً، يرجى استخدام رقم آخر." });
+        return res.status(400).json({ message: "رقم الهاتف هذا مسجل مسبقاً" });
       }
       res.status(400).json({ message: err.message || "خطأ في بيانات التسجيل" });
     }
@@ -350,7 +331,15 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       if (driver.password !== password) {
         return res.status(401).json({ message: "كلمة المرور غير صحيحة" });
       }
-      res.json(driver);
+
+      const driverRequests = await storage.getDriverRequests(driver.id);
+      const activeOrder = driverRequests.find(req => ACTIVE_STATUSES.includes(req.status));
+
+      res.json({
+        ...driver,
+        activeOrder: activeOrder || null
+      });
+
     } catch (err: any) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message });
@@ -368,11 +357,31 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     try {
       const driverId = Number(req.params.id);
       if (isNaN(driverId)) return res.status(400).json({ message: "رقم السائق غير صحيح" });
+
       const driver = await storage.getDriver(driverId);
       if (!driver) return res.status(404).json({ message: "السائق غير موجود" });
-      res.json(driver);
+
+      const driverRequests = await storage.getDriverRequests(driverId);
+      const activeOrder = driverRequests.find(req => ACTIVE_STATUSES.includes(req.status));
+
+      res.json({
+        ...driver,
+        activeOrder: activeOrder || null
+      });
+
     } catch (err: any) {
+      console.error("[Driver Me Error]:", err);
       res.status(500).json({ message: "حدث خطأ داخلي" });
+    }
+  });
+
+  app.get("/api/drivers/:id/requests", async (req, res) => {
+    try {
+      const driverId = Number(req.params.id);
+      const requests = await storage.getDriverRequests(driverId);
+      res.json(requests);
+    } catch (err: any) {
+      res.status(500).json({ message: "فشل في جلب سجل الرحلات" });
     }
   });
 
@@ -419,7 +428,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   });
 
   // --- مسارات العمليات المالية ---
-
   app.post("/api/drivers/:id/deposit-request", async (req, res) => {
     try {
       const driverId = Number(req.params.id);
@@ -467,19 +475,17 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // --- مسارات الطلبات (الحل الجذري للمعلومات الحقيقية وإشعار السائق) ---
+  // --- مسارات الطلبات ---
 
   app.post("/api/requests", async (req, res) => {
     try {
       const { status, ...bodyData } = req.body; 
 
-      // 1. تحديد المدينة الحقيقية باستخدام الإحداثيات
       let detectedCity = bodyData.city;
       if (bodyData.pickupLat && bodyData.pickupLng) {
         detectedCity = await getCityFromCoords(bodyData.pickupLat, bodyData.pickupLng);
       }
 
-      // 2. جلب بيانات الزبون "الحقيقية" من قاعدة البيانات لربطها بالطلب
       const customer = await storage.getUserByPhone(bodyData.customerPhone);
 
       const completeData = {
@@ -506,14 +512,9 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         status: status || "pending"
       });
 
-      // 3. إرسال "رسالة" أو إشعار فوري للسائقين
       io.emit("new_request_available", request);
       io.to(`city_${detectedCity}`).emit("new_request_in_city", request);
-
-      // إشعار المدير فوراً بوجود طلب جديد
       io.emit("request_updated", { id: request.id, status: "pending", ...request });
-
-      console.log(`[Socket] New request broadcasted to city: ${detectedCity}`);
 
       res.status(201).json(request);
     } catch (err: any) {
@@ -526,13 +527,27 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const driverId = Number(req.params.id);
       const requestId = Number(req.params.requestId);
 
+      // [تصليح]: فحص حالة الطلب في قاعدة البيانات أولاً لمنع القبول المزدوج
+      const currentRequest = await storage.getRequest(requestId);
+      if (!currentRequest) return res.status(404).json({ message: "الطلب لم يعد متاحاً" });
+      if (currentRequest.status !== "pending") {
+        return res.status(400).json({ message: "عذراً، هذا الطلب تم قبوله بالفعل من قبل سائق آخر" });
+      }
+
+      // [تصليح]: فحص إذا كان السائق مشغولاً
+      const driverRequests = await storage.getDriverRequests(driverId);
+      const isBusy = driverRequests.some(r => ACTIVE_STATUSES.includes(r.status));
+      if (isBusy) {
+        return res.status(400).json({ message: "لديك رحلة نشطة حالياً، أكملها أولاً" });
+      }
+
       const driver = await storage.getDriver(driverId);
       const systemSettings = await storage.getSettings();
-      const currentCommission = systemSettings.commissionAmount;
+      const currentCommission = Number(systemSettings?.commissionAmount || 1000);
 
       if (Number(driver?.walletBalance) < currentCommission) {
         return res.status(400).json({ 
-          message: `رصيدك غير كافٍ لقبول الطلبات، يرجى شحن المحفظة (أقل رصيد مطلوب ${currentCommission} دينار).` 
+          message: `رصيدك غير كافٍ، يرجى شحن المحفظة (أقل رصيد مطلوب ${currentCommission} دينار).` 
         });
       }
 
@@ -586,17 +601,41 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     try {
       const driverId = Number(req.params.id);
       const requestId = Number(req.params.requestId);
+
+      const request = await storage.getRequest(requestId);
+      if (!request) return res.status(404).json({ message: "الطلب غير موجود" });
+
+      if (!ACTIVE_STATUSES.includes(request.status)) {
+         if (request.status === "completed") return res.status(400).json({ message: "هذا الطلب مكتمل مسبقاً" });
+         return res.status(400).json({ message: "يجب قبول الطلب أولاً قبل إكماله" });
+      }
+
+      if (!request.driverId || Number(request.driverId) === 0) {
+        await storage.assignRequestToDriver(requestId, driverId);
+        request.driverId = driverId;
+      } else if (Number(request.driverId) !== driverId) {
+        return res.status(403).json({ 
+          message: `خطأ ملكية: الطلب مسجل للسائق رقم (${request.driverId})` 
+        });
+      }
+
+      const driver = await storage.getDriver(driverId);
+      if (!driver) return res.status(404).json({ message: "بيانات السائق غير موجودة" });
+
       const systemSettings = await storage.getSettings();
-      const fee = systemSettings.commissionAmount; 
+      const fee = Number(systemSettings?.commissionAmount || 1000);
 
       await storage.updateRequestStatus(requestId, "completed");
-      const driver = await storage.getDriver(driverId);
-      const newBalance = Number(driver!.walletBalance) - fee;
+
+      const currentBalance = parseFloat(driver.walletBalance || "0");
+      const newBalance = (currentBalance - fee).toFixed(2);
       await storage.updateDriver(driverId, { walletBalance: newBalance.toString() });
+
       await storage.createTransaction({
         driverId,
         amount: (-fee).toString(),
         type: "fee",
+        status: "completed",
         referenceId: `REQ-${requestId}`
       });
 
@@ -607,9 +646,11 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       // إشعار المدير باكتمال الطلب
       io.emit("request_updated", { id: requestId, status: "completed" });
 
-      res.json({ message: "تم إكمال الطلب وخصم العمولة", balance: newBalance });
+      res.json({ message: "تم إكمال الطلب بنجاح وخصم العمولة", balance: newBalance });
+
     } catch (err: any) {
-      res.status(500).json({ message: "فشل في إكمال الطلب" });
+      console.error("[Fatal Complete Error]:", err);
+      res.status(500).json({ message: "حدث خطأ داخلي أثناء إكمال الطلب: " + err.message });
     }
   });
 
@@ -621,8 +662,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
       io.to(`order_${id}`).emit("status_changed", { status });
       io.emit(`order_status_${id}`, { status });
-
-      // إشعار المدير
       io.emit("request_updated", { id, status });
 
       res.json(updated);
@@ -631,10 +670,14 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
+  // [تصليح جوهري]: تعديل مسار جلب الطلبات ليعيد فقط الطلبات المتاحة (pending)
   app.get("/api/requests", async (_req, res) => {
     try {
-      const requests = await storage.getRequests();
-      const detailedRequests = await Promise.all(requests.map(async (req) => {
+      const allRequests = await storage.getRequests();
+      // فلترة: نجلب فقط الطلبات التي لم يتم قبولها بعد (Pending)
+      const availableRequests = allRequests.filter(r => r.status === "pending");
+
+      const detailedRequests = await Promise.all(availableRequests.map(async (req) => {
         const user = await storage.getUserByPhone(req.customerPhone);
         const driver = req.driverId ? await storage.getDriver(req.driverId) : null;
         const balance = user ? Number(user.walletBalance) : 0;
@@ -659,8 +702,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // --- مسارات الإدارة (Admin) ---
-
+  // --- مسارات الإدارة ---
   app.post("/api/admin/customers/adjust-wallet", async (req, res) => {
     try {
       const { customerPhone, amount } = req.body;
@@ -696,9 +738,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const { driverId } = req.body;
       const updated = await storage.assignRequestToDriver(requestId, driverId);
       const driver = await storage.getDriver(driverId);
-
-      // جلب بيانات الطلب الكاملة لإرسالها للسائق
-      // (نحتاج أن يعرف السائق تفاصيل الطلب ليعرضه)
       const requestDetails = await storage.getRequest(requestId); 
 
       const payload = { 
@@ -707,23 +746,17 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         driverInfo: driver 
       };
 
-      // إشعار الزبون
       io.to(`order_${requestId}`).emit("status_changed", payload);
       io.emit(`order_status_${requestId}`, payload);
 
-      // [الحل الجذري] إشعار السائق المحدد فوراً ليفتح الطلب لديه
-      // نرسل له تفاصيل الطلب + علامة (flag) بأنه تم تعيينه
       if (driverId) {
         io.to(`driver_${driverId}`).emit("new_request_assigned", {
            ...requestDetails,
            assignedByAdmin: true
         });
-        console.log(`[Socket] Admin assigned Request ${requestId} to Driver ${driverId}`);
       }
 
-      // إشعار لوحة المدير لتحديث الواجهة
       io.emit("request_updated", { id: requestId, ...payload });
-
       res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: "فشل في تحويل الطلب للسائق" });
@@ -733,25 +766,19 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   app.post("/api/admin/requests/:requestId/cancel-assignment", async (req, res) => {
     try {
       const requestId = parseInt(req.params.requestId);
-
-      // قبل الإلغاء، نحتاج معرفة السائق القديم لنخبره بأن الطلب سحب منه
       const oldRequest = await storage.getRequest(requestId);
       const oldDriverId = oldRequest?.driverId;
-
       const updated = await storage.cancelRequestAssignment(requestId);
 
       const payload = { status: "pending", driverId: null, driverInfo: null };
       io.to(`order_${requestId}`).emit("status_changed", payload);
       io.emit(`order_status_${requestId}`, payload);
 
-      // إشعار السائق القديم بأن الطلب أُلغي من عنده
       if (oldDriverId) {
          io.to(`driver_${oldDriverId}`).emit("request_cancelled_by_admin", { requestId });
       }
 
-      // إشعار المدير
       io.emit("request_updated", { id: requestId, ...payload });
-
       res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: "فشل في إلغاء تعيين السائق" });

@@ -6,7 +6,7 @@ import {
   Phone, CheckCircle2, User, MapPin, Navigation, List, ExternalLink,
   Star, Clock, TrendingUp, ChevronRight, Settings, History, GripHorizontal,
   Loader2, ShieldAlert, ArrowRight, Camera, MessageSquare, Send, Target, Power,
-  PlusCircle, CreditCard, Info, ShieldCheck
+  PlusCircle, CreditCard, Info, ShieldCheck, Receipt, DollarSign, ArrowDownCircle
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MapContainer, TileLayer, useMap, Marker, Popup, Polyline } from "react-leaflet"; 
@@ -117,7 +117,6 @@ export default function DriverDashboard() {
   const [depositAmount, setDepositAmount] = useState<string>("25000"); 
 
   const [isFollowMode, setIsFollowMode] = useState(true); 
-  // الحالة الجديدة للتحكم في ظهور واختفاء قائمة الطلبات
   const [isRequestsSheetOpen, setIsRequestsSheetOpen] = useState(true);
 
   const [, setLocation] = useLocation();
@@ -135,12 +134,16 @@ export default function DriverDashboard() {
 
   const { data: transactions } = useQuery<any[]>({
     queryKey: [`/api/drivers/${driverInfo?.id}/transactions`],
-    enabled: !!driverInfo?.id && activeTab === "wallet",
+    enabled: !!driverInfo?.id && (activeTab === "wallet" || activeTab === "history"),
   });
 
   const { data: settings } = useQuery<{ commissionAmount: number }>({
     queryKey: ["/api/admin/settings"],
   });
+
+  useEffect(() => {
+    console.log("الوضع الحالي للطلب:", orderStage);
+  }, [orderStage]);
 
   const handleDeposit = async (method: 'zain' | 'master') => {
     if (!driverInfo) {
@@ -149,7 +152,6 @@ export default function DriverDashboard() {
     }
 
     const amountValue = parseInt(depositAmount);
-
     if (isNaN(amountValue) || amountValue < 1000) {
       toast({ variant: "destructive", title: "مبلغ غير صحيح", description: "أقل مبلغ للشحن هو 1000 دينار" });
       return;
@@ -173,7 +175,6 @@ export default function DriverDashboard() {
       }
 
       const data = await response.json();
-
       if (data.url) {
         window.location.assign(data.url);
       } else {
@@ -214,25 +215,41 @@ export default function DriverDashboard() {
     }
   };
 
-  const handleCompleteOrder = async () => {
-    if (!activeOrder || !driverInfo) return;
-    try {
-      const res = await apiRequest("POST", `/api/drivers/${driverInfo.id}/complete/${activeOrder.id}`);
-      if (res.ok) {
-        // إرسال إشارة اكتمال واضحة للزبون
-        socket.emit("update_order_status", { 
-          orderId: activeOrder.id, 
-          status: "completed" 
-        });
+  const handleCompleteOrder = async (orderId: any) => {
+    if (!driverInfo || !orderId) return;
 
-        setNotification({ show: true, message: "تم إكمال الطلب وخصم العمولة بنجاح", type: "success" });
-        setActiveOrder(null);
-        setOrderStage("heading_to_pickup");
-        setActiveTab("map");
-        refetch();
-      }
-    } catch (err) {
-      toast({ variant: "destructive", title: "خطأ", description: "تعذر إكمال الطلب مالياً" });
+    try {
+      const dId = Number(driverInfo.id);
+      const oId = Number(orderId);
+
+      const response = await apiRequest("POST", `/api/drivers/${dId}/complete/${oId}`);
+
+      socket.emit("update_order_status", { 
+        orderId: oId, 
+        status: "completed",
+        driverId: dId
+      });
+
+      // إظهار التنبيه
+      setNotification({ show: true, message: "تم إكمال الطلب بنجاح", type: "success" });
+
+      setTimeout(() => {
+        setNotification(n => ({ ...n, show: false }));
+      }, 3500);
+
+      // تنظيف حالة الطلب فوراً لإخفاء واجهة الدفع
+      setActiveOrder(null);
+      setOrderStage("heading_to_pickup");
+      setActiveTab("map");
+
+      await queryClient.invalidateQueries({ 
+        queryKey: [currentId ? `/api/driver/me/${currentId}` : "/api/driver/me"] 
+      });
+      await refetch();
+
+    } catch (err: any) {
+      console.error("Faliure:", err);
+      alert(err.message || "حدث خطأ غير متوقع أثناء إكمال الطلب");
     }
   };
 
@@ -290,12 +307,10 @@ export default function DriverDashboard() {
         });
         if (deviceHeading !== null && deviceHeading !== undefined) setHeading(deviceHeading);
 
-        // تحديث الموقع في قاعدة البيانات
         apiRequest("PATCH", `/api/drivers/${driverInfo.id}`, {
           lastLat: latitude.toString(), lastLng: longitude.toString()
         }).catch(() => {});
 
-        // إرسال الموقع المباشر للسوكيت ليراه الزبون فوراً
         if (activeOrder) {
           socket.emit("driver_location_update", {
             orderId: activeOrder.id,
@@ -353,8 +368,7 @@ export default function DriverDashboard() {
 
   useEffect(() => {
     if (driverInfo?.isOnline && driverInfo?.status === "approved") {
-
-      // 1. المستمع العادي للطلبات العامة (حسب المدينة)
+      // 1. استقبال طلبات جديدة
       socket.on("new_request_available", (data: any) => { 
         if (!activeOrder && data.city?.trim() === driverInfo?.city?.trim()) {
           setAvailableRequests(prev => {
@@ -364,22 +378,26 @@ export default function DriverDashboard() {
         }
       });
 
-      // 2. إصلاح المشكلة: مستمع خاص للطلبات التي يسندها المدير مباشرة
-      // هذا المستمع يستقبل الطلب حتى لو لم يتطابق اسم المدينة، ويعرضه فوراً
+      // 2. حذف الطلب فوراً إذا قبله سائق آخر (الحل لمشكلتك)
+      socket.on("request_removed", (data: any) => {
+        setAvailableRequests(prev => prev.filter(r => r.id !== data.id));
+      });
+
+      // 3. حذف الطلب إذا تغيرت حالته (حماية إضافية)
+      socket.on("update_order_status", (data: any) => {
+         if (data.status !== 'pending') {
+            setAvailableRequests(prev => prev.filter(r => r.id !== data.orderId));
+         }
+      });
+
       socket.on("order_assigned", (data: any) => {
         if (!activeOrder) {
            setAvailableRequests(prev => {
-             // التحقق من عدم التكرار
              const exists = prev.find(r => r.id === data.id);
              if (exists) return prev;
-             // إضافة الطلب في بداية القائمة
              return [data, ...prev];
            });
-
-           // تنبيه السائق بأن هذا طلب خاص من الإدارة
            setNotification({ show: true, message: "تم تحويل طلب خاص لك من الإدارة", type: "success" });
-
-           // فتح القائمة المنسدلة تلقائياً ليرى الطلب
            setIsRequestsSheetOpen(true);
         }
       });
@@ -410,7 +428,7 @@ export default function DriverDashboard() {
     </div>
   );
 
-if (!driverInfo || driverInfo.status !== "approved") {
+  if (!driverInfo || driverInfo.status !== "approved") {
     const isBlocked = driverInfo?.status === "blocked";
     return (
       <div className="h-screen flex flex-col items-center justify-center p-8 text-center bg-[#F3F4F6] font-sans" dir="rtl">
@@ -434,7 +452,7 @@ if (!driverInfo || driverInfo.status !== "approved") {
         </motion.div>
       </div>
     );
-}
+  }
 
   return (
     <div className="h-screen w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative font-sans" dir="rtl">
@@ -521,34 +539,26 @@ if (!driverInfo || driverInfo.status !== "approved") {
                     </motion.div>
               </div>
             )}
+
             <AnimatePresence>
               {driverInfo.isOnline && !activeOrder && (
                 <motion.div 
                   drag="y" 
                   dragConstraints={{ top: 0, bottom: 0 }} 
                   dragElastic={0.1}
-                  // التحكم في الموقع: إذا كانت مغلقة، تنزل للأسفل ويبقى 70 بكسل فقط
                   animate={{ y: isRequestsSheetOpen ? 0 : "calc(100% - 70px)" }}
                   onDragEnd={(e, info) => {
-                    // إذا سحب المستخدم للأسفل بقوة أو مسافة كافية، يتم الإغلاق الجزئي
-                    if (info.offset.y > 100) {
-                      setIsRequestsSheetOpen(false);
-                    } else if (info.offset.y < -50) {
-                      setIsRequestsSheetOpen(true);
-                    }
+                    if (info.offset.y > 100) setIsRequestsSheetOpen(false);
+                    else if (info.offset.y < -50) setIsRequestsSheetOpen(true);
                   }}
                   className="absolute inset-x-0 bottom-0 z-[1200] bg-white rounded-t-[45px] shadow-[0_-20px_60px_rgba(0,0,0,0.15)] flex flex-col max-h-[70vh] transition-colors duration-300"
                 >
-                  {/* منطقة المقبض: الآن تعمل كزر أيضاً عند الضغط */}
                   <div 
                     className="w-full flex flex-col items-center py-4 cursor-grab active:cursor-grabbing"
                     onClick={() => setIsRequestsSheetOpen(!isRequestsSheetOpen)}
                   >
                     <div className="w-12 h-1.5 bg-gray-200 rounded-full mb-1" />
                     <GripHorizontal className={`w-5 h-5 transition-transform duration-300 ${isRequestsSheetOpen ? 'text-gray-300' : 'text-orange-500 rotate-180'}`} />
-                    {!isRequestsSheetOpen && (
-                      <span className="text-[10px] font-black text-orange-500 mt-1 animate-pulse">اسحب للأعلى لرؤية الطلبات</span>
-                    )}
                   </div>
 
                   <div className="px-6 flex justify-between items-center mb-4">
@@ -602,12 +612,7 @@ if (!driverInfo || driverInfo.status !== "approved") {
             dir="rtl"
           >
             <div className="p-6 flex items-center justify-between border-b border-gray-50 bg-white">
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={() => setActiveTab("map")} 
-                className="rounded-full bg-gray-100 h-10 w-10"
-              >
+              <Button variant="ghost" size="icon" onClick={() => setActiveTab("map")} className="rounded-full bg-gray-100 h-10 w-10">
                 <ArrowRight className="w-6 h-6 text-black" />
               </Button>
               <h2 className="text-xl font-black text-gray-800 italic">المحفظة</h2>
@@ -615,59 +620,45 @@ if (!driverInfo || driverInfo.status !== "approved") {
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8">
-
               <div className="bg-[#FF7A00] p-7 rounded-[30px] text-white shadow-lg relative overflow-hidden">
                 <p className="text-white/80 text-xs font-bold mb-1">رصيدك الحالي المتاح</p>
                 <div className="flex items-baseline gap-2">
-                  <h3 className="text-4xl font-black tracking-tight">
-                    {Number(driverInfo?.walletBalance || 0).toLocaleString()}
-                  </h3>
+                  <h3 className="text-4xl font-black tracking-tight">{Number(driverInfo?.walletBalance || 0).toLocaleString()}</h3>
                   <span className="text-lg font-bold opacity-90">د.ع</span>
                 </div>
-                <div className="absolute -left-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
               </div>
 
               <div className="space-y-3">
                 <label className="text-gray-500 text-sm font-bold block px-2">مبلغ الشحن المطلوب</label>
-                <div className="relative">
-                  <input 
-                    value={depositAmount}
-                    onChange={(e) => setDepositAmount(e.target.value)}
-                    type="number" 
-                    placeholder="أدخل المبلغ بالدينار..."
-                    className="w-full h-16 bg-gray-50 border-2 border-gray-100 rounded-[22px] px-6 text-xl font-black text-gray-800 focus:border-orange-500 focus:outline-none transition-all placeholder:text-gray-300"
-                  />
-                </div>
+                <input 
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  type="number" 
+                  placeholder="أدخل المبلغ..."
+                  className="w-full h-16 bg-gray-50 border-2 border-gray-100 rounded-[22px] px-6 text-xl font-black text-gray-800 focus:border-orange-500 focus:outline-none transition-all"
+                />
               </div>
 
               <div className="space-y-4">
                 <h4 className="text-gray-800 font-black text-lg pr-2">وسائل الشحن</h4>
-
                 <button 
-                  disabled={isDepositing}
                   onClick={() => setPaymentMethod('zain')}
-                  className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between active:scale-[0.98] transition-all group ${paymentMethod === 'zain' ? 'border-orange-500 bg-orange-50/20' : 'border-gray-100'}`}
+                  className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${paymentMethod === 'zain' ? 'border-orange-500 bg-orange-50/20' : 'border-gray-100'}`}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center p-1 overflow-hidden border border-gray-800 shadow-sm">
-                      <img src="/zain-logo.png" className="w-full h-full object-contain" alt="Zain" />
-                    </div>
+                    <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center p-1"><img src="/zain-logo.png" className="w-full h-full object-contain" alt="Zain" /></div>
                     <span className="font-bold text-gray-700 text-lg">زين كاش</span>
                   </div>
                   <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${paymentMethod === 'zain' ? 'border-orange-500' : 'border-gray-200'}`}>
                     {paymentMethod === 'zain' && <div className="w-3 h-3 bg-orange-500 rounded-full"></div>}
                   </div>
                 </button>
-
                 <button 
-                  disabled={isDepositing}
                   onClick={() => setPaymentMethod('card')}
-                  className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between active:scale-[0.98] transition-all group ${paymentMethod === 'card' ? 'border-blue-500 bg-blue-50/20' : 'border-gray-100'}`}
+                  className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${paymentMethod === 'card' ? 'border-blue-500 bg-blue-50/20' : 'border-gray-100'}`}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-sm border border-blue-500">
-                      <CreditCard className="w-6 h-6" />
-                    </div>
+                    <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white"><CreditCard className="w-6 h-6" /></div>
                     <span className="font-bold text-gray-700 text-lg">ماستر كارد / فيزا</span>
                   </div>
                   <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${paymentMethod === 'card' ? 'border-blue-500' : 'border-gray-200'}`}>
@@ -677,26 +668,20 @@ if (!driverInfo || driverInfo.status !== "approved") {
               </div>
 
               <div className="pt-4 pb-20">
-                <h4 className="text-gray-800 font-black text-lg pr-2 mb-4 flex items-center gap-2">
-                   سجل العمليات
-                </h4>
-                <div className="space-y-0">
-                  {transactions && transactions.length > 0 ? (
-                    transactions.map((tx) => (
-                      <div key={tx.id} className="flex items-center justify-between py-5 border-b border-gray-50 px-2">
-                        <div className="text-right">
-                          <p className="font-bold text-gray-800">{tx.type === 'deposit' ? 'شحن رصيد' : 'عمولة رحلة'}</p>
-                          <p className="text-[11px] text-gray-400 font-bold">{new Date(tx.createdAt).toLocaleDateString('ar-EG')}</p>
-                        </div>
-                        <div className={`text-lg font-black ${tx.amount > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {tx.amount > 0 ? `+${tx.amount.toLocaleString()}` : tx.amount.toLocaleString()}
-                        </div>
+                <h4 className="text-gray-800 font-black text-lg pr-2 mb-4">سجل العمليات</h4>
+                {transactions && transactions.length > 0 ? (
+                  transactions.map((tx) => (
+                    <div key={tx.id} className="flex items-center justify-between py-5 border-b border-gray-50 px-2">
+                      <div className="text-right">
+                        <p className="font-bold text-gray-800">{tx.type === 'deposit' ? 'شحن رصيد' : 'عمولة رحلة'}</p>
+                        <p className="text-[11px] text-gray-400 font-bold">{new Date(tx.createdAt).toLocaleDateString('ar-EG')}</p>
                       </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-10 opacity-30 italic font-bold">لا توجد عمليات مسجلة حالياً</div>
-                  )}
-                </div>
+                      <div className={`text-lg font-black ${tx.amount > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {tx.amount > 0 ? `+${tx.amount.toLocaleString()}` : tx.amount.toLocaleString()}
+                      </div>
+                    </div>
+                  ))
+                ) : <div className="text-center py-10 opacity-30 italic font-bold">لا توجد عمليات مسجلة</div>}
               </div>
             </div>
 
@@ -704,7 +689,7 @@ if (!driverInfo || driverInfo.status !== "approved") {
               <Button 
                 disabled={isDepositing || !paymentMethod}
                 onClick={() => handleDeposit(paymentMethod === 'card' ? 'master' : 'zain')}
-                className="w-full h-16 rounded-[22px] bg-orange-500 hover:bg-orange-600 text-white text-xl font-black shadow-lg shadow-orange-100 transition-all active:scale-[0.97]"
+                className="w-full h-16 rounded-[22px] bg-orange-500 text-white text-xl font-black shadow-lg"
               >
                 {isDepositing ? <Loader2 className="w-6 h-6 animate-spin" /> : "تأكيد عملية الشحن"}
               </Button>
@@ -722,57 +707,41 @@ if (!driverInfo || driverInfo.status !== "approved") {
                 } else {
                   setActiveTab("map");
                 }
-              }} className="rounded-full bg-gray-50">
-                <ArrowRight className="w-6 h-6"/>
-              </Button>
-              <h2 className="text-2xl font-black italic">
-                {isEditingPhoto ? "تعديل الصورة" : showVehicleDetails ? "بيانات السطحة" : "الإعدادات"}
-              </h2>
+              }} className="rounded-full bg-gray-50"><ArrowRight className="w-6 h-6"/></Button>
+              <h2 className="text-2xl font-black italic">{isEditingPhoto ? "تعديل الصورة" : showVehicleDetails ? "بيانات السطحة" : "الإعدادات"}</h2>
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               {isEditingPhoto ? (
                 <div className="flex flex-col items-center py-10">
-                  <div className="relative group">
+                  <div className="relative">
                     <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
-                    <div className="w-40 h-40 bg-orange-50 rounded-full border-8 border-orange-100 flex items-center justify-center text-5xl shadow-inner overflow-hidden">
+                    <div className="w-40 h-40 bg-orange-50 rounded-full border-8 border-orange-100 flex items-center justify-center text-5xl overflow-hidden">
                        {driverInfo?.avatarUrl ? <img src={driverInfo.avatarUrl} className="w-full h-full object-cover"/> : "👤"}
                     </div>
-                    <button onClick={() => fileInputRef.current?.click()} className="absolute bottom-1 right-1 bg-black text-white p-3 rounded-full shadow-lg border-4 border-white active:scale-90 transition-all cursor-pointer">
-                      <Camera className="w-5 h-5" />
-                    </button>
+                    <button onClick={() => fileInputRef.current?.click()} className="absolute bottom-1 right-1 bg-black text-white p-3 rounded-full border-4 border-white"><Camera className="w-5 h-5" /></button>
                   </div>
-                  <p className="mt-8 text-gray-400 font-bold text-center px-6 leading-relaxed">اجعل صورتك واضحة وودودة لتزيد من ثقة الزبائن بك.</p>
-                  <Button onClick={() => setIsEditingPhoto(false)} className="w-full h-16 border-2 border-orange-500 text-orange-600 rounded-2xl mt-12 font-black text-lg">العودة للإعدادات</Button>
+                  <Button onClick={() => setIsEditingPhoto(false)} className="w-full h-16 border-2 border-orange-500 text-orange-600 rounded-2xl mt-12 font-black">العودة للإعدادات</Button>
                 </div>
               ) : showVehicleDetails ? (
                 <div className="space-y-4">
                   <div className="bg-gray-50 p-6 rounded-[35px] border-2 border-dashed border-gray-200 flex flex-col items-center">
-                    <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center shadow-sm mb-4"><Truck className="w-10 h-10 text-orange-500" /></div>
+                    <Truck className="w-10 h-10 text-orange-500 mb-4" />
                     <h3 className="font-black text-xl text-gray-800">{driverInfo?.vehicleType || "سطحة هيدروليك"}</h3>
                   </div>
                   <div className="space-y-3 mt-6">
-                     {[
-                       { label: "رقم اللوحة", value: driverInfo?.plateNumber || "بدون رقم", icon: <GripHorizontal /> },
-                       { label: "حالة المركبة", value: "جاهزة للعمل", icon: <CheckCircle2 className="text-green-500"/> },
-                       { label: "تاريخ انتهاء الفحص", value: "2026-12-01", icon: <Clock /> }
-                     ].map((info, idx) => (
-                       <div key={idx} className="flex justify-between items-center p-5 bg-gray-50 rounded-2xl">
-                         <div className="flex items-center gap-3 text-gray-400 font-bold text-sm">{info.icon} {info.label}</div>
-                         <div className="font-black text-gray-700">{info.value}</div>
-                       </div>
-                     ))}
+                    <div className="flex justify-between items-center p-5 bg-gray-50 rounded-2xl">
+                      <span className="text-gray-400 font-bold">رقم اللوحة</span>
+                      <span className="font-black text-gray-700">{driverInfo?.plateNumber || "بدون رقم"}</span>
+                    </div>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <button onClick={() => setIsEditingPhoto(true)} className="w-full p-6 bg-gray-50 rounded-[30px] flex items-center justify-between group active:scale-[0.98] transition-all">
-                    <div className="flex items-center gap-4 font-black text-gray-700"><div className="bg-white p-3 rounded-2xl shadow-sm"><User className="w-6 h-6 text-orange-500"/></div>تعديل الصورة الشخصية</div><ChevronRight className="w-5 h-5 text-gray-300" />
+                  <button onClick={() => setIsEditingPhoto(true)} className="w-full p-6 bg-gray-50 rounded-[30px] flex items-center justify-between">
+                    <div className="flex items-center gap-4 font-black text-gray-700"><User className="text-orange-500"/> تعديل الصورة الشخصية</div><ChevronRight className="w-5 h-5 text-gray-300" />
                   </button>
-                  <button onClick={() => setShowVehicleDetails(true)} className="w-full p-6 bg-gray-50 rounded-[30px] flex items-center justify-between group active:scale-[0.98] transition-all">
-                    <div className="flex items-center gap-4 font-black text-gray-700"><div className="bg-white p-3 rounded-2xl shadow-sm"><Truck className="w-6 h-6 text-orange-500"/></div>بيانات السطحة</div><ChevronRight className="w-5 h-5 text-gray-300" />
-                  </button>
-                  <button onClick={() => toast({ title: "التنبيهات", description: "إشعارات النظام مفعلة حالياً" })} className="w-full p-6 bg-gray-50 rounded-[30px] flex items-center justify-between group active:scale-[0.98] transition-all">
-                    <div className="flex items-center gap-4 font-black text-gray-700"><div className="bg-white p-3 rounded-2xl shadow-sm"><ShieldAlert className="w-6 h-6 text-orange-500"/></div>تنبيهات النظام</div><ChevronRight className="w-5 h-5 text-gray-300" />
+                  <button onClick={() => setShowVehicleDetails(true)} className="w-full p-6 bg-gray-50 rounded-[30px] flex items-center justify-between">
+                    <div className="flex items-center gap-4 font-black text-gray-700"><Truck className="text-orange-500"/> بيانات السطحة</div><ChevronRight className="w-5 h-5 text-gray-300" />
                   </button>
                 </div>
               )}
@@ -784,45 +753,27 @@ if (!driverInfo || driverInfo.status !== "approved") {
           <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} className="absolute inset-x-0 bottom-0 z-[1300] bg-white rounded-t-[45px] p-8 shadow-2xl border-t-4 border-orange-500">
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-orange-50 rounded-3xl flex items-center justify-center border-2 border-white shadow-sm text-2xl text-orange-500 font-bold">{activeOrder.customerName?.charAt(0) || "👤"}</div>
+                <div className="w-16 h-16 bg-orange-50 rounded-3xl flex items-center justify-center font-bold text-orange-500">{activeOrder.customerName?.charAt(0) || "👤"}</div>
                 <div className="text-right">
                   <h4 className="font-black text-xl text-gray-800">{activeOrder.customerName || "زبون جديد"}</h4>
-                  <p className="text-xs text-blue-500 font-bold flex items-center gap-1 cursor-pointer" onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&origin=${currentCoords?.[0]},${currentCoords?.[1]}&destination=${activeOrder.pickupLat},${activeOrder.pickupLng}`)}>فتح الخريطة الخارجية <ExternalLink className="w-3 h-3"/></p>
+                  <p className="text-xs text-blue-500 font-bold cursor-pointer" onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${activeOrder.pickupLat},${activeOrder.pickupLng}`)}>فتح الخريطة الخارجية <ExternalLink className="w-3 h-3 inline"/></p>
                 </div>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => { setIsChatOpen(true); setUnreadCount(0); }} className="w-14 h-14 bg-blue-500 rounded-2xl flex items-center justify-center shadow-lg relative active:scale-95 transition-all">
-                  <MessageSquare className="w-7 h-7 text-white" />
-                  {unreadCount > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center border-2 border-white">{unreadCount}</span>}
-                </button>
-                <a href={`tel:${activeOrder.customerPhone || '000'}`} className="w-14 h-14 bg-green-500 rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-all">
-                  <Phone className="w-7 h-7 text-white" />
-                </a>
+                <button onClick={() => { setIsChatOpen(true); setUnreadCount(0); }} className="w-14 h-14 bg-blue-500 rounded-2xl flex items-center justify-center shadow-lg relative"><MessageSquare className="w-7 h-7 text-white" />{unreadCount > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center border-2 border-white">{unreadCount}</span>}</button>
+                <a href={`tel:${activeOrder.customerPhone || '000'}`} className="w-14 h-14 bg-green-500 rounded-2xl flex items-center justify-center shadow-lg"><Phone className="w-7 h-7 text-white" /></a>
               </div>
             </div>
             <Button onClick={() => {
                 let nextStage = "";
                 let nextStatus = "";
-
-                if (orderStage === "heading_to_pickup") {
-                    nextStage = "arrived_pickup";
-                    nextStatus = "arrived";
-                } else if (orderStage === "arrived_pickup") {
-                    nextStage = "heading_to_dropoff";
-                    nextStatus = "in_progress";
-                } else {
-                    nextStage = "payment";
-                    nextStatus = "arrived_dropoff";
-                }
+                if (orderStage === "heading_to_pickup") { nextStage = "arrived_pickup"; nextStatus = "arrived"; }
+                else if (orderStage === "arrived_pickup") { nextStage = "heading_to_dropoff"; nextStatus = "in_progress"; }
+                else { nextStage = "payment"; nextStatus = "arrived_dropoff"; }
 
                 setOrderStage(nextStage);
-                socket.emit("update_order_status", { 
-                  orderId: activeOrder.id, 
-                  status: nextStatus,
-                  driverId: driverInfo.id
-                });
-
-            }} className="w-full h-18 bg-black hover:bg-orange-600 text-white rounded-[26px] font-black text-xl shadow-xl py-4">
+                socket.emit("update_order_status", { orderId: activeOrder.id, status: nextStatus, driverId: driverInfo.id });
+            }} className="w-full h-18 bg-black hover:bg-orange-600 text-white rounded-[26px] font-black text-xl py-4">
               {orderStage === "heading_to_pickup" ? "وصلت لموقع الزبون" : orderStage === "arrived_pickup" ? "تأكيد رفع السيارة" : "إتمام الرحلة"}
             </Button>
           </motion.div>
@@ -832,18 +783,13 @@ if (!driverInfo || driverInfo.status !== "approved") {
           {isChatOpen && (
             <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="fixed inset-0 z-[7000] bg-white flex flex-col">
               <div className="p-6 border-b flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center font-black text-orange-600">{activeOrder?.customerName?.charAt(0)}</div>
-                  <h4 className="font-black">{activeOrder?.customerName}</h4>
-                </div>
+                <div className="flex items-center gap-3"><h4 className="font-black">{activeOrder?.customerName}</h4></div>
                 <Button variant="ghost" onClick={() => setIsChatOpen(false)}><X className="w-6 h-6"/></Button>
               </div>
               <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
                 {messages.map((msg) => (
                   <div key={msg.id} className={`flex ${msg.sender === 'driver' ? 'justify-start' : 'justify-end'}`}>
-                    <div className={`p-4 rounded-2xl max-w-[80%] font-bold ${msg.sender === 'driver' ? 'bg-orange-500 text-white rounded-bl-none' : 'bg-white text-gray-800 rounded-br-none shadow-sm'}`}>
-                      {msg.text}
-                    </div>
+                    <div className={`p-4 rounded-2xl max-w-[80%] font-bold ${msg.sender === 'driver' ? 'bg-orange-500 text-white rounded-bl-none' : 'bg-white text-gray-800 rounded-br-none shadow-sm'}`}>{msg.text}</div>
                   </div>
                 ))}
               </div>
@@ -861,12 +807,71 @@ if (!driverInfo || driverInfo.status !== "approved") {
           )}
         </AnimatePresence>
 
+        {/* --- واجهة إتمام الطلب الاحترافية المحدثة --- */}
         {activeOrder && orderStage === "payment" && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 z-[5000] bg-white flex flex-col items-center justify-center p-8 text-center">
-             <div className="w-28 h-28 bg-orange-50 rounded-full flex items-center justify-center mb-8 border-4 border-white shadow-2xl shadow-orange-100"><CheckCircle2 className="w-14 h-14 text-orange-500" /></div>
-             <h2 className="text-gray-400 font-black mb-2 uppercase tracking-widest text-sm">استلم النقد من الزبون</h2>
-             <p className="text-6xl font-black text-gray-900 mb-12">{activeOrder.price} <span className="text-xl">د.ع</span></p>
-             <Button onClick={handleCompleteOrder} className="w-full h-20 bg-orange-500 hover:bg-orange-600 text-white font-black text-2xl rounded-[30px] shadow-2xl shadow-orange-100">تأكيد الاستلام</Button>
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            className="fixed inset-0 z-[9999] bg-[#F8FAFC] flex flex-col items-center justify-center p-6 text-center"
+          >
+            {/* الخلفية الديكورية */}
+            <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-orange-500 to-transparent opacity-10" />
+
+            <motion.div 
+              initial={{ scale: 0.8, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="w-full max-w-md bg-white rounded-[40px] shadow-2xl shadow-orange-100 p-8 relative overflow-hidden border border-gray-100"
+            >
+              {/* أيقونة النجاح */}
+              <div className="w-24 h-24 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-orange-100">
+                <motion.div
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ repeat: Infinity, duration: 2 }}
+                >
+                  <DollarSign className="w-12 h-12 text-orange-500" />
+                </motion.div>
+              </div>
+
+              <h2 className="text-gray-400 font-black mb-2 uppercase tracking-[0.2em] text-xs">ملخص الرحلة المكتملة</h2>
+              <div className="h-[2px] w-12 bg-orange-500 mx-auto mb-6 rounded-full" />
+
+              {/* تفاصيل الزبون */}
+              <div className="flex items-center justify-center gap-3 mb-8 bg-gray-50 p-4 rounded-2xl border border-dashed border-gray-200">
+                <User className="w-5 h-5 text-gray-400" />
+                <span className="text-gray-700 font-black text-lg">{activeOrder.customerName || "عميل سطحة"}</span>
+              </div>
+
+              {/* المبلغ الكبير */}
+              <div className="space-y-1 mb-10">
+                <p className="text-gray-400 font-bold text-sm">المبلغ المطلوب استلامه نقداً</p>
+                <div className="flex items-center justify-center gap-2">
+                  <span className="text-6xl font-black text-gray-900 tabular-nums">{activeOrder.price}</span>
+                  <span className="text-xl font-black text-orange-500">د.ع</span>
+                </div>
+              </div>
+
+              {/* تنبيه العمولة المباشر */}
+              <div className="flex items-center gap-3 bg-blue-50/50 p-4 rounded-2xl mb-10 text-right">
+                <div className="bg-blue-500 p-2 rounded-lg text-white">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <p className="text-[11px] text-blue-800 font-bold leading-relaxed">
+                  عند الضغط على تأكيد، سيتم خصم عمولة التطبيق من محفظتك وإغلاق الطلب نهائياً.
+                </p>
+              </div>
+
+              {/* زر التأكيد الضخم */}
+              <Button 
+                onClick={() => handleCompleteOrder(activeOrder.id)} 
+                className="w-full h-20 bg-orange-500 hover:bg-orange-600 active:scale-95 transition-all text-white font-black text-2xl rounded-[28px] shadow-[0_15px_30px_rgba(249,115,22,0.3)] flex items-center justify-center gap-4"
+              >
+                تأكيد استلام النقد
+                <ArrowDownCircle className="w-7 h-7" />
+              </Button>
+            </motion.div>
+
+            {/* رقم الطلب للتوثيق */}
+            <p className="mt-8 text-gray-400 text-[10px] font-bold">رقم مرجع الطلب: #{activeOrder.id || 'N/A'}</p>
           </motion.div>
         )}
 
@@ -874,8 +879,13 @@ if (!driverInfo || driverInfo.status !== "approved") {
 
       <AnimatePresence>
         {notification.show && (
-          <motion.div initial={{ y: -100 }} animate={{ y: 20 }} exit={{ y: -100 }} className="fixed top-0 left-0 right-0 z-[6000] flex justify-center px-6">
-            <div className={`px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-md ${notification.type === 'success' ? 'bg-green-500/90 text-white' : 'bg-red-500/90 text-white'}`}>
+          <motion.div 
+            initial={{ y: -100 }} 
+            animate={{ y: 20 }} 
+            exit={{ y: -100 }} 
+            className="fixed top-0 left-0 right-0 z-[10000] flex justify-center px-6 pointer-events-none"
+          >
+            <div className={`px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-md pointer-events-auto ${notification.type === 'success' ? 'bg-green-500/90 text-white' : 'bg-red-500/90 text-white'}`}>
                {notification.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <X className="w-5 h-5" />}
                <span className="font-black text-sm">{notification.message}</span>
             </div>
