@@ -9,7 +9,7 @@ import {
   PlusCircle, CreditCard, Info, ShieldCheck
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapContainer, TileLayer, useMap, Marker, Popup } from "react-leaflet"; 
+import { MapContainer, TileLayer, useMap, Marker, Popup, Polyline } from "react-leaflet"; 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { io } from "socket.io-client";
@@ -248,33 +248,34 @@ export default function DriverDashboard() {
       return;
     }
 
-    // تجهيز بيانات السائق الكاملة
-    const driverPayload = {
-      id: driverInfo?.id,
-      name: driverInfo?.name,
-      phone: driverInfo?.phone,
-      avatarUrl: driverInfo?.avatarUrl,
-      vehicleType: driverInfo?.vehicleType,
-      lat: currentCoords?.[0],
-      lng: currentCoords?.[1]
-    };
-
-    // إرسال إشارة القبول مع بيانات السائق الكاملة ليراها الزبون فوراً
-    socket.emit("accept_order", { 
-      orderId: req.id, 
-      driverId: driverInfo?.id,
-      driverInfo: driverPayload
-    });
-
-    // إرسال تحديث حالة صريح ليغير واجهة الزبون
-    socket.emit("update_order_status", {
-      orderId: req.id,
-      status: "accepted",
-      driverInfo: driverPayload
-    });
-
-    setActiveOrder(req);
-    setOrderStage("heading_to_pickup");
+    try {
+      // إرسال طلب API للخادم لتسجيل القبول
+      const res = await apiRequest("POST", `/api/drivers/${driverInfo?.id}/accept/${req.id}`);
+      
+      if (res.ok) {
+        // تفعيل الطلب محلياً
+        setActiveOrder(req);
+        setOrderStage("heading_to_pickup");
+        
+        // الانضمام لغرفة الدردشة الخاصة بالطلب
+        socket.emit("join_order", req.id);
+        
+        setNotification({ show: true, message: "تم قبول الطلب بنجاح", type: "success" });
+      } else {
+        const data = await res.json();
+        toast({ 
+          variant: "destructive", 
+          title: "خطأ", 
+          description: data.message || "فشل في قبول الطلب" 
+        });
+      }
+    } catch (err) {
+      toast({ 
+        variant: "destructive", 
+        title: "خطأ", 
+        description: "تعذر الاتصال بالخادم" 
+      });
+    }
   };
 
   useEffect(() => {
@@ -387,11 +388,17 @@ export default function DriverDashboard() {
         setMessages(prev => [...prev, { ...msg, id: Date.now() }]);
         if (!isChatOpen) setUnreadCount(prev => prev + 1);
       });
+      
+      // استقبال معلومات الزبون عند القبول
+      socket.on("customer_info", (customerData: any) => {
+        console.log("تم استقبال معلومات الزبون:", customerData);
+      });
 
       return () => { 
         socket.off("new_request_available"); 
-        socket.off("order_assigned"); // تنظيف المستمع الجديد
+        socket.off("order_assigned");
         socket.off("receive_message");
+        socket.off("customer_info");
       };
     }
   }, [driverInfo?.isOnline, activeOrder, driverInfo?.status, isChatOpen, driverInfo?.city]);
@@ -469,6 +476,21 @@ if (!driverInfo || driverInfo.status !== "approved") {
                 {currentCoords && (
                   <Marker position={currentCoords} icon={getOrangeArrowIcon(heading)}>
                     <Popup><div className="text-right font-black font-sans">أنت هنا كابتن {driverInfo.name} <br/><span className="text-orange-500 text-[10px]">جاري تتبع موقعك المباشر</span></div></Popup>
+                  </Marker>
+                )}
+                {/* خط الملاحة بين السائق والزبون عند وجود طلب نشط */}
+                {activeOrder && currentCoords && (
+                  <Polyline 
+                    positions={[currentCoords, [activeOrder.pickupLat, activeOrder.pickupLng]]} 
+                    color="#f97316" 
+                    weight={4} 
+                    opacity={0.7}
+                    dashArray="10, 10"
+                  />
+                )}
+                {activeOrder && (
+                  <Marker position={[activeOrder.pickupLat, activeOrder.pickupLng]}>
+                    <Popup><div className="text-right font-black">موقع الزبون: {activeOrder.customerName}</div></Popup>
                   </Marker>
                 )}
                 <MapViewHandler center={currentCoords || [33.3152, 44.3661]} isFollowMode={isFollowMode} />

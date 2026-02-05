@@ -537,6 +537,9 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       }
 
       const result = await storage.acceptRequest(driverId, requestId);
+      
+      // جلب معلومات الطلب لإرسالها للسائق
+      const request = await storage.getRequest(requestId);
 
       const payload = { 
         status: "accepted", 
@@ -549,12 +552,26 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
           plateNumber: driver?.plateNumber,
           lat: driver?.lastLat, 
           lng: driver?.lastLng 
+        },
+        // إضافة معلومات الزبون للسائق
+        customerInfo: {
+          name: request?.customerName,
+          phone: request?.customerPhone,
+          pickupLat: request?.pickupLat,
+          pickupLng: request?.pickupLng,
+          dropoffLat: request?.dropoffLat,
+          dropoffLng: request?.dropoffLng,
+          pickupAddress: request?.pickupAddress,
+          dropoffAddress: request?.dropoffAddress
         }
       };
 
-      // إشعار الزبون
+      // إشعار الزبون بمعلومات السائق الكاملة
       io.to(`order_${requestId}`).emit("status_changed", payload);
       io.emit(`order_status_${requestId}`, payload);
+      
+      // إشعار السائق بمعلومات الزبون الكاملة
+      io.to(`driver_${driverId}`).emit("customer_info", payload.customerInfo);
 
       // [تصحيح] إشعار لوحة تحكم المدير فوراً لتحديث القائمة دون Refresh
       io.emit("request_updated", { id: requestId, ...payload });
@@ -583,8 +600,9 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         referenceId: `REQ-${requestId}`
       });
 
-      io.to(`order_${requestId}`).emit("status_changed", { status: "completed" });
-      io.emit(`order_status_${requestId}`, { status: "completed" });
+      // إشعار الزبون بالاستكمال وإعادة التوجيه لصفحة Booking
+      io.to(`order_${requestId}`).emit("status_changed", { status: "completed", resetToBooking: true });
+      io.emit(`order_status_${requestId}`, { status: "completed", resetToBooking: true });
 
       // إشعار المدير باكتمال الطلب
       io.emit("request_updated", { id: requestId, status: "completed" });

@@ -13,7 +13,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { MapContainer, TileLayer, useMapEvents, Marker, useMap, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, useMapEvents, Marker, useMap, Popup, Polyline } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { io } from "socket.io-client";
@@ -219,12 +219,13 @@ export default function RequestFlow() {
           if (data.status === "completed") {
             toast({ title: "وصلت بالسلامة", description: "تم إكمال الطلب بنجاح" });
             localStorage.removeItem("sat7a_active_order_id");
-            setTimeout(() => {
-              setViewState("booking");
-              setActiveOrderId(null);
-              setDriverInfo(null);
-              setRequestStatus("pending");
-            }, 3000);
+            // إعادة التوجيه الفوري إلى صفحة Booking عند الاستكمال
+            setViewState("booking");
+            setActiveOrderId(null);
+            setDriverInfo(null);
+            setRequestStatus("pending");
+            setMessages([]);
+            setDriverLocation(null);
           }
         }
       };
@@ -261,8 +262,25 @@ export default function RequestFlow() {
       }
     };
 
-    socket.on("new_message", handleNewMessage);
-    return () => { socket.off("new_message", handleNewMessage); };
+      socket.on("new_message", handleNewMessage);
+    
+    // استقبال رسائل السائق المباشرة
+    socket.on("receive_message", (msg: any) => {
+      if (Number(msg.orderId) === Number(activeOrderId)) {
+        setMessages(prev => {
+          const exists = prev.find(m => m.id === msg.id);
+          if (exists) return prev;
+          return [...prev, msg];
+        });
+        if (!isChatOpen) setUnreadCount(prev => prev + 1);
+        setTimeout(scrollChatToBottom, 100);
+      }
+    });
+    
+    return () => { 
+      socket.off("new_message", handleNewMessage);
+      socket.off("receive_message");
+    };
   }, [isChatOpen, activeOrderId]);
 
   const handleSendMessage = () => {
@@ -601,6 +619,16 @@ export default function RequestFlow() {
                 <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="&copy; Google Maps" detectRetina={true} tileSize={256}/>
                 {driverLocation && <Marker position={driverLocation} icon={getOrangeArrowIcon(driverHeading)} />}
                 <Marker position={[formData.pickupLat, formData.pickupLng]} />
+                {/* خط الملاحة بين السائق والزبون */}
+                {driverLocation && (
+                  <Polyline 
+                    positions={[driverLocation, [formData.pickupLat, formData.pickupLng]]} 
+                    color="#f97316" 
+                    weight={4} 
+                    opacity={0.7}
+                    dashArray="10, 10"
+                  />
+                )}
                 <FlyToMarker center={driverLocation || [formData.pickupLat, formData.pickupLng]} shouldFly={!!driverLocation} />
             </MapContainer>
         </div>
