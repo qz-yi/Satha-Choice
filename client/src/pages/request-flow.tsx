@@ -249,6 +249,11 @@ export default function RequestFlow() {
           if (data.status === "completed") {
             toast({ title: "وصلت بالسلامة", description: "تم إكمال الطلب بنجاح" });
             localStorage.removeItem("sat7a_active_order_id");
+            
+            // CRITICAL: Close ALL modals before resetting
+            setShowCancelModal(false);
+            setIsChatOpen(false);
+            
             // إعادة التوجيه الفوري إلى صفحة Booking عند الاستكمال
             setViewState("booking");
             setActiveOrderId(null);
@@ -274,6 +279,11 @@ export default function RequestFlow() {
       socket.on("order_deleted_by_admin", (data: any) => {
         console.log("[Customer] Order deleted by admin:", data);
         localStorage.removeItem("sat7a_active_order_id");
+        
+        // CRITICAL: Close ALL modals first
+        setShowCancelModal(false);
+        setIsChatOpen(false);
+        
         setViewState("booking");
         setActiveOrderId(null);
         setDriverInfo(null);
@@ -422,20 +432,37 @@ export default function RequestFlow() {
     try {
       if (!activeOrderId) {
         console.error("[Cancel] No active order ID");
+        setShowCancelModal(false);
         return;
       }
       
-      console.log(`[Cancel] Deleting order ${activeOrderId}`);
+      // CRITICAL: Only allow cancellation if status is pending
+      if (requestStatus !== "pending") {
+        console.error("[Cancel] Cannot cancel - order status is:", requestStatus);
+        setShowCancelModal(false);
+        toast({
+          variant: "destructive",
+          title: "لا يمكن الإلغاء",
+          description: "الطلب قيد التنفيذ بالفعل"
+        });
+        return;
+      }
+      
+      console.log(`[Cancel] Deleting order ${activeOrderId}, status: ${requestStatus}`);
       
       const response = await fetch(`/api/requests/${activeOrderId}`, {
         method: "DELETE",
       });
       
       if (!response.ok) {
-        throw new Error("فشل في إلغاء الطلب");
+        const error = await response.json();
+        throw new Error(error.message || "فشل في إلغاء الطلب");
       }
       
       console.log("[Cancel] Order deleted successfully");
+      
+      // CLOSE modal first, then clear state
+      setShowCancelModal(false);
       
       // Clear local state
       localStorage.removeItem("sat7a_active_order_id");
@@ -445,19 +472,19 @@ export default function RequestFlow() {
       setRequestStatus("pending");
       setMessages([]);
       setDriverLocation(null);
-      setShowCancelModal(false);
       
       toast({
         title: "تم إلغاء الطلب بنجاح",
         description: "يمكنك إنشاء طلب جديد الآن",
         className: "bg-green-600 text-white"
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("[Cancel] Error:", error);
+      setShowCancelModal(false);
       toast({
         variant: "destructive",
         title: "خطأ في الإلغاء",
-        description: "حاول مرة أخرى"
+        description: error.message || "حاول مرة أخرى"
       });
     }
   };
@@ -777,10 +804,10 @@ export default function RequestFlow() {
           )}
         </AnimatePresence>
 
-        <motion.div initial={{ y: 100 }} animate={{ y: 0 }} className="absolute inset-x-0 bottom-0 z-[1000] p-6 pb-10">
+        <motion.div initial={{ y: 100 }} animate={{ y: 0 }} className="absolute inset-x-0 bottom-0 z-[1000] p-6 pb-10 pointer-events-auto">
             <div className="bg-white rounded-[40px] shadow-2xl p-6 border-t-4 border-orange-500">
                 <div className="text-center space-y-6">
-                     <div className="flex items-center justify-center gap-3">
+                     <div className="flex items-center justify-center gap-3 pointer-events-auto">
                         {requestStatus === "pending" && <Loader2 className="w-6 h-6 animate-spin text-orange-500" />}
                         <h3 className="text-xl font-black text-gray-800 italic">
                           {requestStatus === "pending" ? "جاري البحث عن سائق..." : 
@@ -790,8 +817,12 @@ export default function RequestFlow() {
                         {/* Small elegant cancel button - ONLY during pending status */}
                         {requestStatus === "pending" && (
                           <button
-                            onClick={() => setShowCancelModal(true)}
-                            className="text-red-500 hover:text-red-600 font-bold text-sm underline transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              console.log("[Cancel Button] Clicked - Opening modal");
+                              setShowCancelModal(true);
+                            }}
+                            className="text-red-500 hover:text-red-600 font-bold text-sm underline transition-colors relative z-[9999] pointer-events-auto"
                           >
                             إلغاء
                           </button>
@@ -1077,13 +1108,21 @@ export default function RequestFlow() {
                   {/* Buttons */}
                   <div className="flex gap-3">
                     <button
-                      onClick={handleCancelTrip}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        console.log("[Modal] Confirm cancel clicked");
+                        handleCancelTrip();
+                      }}
                       className="flex-1 h-14 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-[20px] font-black text-base shadow-lg shadow-red-200 transition-all active:scale-95"
                     >
                       موافق، ألغِ الرحلة
                     </button>
                     <button
-                      onClick={() => setShowCancelModal(false)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        console.log("[Modal] Cancel dismissed");
+                        setShowCancelModal(false);
+                      }}
                       className="flex-1 h-14 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-[20px] font-black text-base transition-all active:scale-95"
                     >
                       لا، لا تلغِ
