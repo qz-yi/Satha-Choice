@@ -736,8 +736,8 @@ export default function RequestFlow() {
 
   if (viewState === "tracking") return (
     <div className="h-screen w-full bg-slate-50 flex flex-col relative" dir="rtl">
-        <div className="absolute inset-0 z-0 pointer-events-none">
-            <MapContainer center={[formData.pickupLat, formData.pickupLng]} zoom={15} style={{ height: "100%", width: "100%", pointerEvents: "auto" }} zoomControl={false}>
+        <div className="absolute inset-0 z-0">
+            <MapContainer center={[formData.pickupLat, formData.pickupLng]} zoom={15} style={{ height: "100%", width: "100%" }} zoomControl={false}>
                 <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="&copy; Google Maps" detectRetina={true} tileSize={256}/>
                 {driverLocation && <Marker position={driverLocation} icon={getOrangeArrowIcon(driverHeading)} />}
                 <Marker position={[formData.pickupLat, formData.pickupLng]} />
@@ -816,27 +816,26 @@ export default function RequestFlow() {
                         </h3>
                         {/* Small elegant cancel button - ONLY during pending status */}
                         {requestStatus === "pending" && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              console.log("[Cancel Button] Clicked - Opening modal");
-                              console.log("[Cancel Button] requestStatus:", requestStatus);
-                              console.log("[Cancel Button] activeOrderId:", activeOrderId);
-                              setShowCancelModal(true);
-                            }}
-                            style={{ 
-                              position: 'relative',
-                              zIndex: 10000,
-                              pointerEvents: 'auto',
-                              cursor: 'pointer',
-                              touchAction: 'auto'
-                            }}
-                            className="text-red-500 hover:text-red-600 font-bold text-sm underline transition-colors px-3 py-2 -m-2"
-                          >
-                            إلغاء
-                          </button>
+                          <div style={{ position: 'relative', zIndex: 99999, pointerEvents: 'auto' }}>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                console.log("[Cancel Button] Clicked - Opening modal");
+                                console.log("[Cancel Button] requestStatus:", requestStatus);
+                                console.log("[Cancel Button] activeOrderId:", activeOrderId);
+                                setShowCancelModal(true);
+                              }}
+                              style={{ 
+                                pointerEvents: 'auto',
+                                cursor: 'pointer',
+                                touchAction: 'auto'
+                              }}
+                              className="text-red-500 hover:text-red-600 font-bold text-sm underline transition-colors px-3 py-2 -m-2"
+                            >
+                              إلغاء
+                            </button>
+                          </div>
                         )}
                      </div>
                      {driverInfo && (
@@ -1081,69 +1080,65 @@ export default function RequestFlow() {
                </div>
             </motion.div>
           )}
-          
-          {/* Professional Cancel Confirmation Modal */}
-          {showCancelModal && (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6"
-            >
-              <motion.div
-                initial={{ scale: 0.9, y: 20 }}
-                animate={{ scale: 1, y: 0 }}
-                exit={{ scale: 0.9, y: 20 }}
-                className="bg-white rounded-[40px] shadow-2xl max-w-md w-full p-8 relative overflow-hidden"
-              >
-                {/* Decorative gradient background */}
-                <div className="absolute inset-0 bg-gradient-to-br from-red-50 to-orange-50 opacity-50" />
-                
-                {/* Content */}
-                <div className="relative z-10">
-                  {/* Icon */}
-                  <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-200">
-                    <X className="w-10 h-10 text-white" />
-                  </div>
-                  
-                  {/* Title */}
-                  <h3 className="text-2xl font-black text-center text-gray-900 mb-3">
-                    إلغاء الرحلة؟
-                  </h3>
-                  
-                  {/* Description */}
-                  <p className="text-center text-gray-600 font-bold text-sm leading-relaxed mb-8">
-                    هل أنت متأكد من إلغاء هذا الطلب؟ سيتم حذف الطلب نهائياً ولن يتم إشعار السائق.
-                  </p>
-                  
-                  {/* Buttons */}
-                  <div className="flex gap-3">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        console.log("[Modal] Confirm cancel clicked");
-                        handleCancelTrip();
-                      }}
-                      className="flex-1 h-14 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-[20px] font-black text-base shadow-lg shadow-red-200 transition-all active:scale-95"
-                    >
-                      موافق، ألغِ الرحلة
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        console.log("[Modal] Cancel dismissed");
-                        setShowCancelModal(false);
-                      }}
-                      className="flex-1 h-14 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-[20px] font-black text-base transition-all active:scale-95"
-                    >
-                      لا، لا تلغِ
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
       </AnimatePresence>
+      
+      {/* Professional Cancel Confirmation Modal - HIGHEST LAYER */}
+      {showCancelModal && (
+        <div 
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6"
+          style={{ zIndex: 99999, pointerEvents: 'auto' }}
+        >
+          <div
+            className="bg-white rounded-[40px] shadow-2xl max-w-md w-full p-8 relative overflow-hidden"
+            style={{ pointerEvents: 'auto' }}
+          >
+            {/* Decorative gradient background */}
+            <div className="absolute inset-0 bg-gradient-to-br from-red-50 to-orange-50 opacity-50" />
+            
+            {/* Content */}
+            <div className="relative z-10">
+              {/* Icon */}
+              <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-200">
+                <X className="w-10 h-10 text-white" />
+              </div>
+              
+              {/* Title */}
+              <h3 className="text-2xl font-black text-center text-gray-900 mb-3">
+                إلغاء الرحلة؟
+              </h3>
+              
+              {/* Description */}
+              <p className="text-center text-gray-600 font-bold text-sm leading-relaxed mb-8">
+                هل أنت متأكد من إلغاء هذا الطلب؟ سيتم حذف الطلب نهائياً ولن يتم إشعار السائق.
+              </p>
+              
+              {/* Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    console.log("[Modal] Confirm cancel clicked");
+                    handleCancelTrip();
+                  }}
+                  className="flex-1 h-14 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-[20px] font-black text-base shadow-lg shadow-red-200 transition-all active:scale-95"
+                >
+                  موافق، ألغِ الرحلة
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    console.log("[Modal] Cancel dismissed");
+                    setShowCancelModal(false);
+                  }}
+                  className="flex-1 h-14 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-[20px] font-black text-base transition-all active:scale-95"
+                >
+                  لا، لا تلغِ
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
