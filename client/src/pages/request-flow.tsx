@@ -170,6 +170,27 @@ export default function RequestFlow() {
         .catch(err => console.error("Error fetching messages:", err));
     }
   }, [isChatOpen, activeOrderId]);
+  
+  // جلب سجل الرحلات عند فتح القائمة
+  useEffect(() => {
+    if (isHistoryOpen && userProfile.phone) {
+      fetch(`/api/users/${userProfile.phone}/requests`)
+        .then(res => res.json())
+        .then(data => {
+          // فلترة الرحلات المكتملة فقط
+          const completedTrips = data.filter((trip: any) => trip.status === 'completed');
+          setTripsHistory(completedTrips);
+        })
+        .catch(err => {
+          console.error("Error fetching trip history:", err);
+          toast({
+            variant: "destructive",
+            title: "فشل تحميل سجل الرحلات",
+            description: "يرجى المحاولة مرة أخرى"
+          });
+        });
+    }
+  }, [isHistoryOpen, userProfile.phone, toast]);
 
   // استعادة الجلسة والبحث عن طلبات نشطة عند التحميل
   useEffect(() => {
@@ -548,12 +569,23 @@ export default function RequestFlow() {
               {authMode === "signup" && (
                 <div className="flex flex-col items-center mb-6">
                   <div className="relative group">
-                    <div className="w-24 h-24 bg-gray-50 rounded-[35px] border-4 border-white flex items-center justify-center overflow-hidden shadow-2xl ring-2 ring-orange-100">
+                    <div 
+                      onClick={() => {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = 'image/*';
+                        input.onchange = (e) => handleImageChange(e as any);
+                        input.click();
+                      }}
+                      className="w-24 h-24 bg-gray-50 rounded-[35px] border-4 border-white flex items-center justify-center overflow-hidden shadow-2xl ring-2 ring-orange-100 cursor-pointer hover:ring-orange-300 transition-all"
+                    >
                       {userProfile.image ? <img src={userProfile.image} className="w-full h-full object-cover" /> : <User className="text-orange-200 w-10 h-10" />}
-                      <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleImageChange} />
                     </div>
-                    <div className="absolute -bottom-1 -right-1 bg-black text-white p-2 rounded-xl shadow-lg border-2 border-white"><Camera className="w-4 h-4" /></div>
+                    <div className="absolute -bottom-1 -right-1 bg-black text-white p-2 rounded-xl shadow-lg border-2 border-white pointer-events-none">
+                      <Camera className="w-4 h-4" />
+                    </div>
                   </div>
+                  <p className="text-xs text-gray-400 mt-2 font-bold">اضغط لتحميل صورة</p>
                 </div>
               )}
               <div className="bg-white rounded-[35px] p-6 shadow-[0_10_40px_rgba(0,0,0,0.04)] border border-gray-50 space-y-4">

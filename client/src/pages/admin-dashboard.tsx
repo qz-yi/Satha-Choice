@@ -55,9 +55,9 @@ export default function AdminDashboard() {
     refetchInterval: 5000 // تحديث تلقائي كل 5 ثواني
   });
 
-  // القائمة العامة للطلبات مع تحديث تلقائي
+  // القائمة العامة للطلبات مع تحديث تلقائي (للإدارة - جميع الطلبات النشطة)
   const { data: allRequests = [] } = useQuery<Request[]>({ 
-    queryKey: ["/api/requests"], 
+    queryKey: ["/api/requests?role=admin"], 
     refetchInterval: 3000 
   });
   
@@ -273,6 +273,29 @@ export default function AdminDashboard() {
       toast({ title: "تم إكمال الطلب" });
     }
   });
+  
+  // حذف طلب بدون خصم عمولة من السائق
+  const deleteOrderWithoutCommissionMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/admin/requests/${id}/delete-without-commission`);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/requests?role=admin"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/drivers"] });
+      toast({ 
+        title: "تم حذف الطلب بنجاح", 
+        description: "لم يتم خصم عمولة من السائق",
+        className: "bg-green-600 text-white"
+      });
+    },
+    onError: () => {
+      toast({ 
+        variant: "destructive", 
+        title: "فشل حذف الطلب",
+        description: "يرجى المحاولة مرة أخرى"
+      });
+    }
+  });
 
   // --- منطق الفلترة ---
   const filteredDrivers = useMemo(() => {
@@ -389,7 +412,18 @@ export default function AdminDashboard() {
                      }} 
                      className="flex-1 bg-slate-800 hover:bg-slate-900 h-8 text-[9px] text-white font-black"
                    >
-                     ↻ إعادة تحويل
+                     ↻ تحويل
+                   </Button>
+                   <Button 
+                     onClick={(e) => { 
+                       e.stopPropagation(); 
+                       if(confirm('هل تريد حذف هذا الطلب نهائياً؟ لن يتم خصم عمولة من السائق.')) {
+                         deleteOrderWithoutCommissionMutation.mutate(currentJob.id); 
+                       }
+                     }} 
+                     className="flex-1 bg-red-600 hover:bg-red-700 h-8 text-[9px] text-white font-black"
+                   >
+                     🗑 حذف
                    </Button>
                 </div>
             </div>

@@ -562,7 +562,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         status: "accepted", 
         driverId,
         driverInfo: { 
-          name: driver?.username || (driver as any).name, 
+          name: driver?.name, 
           phone: driver?.phone, 
           avatarUrl: driver?.avatarUrl,
           vehicleType: driver?.vehicleType,
@@ -576,10 +576,10 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
           phone: request?.customerPhone,
           pickupLat: request?.pickupLat,
           pickupLng: request?.pickupLng,
-          dropoffLat: request?.dropoffLat,
-          dropoffLng: request?.dropoffLng,
+          dropoffLat: request?.destLat,
+          dropoffLng: request?.destLng,
           pickupAddress: request?.pickupAddress,
-          dropoffAddress: request?.dropoffAddress
+          dropoffAddress: request?.destination
         }
       };
 
@@ -676,14 +676,20 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  // [تصليح جوهري]: تعديل مسار جلب الطلبات ليعيد فقط الطلبات المتاحة (pending)
-  app.get("/api/requests", async (_req, res) => {
+  // [تصليح جوهري]: تعديل مسار جلب الطلبات ليعيد الطلبات حسب المستخدم
+  app.get("/api/requests", async (req, res) => {
     try {
       const allRequests = await storage.getRequests();
-      // فلترة: نجلب فقط الطلبات التي لم يتم قبولها بعد (Pending)
-      const availableRequests = allRequests.filter(r => r.status === "pending");
+      
+      // للإدارة: إرجاع كل الطلبات غير المكتملة
+      // للسائقين: إرجاع الطلبات المعلقة فقط
+      const isAdminRequest = req.query.role === 'admin';
+      
+      const filteredRequests = isAdminRequest 
+        ? allRequests.filter(r => r.status !== "completed") // Admin sees all active orders
+        : allRequests.filter(r => r.status === "pending");  // Drivers see only pending
 
-      const detailedRequests = await Promise.all(availableRequests.map(async (req) => {
+      const detailedRequests = await Promise.all(filteredRequests.map(async (req) => {
         const user = await storage.getUserByPhone(req.customerPhone);
         const driver = req.driverId ? await storage.getDriver(req.driverId) : null;
         const balance = user ? Number(user.walletBalance) : 0;
@@ -810,10 +816,10 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
           phone: requestDetails?.customerPhone,
           pickupLat: requestDetails?.pickupLat,
           pickupLng: requestDetails?.pickupLng,
-          dropoffLat: requestDetails?.dropoffLat,
-          dropoffLng: requestDetails?.dropoffLng,
+          dropoffLat: requestDetails?.destLat,
+          dropoffLng: requestDetails?.destLng,
           pickupAddress: requestDetails?.pickupAddress,
-          dropoffAddress: requestDetails?.dropoffAddress
+          dropoffAddress: requestDetails?.destination
         }
       };
 
@@ -864,6 +870,44 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       res.json(updated);
     } catch (err: any) {
       res.status(400).json({ message: "فشل في إلغاء تعيين السائق" });
+    }
+  });
+  
+  // حذف طلب بدون خصم عمولة من السائق
+  app.delete("/api/admin/requests/:requestId/delete-without-commission", async (req, res) => {
+    try {
+      const requestId = parseInt(req.params.requestId);
+      const request = await storage.getRequest(requestId);
+      
+      if (!request) {
+        return res.status(404).json({ message: "الطلب غير موجود" });
+      }
+      
+      const driverId = request.driverId;
+      
+      // حذف الطلب من قاعدة البيانات بدون خصم عمولة
+      await storage.deleteRequest(requestId);
+      
+      // إشعار الزبون بإلغاء الطلب
+      io.to(`order_${requestId}`).emit("order_deleted_by_admin", { 
+        message: "تم إلغاء طلبك من قبل الإدارة" 
+      });
+      
+      // إشعار السائق بإلغاء الطلب
+      if (driverId) {
+        io.to(`driver_${driverId}`).emit("order_deleted_by_admin", { 
+          requestId,
+          message: "تم حذف الطلب من قبل الإدارة" 
+        });
+      }
+      
+      // إشعار الإدارة بالحذف
+      io.emit("request_deleted", { id: requestId });
+      
+      res.json({ success: true, message: "تم حذف الطلب بنجاح بدون خصم عمولة" });
+    } catch (err: any) {
+      console.error("Delete order error:", err);
+      res.status(500).json({ message: "فشل في حذف الطلب" });
     }
   });
 

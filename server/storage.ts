@@ -33,6 +33,7 @@ export interface IStorage {
   getDriverRequests(driverId: number): Promise<Request[]>; 
   assignRequestToDriver(requestId: number, driverId: number): Promise<Request>;
   cancelRequestAssignment(requestId: number): Promise<Request>;
+  deleteRequest(id: number): Promise<void>;
 
   // --- السائقين والمحفظة ---
   createDriver(driver: InsertDriver): Promise<Driver>;
@@ -173,6 +174,10 @@ export class DatabaseStorage implements IStorage {
       .returning();
     if (!updated) throw new Error("Request not found");
     return updated;
+  }
+  
+  async deleteRequest(id: number): Promise<void> {
+    await db.delete(requests).where(eq(requests.id, id));
   }
 
   // --- السائقين ---
