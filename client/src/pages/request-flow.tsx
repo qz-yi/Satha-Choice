@@ -417,6 +417,51 @@ export default function RequestFlow() {
     }
   };
 
+  // CRITICAL: Cancel trip handler - must be before return statement
+  const handleCancelTrip = async () => {
+    try {
+      if (!activeOrderId) {
+        console.error("[Cancel] No active order ID");
+        return;
+      }
+      
+      console.log(`[Cancel] Deleting order ${activeOrderId}`);
+      
+      const response = await fetch(`/api/requests/${activeOrderId}`, {
+        method: "DELETE",
+      });
+      
+      if (!response.ok) {
+        throw new Error("فشل في إلغاء الطلب");
+      }
+      
+      console.log("[Cancel] Order deleted successfully");
+      
+      // Clear local state
+      localStorage.removeItem("sat7a_active_order_id");
+      setViewState("booking");
+      setActiveOrderId(null);
+      setDriverInfo(null);
+      setRequestStatus("pending");
+      setMessages([]);
+      setDriverLocation(null);
+      setShowCancelModal(false);
+      
+      toast({
+        title: "تم إلغاء الطلب بنجاح",
+        description: "يمكنك إنشاء طلب جديد الآن",
+        className: "bg-green-600 text-white"
+      });
+    } catch (error) {
+      console.error("[Cancel] Error:", error);
+      toast({
+        variant: "destructive",
+        title: "خطأ في الإلغاء",
+        description: "حاول مرة أخرى"
+      });
+    }
+  };
+
   const searchLocation = async (query: string) => {
     if (query.length < 3) return;
     setIsSearching(true);
@@ -784,42 +829,6 @@ export default function RequestFlow() {
         </motion.div>
     </div>
   );
-
-  const handleCancelTrip = async () => {
-    try {
-      if (!activeOrderId) return;
-      
-      const response = await fetch(`/api/requests/${activeOrderId}`, {
-        method: "DELETE",
-      });
-      
-      if (!response.ok) {
-        throw new Error("فشل في إلغاء الطلب");
-      }
-      
-      localStorage.removeItem("sat7a_active_order_id");
-      setViewState("booking");
-      setActiveOrderId(null);
-      setDriverInfo(null);
-      setRequestStatus("pending");
-      setMessages([]);
-      setDriverLocation(null);
-      setShowCancelModal(false);
-      
-      toast({
-        title: "تم إلغاء الطلب بنجاح",
-        description: "يمكنك إنشاء طلب جديد الآن",
-        className: "bg-green-600 text-white"
-      });
-    } catch (error) {
-      console.error("Cancel trip error:", error);
-      toast({
-        variant: "destructive",
-        title: "خطأ في الإلغاء",
-        description: "حاول مرة أخرى"
-      });
-    }
-  };
 
   return (
     <div className="h-screen w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative" dir="rtl">

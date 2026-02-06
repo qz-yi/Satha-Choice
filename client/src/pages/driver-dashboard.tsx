@@ -540,6 +540,24 @@ export default function DriverDashboard() {
         setAvailableRequests(prev => prev.filter(r => r.id !== data.requestId));
       });
       
+      // Handle order cancellation by customer
+      socket.on("order_cancelled_by_customer", (data: any) => {
+        console.log("[Driver] Order cancelled by customer:", data);
+        if (activeOrder && activeOrder.id === data.requestId) {
+          setActiveOrder(null);
+          setOrderStage("heading_to_pickup");
+          setNotification({ 
+            show: true, 
+            message: "قام الزبون بإلغاء الطلب", 
+            type: "error" 
+          });
+          setTimeout(() => {
+            setNotification(n => ({ ...n, show: false }));
+          }, 3000);
+        }
+        setAvailableRequests(prev => prev.filter(r => r.id !== data.requestId));
+      });
+      
       // CRITICAL: Handle Admin Force Complete
       socket.on("ADMIN_FORCE_COMPLETE", (data: any) => {
         console.log("🚨 [ADMIN] Force completing order:", data);
@@ -590,6 +608,7 @@ export default function DriverDashboard() {
         socket.off("ORDER_UPDATED");
         socket.off("NEW_ORDER_ASSIGNED");
         socket.off("order_deleted_by_admin");
+        socket.off("order_cancelled_by_customer");
         socket.off("ADMIN_FORCE_COMPLETE");
         socket.off("new_message");
         socket.off("customer_info");
