@@ -118,7 +118,8 @@ export default function RequestFlow() {
   const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "wallet">("cash");
   const [tripsHistory, setTripsHistory] = useState<any[]>([]);
-  const [chargeAmount, setChargeAmount] = useState(""); 
+  const [chargeAmount, setChargeAmount] = useState("");
+  const [showCancelModal, setShowCancelModal] = useState(false); 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -682,7 +683,7 @@ export default function RequestFlow() {
             </MapContainer>
         </div>
         <header className="absolute top-6 inset-x-6 z-[1000] flex justify-between items-center">
-            <Button onClick={() => { setViewState("booking"); localStorage.removeItem("sat7a_active_order_id"); setActiveOrderId(null); }} className="bg-white/90 backdrop-blur-md text-black rounded-2xl w-12 h-12 shadow-xl border-none"><X className="w-5 h-5" /></Button>
+            <div className="w-12"></div>
             <div className="bg-orange-500 text-white px-4 py-2 rounded-2xl shadow-xl font-black italic flex items-center gap-2"><Navigation className="w-4 h-4 animate-pulse" /> مباشر</div>
         </header>
 
@@ -770,10 +771,60 @@ export default function RequestFlow() {
                         </div>
                      )}
                 </div>
+                
+                {/* Cancel Trip Button - Professional Design at Bottom */}
+                <div className="fixed bottom-0 inset-x-0 p-6 bg-white/95 backdrop-blur-md border-t border-gray-100 z-[2000]">
+                  <button
+                    onClick={() => setShowCancelModal(true)}
+                    className="w-full h-16 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-[24px] font-black text-lg shadow-2xl shadow-red-200 transition-all active:scale-95 flex items-center justify-center gap-3"
+                  >
+                    <X className="w-6 h-6" />
+                    إلغاء الطلب
+                  </button>
+                </div>
             </div>
         </motion.div>
     </div>
   );
+
+  // Professional Cancel Confirmation Modal
+  const handleCancelTrip = async () => {
+    try {
+      if (!activeOrderId) return;
+      
+      // Call DELETE endpoint to properly remove order
+      const response = await fetch(`/api/requests/${activeOrderId}`, {
+        method: "DELETE",
+      });
+      
+      if (!response.ok) {
+        throw new Error("فشل في إلغاء الطلب");
+      }
+      
+      // Clear local state
+      localStorage.removeItem("sat7a_active_order_id");
+      setViewState("booking");
+      setActiveOrderId(null);
+      setDriverInfo(null);
+      setRequestStatus("pending");
+      setMessages([]);
+      setDriverLocation(null);
+      setShowCancelModal(false);
+      
+      toast({
+        title: "تم إلغاء الطلب بنجاح",
+        description: "يمكنك إنشاء طلب جديد الآن",
+        className: "bg-green-600 text-white"
+      });
+    } catch (error) {
+      console.error("Cancel trip error:", error);
+      toast({
+        variant: "destructive",
+        title: "خطأ في الإلغاء",
+        description: "حاول مرة أخرى"
+      });
+    }
+  };
 
   return (
     <div className="h-screen w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative" dir="rtl">
@@ -982,6 +1033,60 @@ export default function RequestFlow() {
                     <div><h5 className="font-black text-orange-700 text-[11px] mb-0.5">عملية آمنة وموثوقة</h5><p className="text-[10px] text-orange-600 leading-tight font-bold opacity-80">سيتم تحديث رصيدك فور نجاح عملية الدفع.</p></div>
                   </div>
                </div>
+            </motion.div>
+          )}
+          
+          {/* Professional Cancel Confirmation Modal */}
+          {showCancelModal && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6"
+            >
+              <motion.div
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                className="bg-white rounded-[40px] shadow-2xl max-w-md w-full p-8 relative overflow-hidden"
+              >
+                {/* Decorative gradient background */}
+                <div className="absolute inset-0 bg-gradient-to-br from-red-50 to-orange-50 opacity-50" />
+                
+                {/* Content */}
+                <div className="relative z-10">
+                  {/* Icon */}
+                  <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-200">
+                    <X className="w-10 h-10 text-white" />
+                  </div>
+                  
+                  {/* Title */}
+                  <h3 className="text-2xl font-black text-center text-gray-900 mb-3">
+                    إلغاء الرحلة؟
+                  </h3>
+                  
+                  {/* Description */}
+                  <p className="text-center text-gray-600 font-bold text-sm leading-relaxed mb-8">
+                    هل أنت متأكد من إلغاء هذا الطلب؟ سيتم حذف الطلب نهائياً ولن يتم إشعار السائق.
+                  </p>
+                  
+                  {/* Buttons */}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleCancelTrip}
+                      className="flex-1 h-14 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-[20px] font-black text-base shadow-lg shadow-red-200 transition-all active:scale-95"
+                    >
+                      موافق، ألغِ الرحلة
+                    </button>
+                    <button
+                      onClick={() => setShowCancelModal(false)}
+                      className="flex-1 h-14 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-[20px] font-black text-base transition-all active:scale-95"
+                    >
+                      لا، لا تلغِ
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
             </motion.div>
           )}
       </AnimatePresence>

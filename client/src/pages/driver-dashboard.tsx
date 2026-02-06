@@ -17,7 +17,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Driver } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient"; 
 import { useToast } from "@/hooks/use-toast";
-import { RoutingPolyline } from "@/components/RoutingPolyline"; 
+import { RoutingPolyline } from "@/components/RoutingPolyline";
+import { ProfessionalNotification } from "@/components/ProfessionalNotification"; 
 
 const getOrangeArrowIcon = (rotation: number) => L.divIcon({
   html: `
@@ -118,6 +119,7 @@ export default function DriverDashboard() {
   const [activeOrder, setActiveOrder] = useState<any>(null);
   const [orderStage, setOrderStage] = useState<any>("heading_to_pickup");
   const [notification, setNotification] = useState({ show: false, message: "", type: "success" as any });
+  const [professionalNotif, setProfessionalNotif] = useState({ show: false, message: "", type: "new_order" as any });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [activeTab, setActiveTab] = useState<"map" | "history" | "wallet" | "settings">("map");
@@ -421,12 +423,19 @@ export default function DriverDashboard() {
 
   useEffect(() => {
     if (driverInfo?.isOnline && driverInfo?.status === "approved") {
-      // 1. استقبال طلبات جديدة
+      // 1. استقبال طلبات جديدة - WITH PROFESSIONAL NOTIFICATION
       socket.on("new_request_available", (data: any) => { 
         if (!activeOrder && data.city?.trim() === driverInfo?.city?.trim()) {
           setAvailableRequests(prev => {
              if (prev.find(r => r.id === data.id)) return prev;
              return [data, ...prev];
+          });
+          
+          // Show professional notification
+          setProfessionalNotif({
+            show: true,
+            message: "هناك طلب نقل جديد! افتح قائمة الطلبات المتاحة",
+            type: "new_order"
           });
         }
       });
@@ -1067,6 +1076,14 @@ export default function DriverDashboard() {
         )}
 
       </div>
+
+      {/* Professional Notification System */}
+      <ProfessionalNotification 
+        show={professionalNotif.show}
+        message={professionalNotif.message}
+        type={professionalNotif.type}
+        onClose={() => setProfessionalNotif({ ...professionalNotif, show: false })}
+      />
 
       <AnimatePresence>
         {notification.show && (

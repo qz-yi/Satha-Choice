@@ -936,6 +936,46 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
   
+  // Customer cancels their own order
+  app.delete("/api/requests/:id", async (req, res) => {
+    try {
+      const requestId = parseInt(req.params.id);
+      console.log(`[Customer Cancel] Deleting request ${requestId}`);
+      
+      const request = await storage.getRequest(requestId);
+      
+      if (!request) {
+        return res.status(404).json({ message: "الطلب غير موجود" });
+      }
+      
+      const driverId = request.driverId;
+      
+      // Delete from database
+      await storage.deleteRequest(requestId);
+      
+      // Notify driver if assigned
+      if (driverId) {
+        io.to(`driver_${driverId}`).emit("order_cancelled_by_customer", { 
+          requestId,
+          message: "قام الزبون بإلغاء الطلب"
+        });
+      }
+      
+      // Notify admin
+      io.emit("request_deleted", { id: requestId });
+      
+      // Remove from all drivers' available lists (no new_request broadcast)
+      io.emit("request_removed", { id: requestId });
+      
+      console.log(`✅ [Customer Cancel] Request ${requestId} deleted successfully`);
+      
+      res.json({ success: true, message: "تم إلغاء الطلب بنجاح" });
+    } catch (err: any) {
+      console.error("[Customer Cancel Error]:", err);
+      res.status(500).json({ message: "فشل في إلغاء الطلب" });
+    }
+  });
+  
   // حذف طلب بدون خصم عمولة من السائق
   app.delete("/api/admin/requests/:requestId/delete-without-commission", async (req, res) => {
     try {
