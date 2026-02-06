@@ -268,11 +268,29 @@ export default function RequestFlow() {
               if (data.heading !== undefined) setDriverHeading(data.heading);
           }
       });
+      
+      // CRITICAL FIX: Handle order deletion by admin
+      socket.on("order_deleted_by_admin", (data: any) => {
+        console.log("[Customer] Order deleted by admin:", data);
+        localStorage.removeItem("sat7a_active_order_id");
+        setViewState("booking");
+        setActiveOrderId(null);
+        setDriverInfo(null);
+        setRequestStatus("pending");
+        setMessages([]);
+        setDriverLocation(null);
+        toast({ 
+          variant: "destructive",
+          title: "تم إلغاء الطلب", 
+          description: data.message || "تم إلغاء طلبك من قبل الإدارة" 
+        });
+      });
 
       return () => {
         socket.off("status_changed", handleStatusChange);
         socket.off(`order_status_${activeOrderId}`, handleStatusChange);
         socket.off("driver_location_update");
+        socket.off("order_deleted_by_admin");
       };
     }
   }, [activeOrderId, toast]);

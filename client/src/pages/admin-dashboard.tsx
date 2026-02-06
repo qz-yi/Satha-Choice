@@ -56,10 +56,28 @@ export default function AdminDashboard() {
   });
 
   // القائمة العامة للطلبات مع تحديث تلقائي (للإدارة - جميع الطلبات النشطة)
-  const { data: allRequests = [] } = useQuery<Request[]>({ 
+  const { data: allRequests = [], refetch: refetchRequests } = useQuery<Request[]>({ 
     queryKey: ["/api/requests?role=admin"], 
     refetchInterval: 3000 
   });
+  
+  // Listen for request updates from socket
+  useEffect(() => {
+    socket.on("request_updated", (data: any) => {
+      console.log("[Admin] Request updated:", data);
+      refetchRequests();
+    });
+    
+    socket.on("request_deleted", (data: any) => {
+      console.log("[Admin] Request deleted:", data);
+      refetchRequests();
+    });
+    
+    return () => {
+      socket.off("request_updated");
+      socket.off("request_deleted");
+    };
+  }, [refetchRequests]);
   
   // استماع لتحديثات مواقع السائقين في الوقت الفعلي
   useEffect(() => {

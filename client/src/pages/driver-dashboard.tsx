@@ -145,6 +145,18 @@ export default function DriverDashboard() {
   useEffect(() => {
     console.log("الوضع الحالي للطلب:", orderStage);
   }, [orderStage]);
+  
+  // CRITICAL FIX: Driver must join their private room to receive admin assignments
+  useEffect(() => {
+    if (driverInfo?.id) {
+      socket.emit("join_driver_room", driverInfo.id);
+      socket.emit("join_city", driverInfo.city);
+      console.log(`[Socket] Driver ${driverInfo.id} joined rooms:`, {
+        driverRoom: `driver_${driverInfo.id}`,
+        cityRoom: `city_${driverInfo.city}`
+      });
+    }
+  }, [driverInfo?.id, driverInfo?.city]);
 
   const handleDeposit = async (method: 'zain' | 'master') => {
     if (!driverInfo) {
@@ -402,14 +414,32 @@ export default function DriverDashboard() {
          }
       });
 
-      socket.on("order_assigned", (data: any) => {
+      // CRITICAL FIX: Listen for both order_assigned and ORDER_UPDATED
+      const handleOrderAssigned = (data: any) => {
+        console.log("[Driver] Received order assignment:", data);
+        
         if (!activeOrder) {
           // تفعيل الطلب تلقائياً كأن السائق قبله
-          setActiveOrder(data);
+          setActiveOrder({
+            ...data,
+            id: data.id,
+            customerName: data.customerName,
+            customerPhone: data.customerPhone,
+            pickupLat: data.pickupLat,
+            pickupLng: data.pickupLng,
+            pickupAddress: data.pickupAddress || data.location,
+            destination: data.destination,
+            price: data.price,
+            vehicleType: data.vehicleType,
+            status: "accepted"
+          });
           setOrderStage("heading_to_pickup");
           
           // الانضمام لغرفة الدردشة
           socket.emit("join_order", data.id);
+          
+          // إزالة من القائمة المتاحة
+          setAvailableRequests(prev => prev.filter(r => r.id !== data.id));
           
           setNotification({ 
             show: true, 
@@ -417,7 +447,6 @@ export default function DriverDashboard() {
             type: "success" 
           });
           
-          // إخفاء التنبيه بعد 5 ثواني
           setTimeout(() => {
             setNotification(n => ({ ...n, show: false }));
           }, 5000);
@@ -437,6 +466,27 @@ export default function DriverDashboard() {
             type: "success" 
           });
         }
+      };
+      
+      socket.on("order_assigned", handleOrderAssigned);
+      socket.on("ORDER_UPDATED", handleOrderAssigned); // للتوافق
+      
+      // Handle order deletion by admin
+      socket.on("order_deleted_by_admin", (data: any) => {
+        console.log("[Driver] Order deleted by admin:", data);
+        if (activeOrder && activeOrder.id === data.requestId) {
+          setActiveOrder(null);
+          setOrderStage("heading_to_pickup");
+          setNotification({ 
+            show: true, 
+            message: data.message || "تم حذف الطلب من قبل الإدارة", 
+            type: "error" 
+          });
+          setTimeout(() => {
+            setNotification(n => ({ ...n, show: false }));
+          }, 5000);
+        }
+        setAvailableRequests(prev => prev.filter(r => r.id !== data.requestId));
       });
 
       socket.on("new_message", (msg: any) => {
@@ -464,6 +514,8 @@ export default function DriverDashboard() {
       return () => { 
         socket.off("new_request_available"); 
         socket.off("order_assigned");
+        socket.off("ORDER_UPDATED");
+        socket.off("order_deleted_by_admin");
         socket.off("new_message");
         socket.off("customer_info");
       };

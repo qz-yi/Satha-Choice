@@ -714,6 +714,40 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
   
+  // CRITICAL FIX: Endpoint for customer trip history
+  app.get("/api/users/:phone/requests", async (req, res) => {
+    try {
+      const { phone } = req.params;
+      console.log(`[Trip History] Fetching requests for customer: ${phone}`);
+      
+      const allRequests = await storage.getRequests();
+      const userRequests = allRequests.filter(r => r.customerPhone === phone);
+      
+      console.log(`[Trip History] Found ${userRequests.length} requests for ${phone}`);
+      console.log(`[Trip History] Statuses:`, userRequests.map(r => ({ id: r.id, status: r.status })));
+      
+      const detailedRequests = await Promise.all(userRequests.map(async (req) => {
+        const driver = req.driverId ? await storage.getDriver(req.driverId) : null;
+        return {
+          id: req.id,
+          status: req.status,
+          pickupLocation: req.pickupAddress || req.location || "غير محدد",
+          destination: req.destination || "غير محدد",
+          price: req.price,
+          vehicleType: req.vehicleType,
+          createdAt: req.createdAt,
+          driverName: driver?.name || "غير معروف",
+          driverPhone: driver?.phone
+        };
+      }));
+      
+      res.json(detailedRequests);
+    } catch (err: any) {
+      console.error("[Trip History Error]:", err);
+      res.status(500).json({ message: err.message || "فشل في جلب سجل الرحلات" });
+    }
+  });
+  
   // جلب طلب محدد مع تفاصيل الزبون الكاملة (للإدارة)
   app.get("/api/requests/:id", async (req, res) => {
     try {
@@ -793,33 +827,59 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const requestId = parseInt(req.params.requestId);
       const { driverId } = req.body;
       
+      console.log(`[Admin Assign] Request ${requestId} → Driver ${driverId}`);
+      
       // تعيين الطلب للسائق في قاعدة البيانات
       const updated = await storage.assignRequestToDriver(requestId, driverId);
       const driver = await storage.getDriver(driverId);
       const requestDetails = await storage.getRequest(requestId); 
 
+      if (!driver) {
+        return res.status(404).json({ message: "السائق غير موجود" });
+      }
+      
+      if (!requestDetails) {
+        return res.status(404).json({ message: "الطلب غير موجود" });
+      }
+
       // إعداد البيانات الكاملة للسائق والزبون
+      const fullOrderData = {
+        ...requestDetails,
+        id: requestId,
+        status: "accepted",
+        driverId,
+        assignedByAdmin: true,
+        customerName: requestDetails.customerName,
+        customerPhone: requestDetails.customerPhone,
+        pickupLat: requestDetails.pickupLat,
+        pickupLng: requestDetails.pickupLng,
+        pickupAddress: requestDetails.pickupAddress,
+        destination: requestDetails.destination,
+        price: requestDetails.price,
+        vehicleType: requestDetails.vehicleType
+      };
+      
       const payload = { 
-        status: "accepted",  // تغيير إلى accepted بدلاً من confirmed
+        status: "accepted",
         driverId, 
         driverInfo: {
-          name: driver?.name,
-          phone: driver?.phone,
-          avatarUrl: driver?.avatarUrl,
-          vehicleType: driver?.vehicleType,
-          plateNumber: driver?.plateNumber,
-          lat: driver?.lastLat,
-          lng: driver?.lastLng
+          name: driver.name,
+          phone: driver.phone,
+          avatarUrl: driver.avatarUrl,
+          vehicleType: driver.vehicleType,
+          plateNumber: driver.plateNumber,
+          lat: driver.lastLat,
+          lng: driver.lastLng
         },
         customerInfo: {
-          name: requestDetails?.customerName,
-          phone: requestDetails?.customerPhone,
-          pickupLat: requestDetails?.pickupLat,
-          pickupLng: requestDetails?.pickupLng,
-          dropoffLat: requestDetails?.destLat,
-          dropoffLng: requestDetails?.destLng,
-          pickupAddress: requestDetails?.pickupAddress,
-          dropoffAddress: requestDetails?.destination
+          name: requestDetails.customerName,
+          phone: requestDetails.customerPhone,
+          pickupLat: requestDetails.pickupLat,
+          pickupLng: requestDetails.pickupLng,
+          dropoffLat: requestDetails.destLat,
+          dropoffLng: requestDetails.destLng,
+          pickupAddress: requestDetails.pickupAddress,
+          dropoffAddress: requestDetails.destination
         }
       };
 
@@ -827,13 +887,13 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       io.to(`order_${requestId}`).emit("status_changed", payload);
       io.emit(`order_status_${requestId}`, payload);
 
-      // إشعار السائق بتعيين الطلب له (كأنه قبله بنفسه)
+      // CRITICAL: إشعار السائق بالطلب الجديد مع كل التفاصيل
       if (driverId) {
-        io.to(`driver_${driverId}`).emit("order_assigned", {
-           ...requestDetails,
-           assignedByAdmin: true,
-           status: "accepted"
-        });
+        console.log(`[Socket] Emitting to driver_${driverId}:`, fullOrderData);
+        
+        // أرسل البيانات الكاملة للطلب
+        io.to(`driver_${driverId}`).emit("order_assigned", fullOrderData);
+        io.to(`driver_${driverId}`).emit("ORDER_UPDATED", fullOrderData); // للتوافق
         
         // إرسال معلومات الزبون للسائق
         io.to(`driver_${driverId}`).emit("customer_info", payload.customerInfo);
@@ -841,10 +901,10 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
       // إزالة الطلب من قوائم السائقين الآخرين
       io.emit("request_removed", { id: requestId });
-      io.emit("update_order_status", { orderId: requestId, status: "accepted" });
-      io.emit("request_updated", { id: requestId, ...payload });
+      io.emit("update_order_status", { orderId: requestId, status: "accepted", driverId });
+      io.emit("request_updated", { id: requestId, ...payload, driverId });
 
-      res.json({ success: true, updated, driver, request: requestDetails });
+      res.json({ success: true, updated, driver, request: requestDetails, fullOrderData });
     } catch (err: any) {
       console.error("Admin assign error:", err);
       res.status(400).json({ message: err.message || "فشل في تحويل الطلب للسائق" });
