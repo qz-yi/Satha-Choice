@@ -736,8 +736,8 @@ export default function RequestFlow() {
 
   if (viewState === "tracking") return (
     <div className="h-screen w-full bg-slate-50 flex flex-col relative" dir="rtl">
-        <div className="absolute inset-0 z-0">
-            <MapContainer center={[formData.pickupLat, formData.pickupLng]} zoom={15} style={{ height: "100%", width: "100%" }} zoomControl={false}>
+        <div className="absolute inset-0 z-0 pointer-events-none">
+            <MapContainer center={[formData.pickupLat, formData.pickupLng]} zoom={15} style={{ height: "100%", width: "100%", pointerEvents: "auto" }} zoomControl={false}>
                 <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="&copy; Google Maps" detectRetina={true} tileSize={256}/>
                 {driverLocation && <Marker position={driverLocation} icon={getOrangeArrowIcon(driverHeading)} />}
                 <Marker position={[formData.pickupLat, formData.pickupLng]} />
@@ -804,10 +804,10 @@ export default function RequestFlow() {
           )}
         </AnimatePresence>
 
-        <motion.div initial={{ y: 100 }} animate={{ y: 0 }} className="absolute inset-x-0 bottom-0 z-[1000] p-6 pb-10 pointer-events-auto">
-            <div className="bg-white rounded-[40px] shadow-2xl p-6 border-t-4 border-orange-500">
-                <div className="text-center space-y-6">
-                     <div className="flex items-center justify-center gap-3 pointer-events-auto">
+        <motion.div initial={{ y: 100 }} animate={{ y: 0 }} className="absolute inset-x-0 bottom-0 z-[2000] p-6 pb-10 pointer-events-auto">
+            <div className="bg-white rounded-[40px] shadow-2xl p-6 border-t-4 border-orange-500 pointer-events-auto">
+                <div className="text-center space-y-6 pointer-events-auto">
+                     <div className="flex items-center justify-center gap-3 pointer-events-auto relative z-10">
                         {requestStatus === "pending" && <Loader2 className="w-6 h-6 animate-spin text-orange-500" />}
                         <h3 className="text-xl font-black text-gray-800 italic">
                           {requestStatus === "pending" ? "جاري البحث عن سائق..." : 
@@ -817,12 +817,23 @@ export default function RequestFlow() {
                         {/* Small elegant cancel button - ONLY during pending status */}
                         {requestStatus === "pending" && (
                           <button
+                            type="button"
                             onClick={(e) => {
+                              e.preventDefault();
                               e.stopPropagation();
                               console.log("[Cancel Button] Clicked - Opening modal");
+                              console.log("[Cancel Button] requestStatus:", requestStatus);
+                              console.log("[Cancel Button] activeOrderId:", activeOrderId);
                               setShowCancelModal(true);
                             }}
-                            className="text-red-500 hover:text-red-600 font-bold text-sm underline transition-colors relative z-[9999] pointer-events-auto"
+                            style={{ 
+                              position: 'relative',
+                              zIndex: 10000,
+                              pointerEvents: 'auto',
+                              cursor: 'pointer',
+                              touchAction: 'auto'
+                            }}
+                            className="text-red-500 hover:text-red-600 font-bold text-sm underline transition-colors px-3 py-2 -m-2"
                           >
                             إلغاء
                           </button>
