@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Users, Truck, Map as MapIcon, ShieldCheck,
   CheckCircle2, XCircle, Menu, Activity,
@@ -14,6 +14,7 @@ import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { io } from "socket.io-client";
 
 // تعريفات Types يدوية لضمان عدم حدوث أخطاء TypeScript
 type Driver = any;
@@ -25,6 +26,8 @@ const driverIcon = L.icon({
   iconSize: [35, 35],
   iconAnchor: [17, 35],
 });
+
+const socket = io();
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("map");
@@ -39,18 +42,52 @@ export default function AdminDashboard() {
   // التحكم بنافذة تفاصيل الزبون
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [customerWalletAmount, setCustomerWalletAmount] = useState("");
+  
+  // تتبع مواقع السائقين في الوقت الفعلي
+  const [driverLocations, setDriverLocations] = useState<Record<number, {lat: number, lng: number}>>({});
 
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
   // --- Queries ---
-  const { data: allDrivers = [] } = useQuery<Driver[]>({ queryKey: ["/api/drivers"] });
+  const { data: allDrivers = [], refetch: refetchDrivers } = useQuery<Driver[]>({ 
+    queryKey: ["/api/drivers"],
+    refetchInterval: 5000 // تحديث تلقائي كل 5 ثواني
+  });
 
   // القائمة العامة للطلبات مع تحديث تلقائي
   const { data: allRequests = [] } = useQuery<Request[]>({ 
     queryKey: ["/api/requests"], 
     refetchInterval: 3000 
   });
+  
+  // استماع لتحديثات مواقع السائقين في الوقت الفعلي
+  useEffect(() => {
+    // الاستماع لتحديثات الموقع من جميع السائقين
+    socket.on("driver_location_broadcast", (data: { driverId: number, lat: number, lng: number }) => {
+      setDriverLocations(prev => ({
+        ...prev,
+        [data.driverId]: { lat: data.lat, lng: data.lng }
+      }));
+    });
+    
+    // تحديث موقع سائق محدد
+    allDrivers.forEach(driver => {
+      socket.on(`location_changed_${driver.id}`, (data: { lat: number, lng: number }) => {
+        setDriverLocations(prev => ({
+          ...prev,
+          [driver.id]: { lat: data.lat, lng: data.lng }
+        }));
+      });
+    });
+    
+    return () => {
+      socket.off("driver_location_broadcast");
+      allDrivers.forEach(driver => {
+        socket.off(`location_changed_${driver.id}`);
+      });
+    };
+  }, [allDrivers]);
 
   // جلب تفاصيل الطلب الفردي
   const { data: specificOrderData } = useQuery<Request>({
@@ -136,18 +173,23 @@ export default function AdminDashboard() {
 
   const assignMutation = useMutation({
     mutationFn: async ({ requestId, driverId }: { requestId: number, driverId: number }) => {
-      return await apiRequest("POST", `/api/admin/requests/${requestId}/assign`, { 
+      const response = await apiRequest("POST", `/api/admin/requests/${requestId}/assign`, { 
         driverId: Number(driverId)
       });
+      return response.json();
     },
-    onSuccess: async () => {
+    onSuccess: async (data) => {
       await queryClient.invalidateQueries({ queryKey: ["/api/requests"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/drivers"] });
       setAssigningRequest(null);
       setSelectedDriverForAssign(null);
       setShowConfirmModal(false);
       setSelectedOrderId(null);
-      toast({ title: "تم تحويل الطلب وتعيين السائق بنجاح" });
+      toast({ 
+        title: "تم تحويل الطلب بنجاح", 
+        description: "السائق سيرى الطلب فوراً في تطبيقه",
+        className: "bg-green-600 text-white"
+      });
     },
     onError: () => {
         toast({ variant: "destructive", title: "فشل في عملية تحويل الطلب" });
@@ -259,7 +301,12 @@ export default function AdminDashboard() {
 
   // مكون بطاقة السائق
   const DriverCard = ({ driver }: { driver: Driver }) => {
-    const currentJob = allRequests.find(r => r.driverId === driver.id && r.status === 'accepted');
+    // البحث عن الطلب النشط للسائق (accepted أو confirmed)
+    const currentJob = allRequests.find(r => 
+      r.driverId === driver.id && 
+      (r.status === 'accepted' || r.status === 'confirmed') &&
+      r.status !== 'completed'
+    );
     const isAccountActive = driver.status === "approved";
     const isOnline = !!driver.isOnline;
     const isUpdating = toggleOnlineMutation.isPending || toggleAccountStatusMutation.isPending;
@@ -315,17 +362,40 @@ export default function AdminDashboard() {
             </Button>
         </div>
         {currentJob ? (
-            <div className="bg-orange-50 p-3 rounded-2xl border border-orange-100">
-                <p className="text-[10px] font-black text-orange-600 mb-1">الطلب الحالي الموكل إليه:</p>
-                <p className="text-xs font-bold text-slate-700 truncate">{currentJob.location}</p>
+            <div className="bg-orange-50 p-3 rounded-2xl border border-orange-100 relative">
+                <div className="absolute top-1 left-1 bg-orange-500 text-white px-2 py-0.5 rounded-lg text-[8px] font-black">
+                  مشغول
+                </div>
+                <p className="text-[10px] font-black text-orange-600 mb-1">الطلب النشط #{currentJob.id}:</p>
+                <p className="text-xs font-bold text-slate-700 truncate mb-1">{currentJob.location || currentJob.pickupAddress}</p>
+                <p className="text-[9px] text-gray-500 font-bold">الزبون: {currentJob.customerName}</p>
                 <div className="flex gap-2 mt-2">
-                   <Button onClick={(e) => { e.stopPropagation(); completeRequestMutation.mutate(currentJob.id); }} className="flex-1 bg-green-600 h-8 text-[9px] text-white">إنهاء</Button>
-                   <Button onClick={(e) => { e.stopPropagation(); setAssigningRequest(currentJob); }} className="flex-1 bg-slate-800 h-8 text-[9px] text-white">تحويل</Button>
+                   <Button 
+                     onClick={(e) => { 
+                       e.stopPropagation(); 
+                       if(confirm('هل تريد إتمام هذا الطلب؟')) {
+                         completeRequestMutation.mutate(currentJob.id); 
+                       }
+                     }} 
+                     className="flex-1 bg-green-600 hover:bg-green-700 h-8 text-[9px] text-white font-black"
+                   >
+                     ✓ إتمام
+                   </Button>
+                   <Button 
+                     onClick={(e) => { 
+                       e.stopPropagation(); 
+                       setAssigningRequest(currentJob);
+                       setSelectedOrderId(null);
+                     }} 
+                     className="flex-1 bg-slate-800 hover:bg-slate-900 h-8 text-[9px] text-white font-black"
+                   >
+                     ↻ إعادة تحويل
+                   </Button>
                 </div>
             </div>
         ) : (
-            <div className="h-[74px] flex items-center justify-center border-2 border-dashed border-gray-100 rounded-2xl">
-                <p className="text-[10px] font-bold text-gray-400 italic">لا يوجد طلب نشط</p>
+            <div className="h-[86px] flex items-center justify-center border-2 border-dashed border-gray-100 rounded-2xl">
+                <p className="text-[10px] font-bold text-gray-400 italic">🆓 متاح - لا يوجد طلب</p>
             </div>
         )}
         <div className="space-y-3 pt-2 border-t">
@@ -406,12 +476,31 @@ export default function AdminDashboard() {
                         <MapContainer center={[33.3152, 44.3661]} zoom={11} style={{ height: "100%", width: "100%" }}>
                             <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" />
                             {onlineDrivers.map(driver => {
-                              const lat = parseFloat(driver.lastLat || "");
-                              const lng = parseFloat(driver.lastLng || "");
-                              if (isNaN(lat) || isNaN(lng)) return null; 
+                              // استخدام الموقع من real-time أولاً، ثم الموقع المحفوظ
+                              const realtimeLocation = driverLocations[driver.id];
+                              const lat = realtimeLocation?.lat || parseFloat(driver.lastLat || "");
+                              const lng = realtimeLocation?.lng || parseFloat(driver.lastLng || "");
+                              
+                              if (isNaN(lat) || isNaN(lng)) return null;
+                              
+                              const currentJob = allRequests.find(r => r.driverId === driver.id && r.status !== 'completed');
+                              
                               return (
                                 <Marker key={driver.id} position={[lat, lng]} icon={driverIcon}>
-                                  <Popup><div className="text-right font-black">{driver.name}</div></Popup></Marker>
+                                  <Popup>
+                                    <div className="text-right font-black">
+                                      <p className="text-lg">{driver.name}</p>
+                                      <p className="text-xs text-gray-600">رقم: {driver.phone}</p>
+                                      {currentJob && (
+                                        <div className="mt-2 p-2 bg-orange-50 rounded-lg">
+                                          <p className="text-xs text-orange-600 font-bold">
+                                            📦 في مهمة: {currentJob.location}
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </Popup>
+                                </Marker>
                               );
                             })}
                         </MapContainer>

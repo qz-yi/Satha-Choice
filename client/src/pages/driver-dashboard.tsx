@@ -404,13 +404,38 @@ export default function DriverDashboard() {
 
       socket.on("order_assigned", (data: any) => {
         if (!activeOrder) {
-           setAvailableRequests(prev => {
-             const exists = prev.find(r => r.id === data.id);
-             if (exists) return prev;
-             return [data, ...prev];
-           });
-           setNotification({ show: true, message: "تم تحويل طلب خاص لك من الإدارة", type: "success" });
-           setIsRequestsSheetOpen(true);
+          // تفعيل الطلب تلقائياً كأن السائق قبله
+          setActiveOrder(data);
+          setOrderStage("heading_to_pickup");
+          
+          // الانضمام لغرفة الدردشة
+          socket.emit("join_order", data.id);
+          
+          setNotification({ 
+            show: true, 
+            message: "تم تحويل طلب لك من الإدارة - ابدأ التوجه للزبون", 
+            type: "success" 
+          });
+          
+          // إخفاء التنبيه بعد 5 ثواني
+          setTimeout(() => {
+            setNotification(n => ({ ...n, show: false }));
+          }, 5000);
+          
+          // تحديث البيانات
+          refetch();
+        } else {
+          // إذا كان لديه طلب نشط، أضف الطلب الجديد للقائمة
+          setAvailableRequests(prev => {
+            const exists = prev.find(r => r.id === data.id);
+            if (exists) return prev;
+            return [data, ...prev];
+          });
+          setNotification({ 
+            show: true, 
+            message: "تم تحويل طلب إضافي لك - أكمل الطلب الحالي أولاً", 
+            type: "success" 
+          });
         }
       });
 

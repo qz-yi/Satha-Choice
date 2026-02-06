@@ -135,6 +135,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const { driverId, lat, lng } = data;
       await storage.updateDriver(driverId, { lastLat: lat, lastLng: lng });
       io.emit(`location_changed_${driverId}`, { lat, lng });
+      // بث الموقع لجميع المسؤولين
+      io.emit("driver_location_broadcast", { driverId, lat, lng });
     });
 
     socket.on("driver_location_update", (data) => {
@@ -705,6 +707,50 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       res.status(500).json({ message: "فشل في جلب قائمة الطلبات" });
     }
   });
+  
+  // جلب طلب محدد مع تفاصيل الزبون الكاملة (للإدارة)
+  app.get("/api/requests/:id", async (req, res) => {
+    try {
+      const requestId = parseInt(req.params.id);
+      const request = await storage.getRequest(requestId);
+      
+      if (!request) {
+        return res.status(404).json({ message: "الطلب غير موجود" });
+      }
+      
+      // جلب بيانات الزبون الحقيقية من قاعدة البيانات
+      const user = await storage.getUserByPhone(request.customerPhone);
+      const driver = request.driverId ? await storage.getDriver(request.driverId) : null;
+      
+      const balance = user ? Number(user.walletBalance) : 0;
+      
+      const detailedRequest = {
+        ...request,
+        walletBalance: balance,
+        customerWalletBalance: balance,
+        userBalance: balance,
+        driver: driver,
+        user: user ? {
+          id: user.id,
+          username: user.username,
+          phone: user.phone,
+          walletBalance: user.walletBalance,
+          city: user.city
+        } : {
+          id: 0,
+          username: request.customerName,
+          phone: request.customerPhone,
+          walletBalance: "0",
+          city: request.city
+        }
+      };
+      
+      res.json(detailedRequest);
+    } catch (err) {
+      console.error("Error fetching request:", err);
+      res.status(500).json({ message: "فشل في جلب تفاصيل الطلب" });
+    }
+  });
 
   // --- مسارات الإدارة ---
   app.post("/api/admin/customers/adjust-wallet", async (req, res) => {
@@ -740,30 +786,62 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     try {
       const requestId = parseInt(req.params.requestId);
       const { driverId } = req.body;
+      
+      // تعيين الطلب للسائق في قاعدة البيانات
       const updated = await storage.assignRequestToDriver(requestId, driverId);
       const driver = await storage.getDriver(driverId);
       const requestDetails = await storage.getRequest(requestId); 
 
+      // إعداد البيانات الكاملة للسائق والزبون
       const payload = { 
-        status: "confirmed", 
+        status: "accepted",  // تغيير إلى accepted بدلاً من confirmed
         driverId, 
-        driverInfo: driver 
+        driverInfo: {
+          name: driver?.name,
+          phone: driver?.phone,
+          avatarUrl: driver?.avatarUrl,
+          vehicleType: driver?.vehicleType,
+          plateNumber: driver?.plateNumber,
+          lat: driver?.lastLat,
+          lng: driver?.lastLng
+        },
+        customerInfo: {
+          name: requestDetails?.customerName,
+          phone: requestDetails?.customerPhone,
+          pickupLat: requestDetails?.pickupLat,
+          pickupLng: requestDetails?.pickupLng,
+          dropoffLat: requestDetails?.dropoffLat,
+          dropoffLng: requestDetails?.dropoffLng,
+          pickupAddress: requestDetails?.pickupAddress,
+          dropoffAddress: requestDetails?.dropoffAddress
+        }
       };
 
+      // إشعار الزبون بقبول الطلب
       io.to(`order_${requestId}`).emit("status_changed", payload);
       io.emit(`order_status_${requestId}`, payload);
 
+      // إشعار السائق بتعيين الطلب له (كأنه قبله بنفسه)
       if (driverId) {
-        io.to(`driver_${driverId}`).emit("new_request_assigned", {
+        io.to(`driver_${driverId}`).emit("order_assigned", {
            ...requestDetails,
-           assignedByAdmin: true
+           assignedByAdmin: true,
+           status: "accepted"
         });
+        
+        // إرسال معلومات الزبون للسائق
+        io.to(`driver_${driverId}`).emit("customer_info", payload.customerInfo);
       }
 
+      // إزالة الطلب من قوائم السائقين الآخرين
+      io.emit("request_removed", { id: requestId });
+      io.emit("update_order_status", { orderId: requestId, status: "accepted" });
       io.emit("request_updated", { id: requestId, ...payload });
-      res.json(updated);
+
+      res.json({ success: true, updated, driver, request: requestDetails });
     } catch (err: any) {
-      res.status(400).json({ message: "فشل في تحويل الطلب للسائق" });
+      console.error("Admin assign error:", err);
+      res.status(400).json({ message: err.message || "فشل في تحويل الطلب للسائق" });
     }
   });
 
