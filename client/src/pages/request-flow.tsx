@@ -742,6 +742,15 @@ export default function RequestFlow() {
                            requestStatus === "accepted" ? "الكابتن قادم إليك" : 
                            requestStatus === "arrived" ? "الكابتن في الموقع" : "في الطريق للوجهة"}
                         </h3>
+                        {/* Small elegant cancel button - ONLY during pending status */}
+                        {requestStatus === "pending" && (
+                          <button
+                            onClick={() => setShowCancelModal(true)}
+                            className="text-red-500 hover:text-red-600 font-bold text-sm underline transition-colors"
+                          >
+                            إلغاء
+                          </button>
+                        )}
                      </div>
                      {driverInfo && (
                         <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-[30px] border border-gray-100 shadow-inner">
@@ -771,28 +780,15 @@ export default function RequestFlow() {
                         </div>
                      )}
                 </div>
-                
-                {/* Cancel Trip Button - Professional Design at Bottom */}
-                <div className="fixed bottom-0 inset-x-0 p-6 bg-white/95 backdrop-blur-md border-t border-gray-100 z-[2000]">
-                  <button
-                    onClick={() => setShowCancelModal(true)}
-                    className="w-full h-16 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-[24px] font-black text-lg shadow-2xl shadow-red-200 transition-all active:scale-95 flex items-center justify-center gap-3"
-                  >
-                    <X className="w-6 h-6" />
-                    إلغاء الطلب
-                  </button>
-                </div>
             </div>
         </motion.div>
     </div>
   );
 
-  // Professional Cancel Confirmation Modal
   const handleCancelTrip = async () => {
     try {
       if (!activeOrderId) return;
       
-      // Call DELETE endpoint to properly remove order
       const response = await fetch(`/api/requests/${activeOrderId}`, {
         method: "DELETE",
       });
@@ -801,7 +797,6 @@ export default function RequestFlow() {
         throw new Error("فشل في إلغاء الطلب");
       }
       
-      // Clear local state
       localStorage.removeItem("sat7a_active_order_id");
       setViewState("booking");
       setActiveOrderId(null);
