@@ -27,7 +27,24 @@ const driverIcon = L.icon({
   iconAnchor: [17, 35],
 });
 
-const socket = io();
+const socket = io({
+  reconnection: true,
+  reconnectionDelay: 1000,
+  reconnectionAttempts: 10
+});
+
+// Debug socket connection for admin
+socket.on("connect", () => {
+  console.log("✅ [Admin Socket] Connected with ID:", socket.id);
+});
+
+socket.on("disconnect", (reason) => {
+  console.log("❌ [Admin Socket] Disconnected:", reason);
+});
+
+socket.on("connect_error", (error) => {
+  console.error("❌ [Admin Socket] Connection error:", error);
+});
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("map");
@@ -282,13 +299,29 @@ export default function AdminDashboard() {
     }
   });
 
+  // CRITICAL: Admin Force Complete - Remote completion with commission deduction
   const completeRequestMutation = useMutation({
     mutationFn: async (id: number) => {
-      return await apiRequest("PATCH", `/api/requests/${id}`, { status: "completed" });
+      console.log(`🚨 [ADMIN] Force completing order ${id}`);
+      const response = await apiRequest("POST", `/api/admin/requests/${id}/force-complete`);
+      return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/requests"] });
-      toast({ title: "تم إكمال الطلب" });
+    onSuccess: async (data) => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/requests"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/drivers"] });
+      toast({ 
+        title: "تم إتمام الطلب من الإدارة", 
+        description: `تم خصم ${data.fee} دينار من رصيد السائق`,
+        className: "bg-green-600 text-white"
+      });
+      console.log("✅ [ADMIN] Order force-completed successfully");
+    },
+    onError: (error: any) => {
+      toast({ 
+        variant: "destructive",
+        title: "فشل في إتمام الطلب", 
+        description: error.message 
+      });
     }
   });
   

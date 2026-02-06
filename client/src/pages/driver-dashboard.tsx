@@ -31,7 +31,24 @@ const getOrangeArrowIcon = (rotation: number) => L.divIcon({
   iconAnchor: [22.5, 22.5], 
 });
 
-const socket = io();
+const socket = io({
+  reconnection: true,
+  reconnectionDelay: 1000,
+  reconnectionAttempts: 10
+});
+
+// Debug socket connection
+socket.on("connect", () => {
+  console.log("✅ [Socket] Connected with ID:", socket.id);
+});
+
+socket.on("disconnect", (reason) => {
+  console.log("❌ [Socket] Disconnected:", reason);
+});
+
+socket.on("connect_error", (error) => {
+  console.error("❌ [Socket] Connection error:", error);
+});
 
 const MapViewHandler = ({ center, isFollowMode }: { center: [number, number], isFollowMode: boolean }) => {
   const map = useMap();
@@ -149,12 +166,24 @@ export default function DriverDashboard() {
   // CRITICAL FIX: Driver must join their private room to receive admin assignments
   useEffect(() => {
     if (driverInfo?.id) {
-      socket.emit("join_driver_room", driverInfo.id);
-      socket.emit("join_city", driverInfo.city);
-      console.log(`[Socket] Driver ${driverInfo.id} joined rooms:`, {
-        driverRoom: `driver_${driverInfo.id}`,
-        cityRoom: `city_${driverInfo.city}`
-      });
+      // Ensure socket is connected before joining rooms
+      if (!socket.connected) {
+        console.log("[Socket] Waiting for connection...");
+        socket.connect();
+      }
+      
+      // Wait a moment for connection, then join rooms
+      const joinTimer = setTimeout(() => {
+        socket.emit("join_driver_room", driverInfo.id);
+        socket.emit("join_city", driverInfo.city);
+        console.log(`[Socket] Driver ${driverInfo.id} FORCEFULLY joined rooms:`, {
+          driverRoom: `driver_${driverInfo.id}`,
+          cityRoom: `city_${driverInfo.city}`,
+          connected: socket.connected
+        });
+      }, 500);
+      
+      return () => clearTimeout(joinTimer);
     }
   }, [driverInfo?.id, driverInfo?.city]);
 
@@ -414,13 +443,15 @@ export default function DriverDashboard() {
          }
       });
 
-      // CRITICAL FIX: Listen for both order_assigned and ORDER_UPDATED
+      // CRITICAL FIX: FORCE UI TRANSITION - Admin Dispatch
       const handleOrderAssigned = (data: any) => {
-        console.log("[Driver] Received order assignment:", data);
+        console.log("🚨 [CRITICAL] Admin assigned order to driver:", data);
+        console.log("🚨 [CRITICAL] Current activeOrder:", activeOrder);
+        console.log("🚨 [CRITICAL] Socket connected:", socket.connected);
         
         if (!activeOrder) {
-          // تفعيل الطلب تلقائياً كأن السائق قبله
-          setActiveOrder({
+          // FORCE UI TRANSITION - Set activeOrder immediately
+          const forceOrderData = {
             ...data,
             id: data.id,
             customerName: data.customerName,
@@ -432,18 +463,26 @@ export default function DriverDashboard() {
             price: data.price,
             vehicleType: data.vehicleType,
             status: "accepted"
-          });
-          setOrderStage("heading_to_pickup");
+          };
           
-          // الانضمام لغرفة الدردشة
+          console.log("🚨 [CRITICAL] FORCING activeOrder to:", forceOrderData);
+          
+          // FORCE STATE UPDATES
+          setActiveOrder(forceOrderData);
+          setOrderStage("heading_to_pickup");
+          setActiveTab("map"); // Force switch to map tab
+          setIsRequestsSheetOpen(false); // Close requests sheet
+          
+          // Join chat room
           socket.emit("join_order", data.id);
           
-          // إزالة من القائمة المتاحة
+          // Remove from available list
           setAvailableRequests(prev => prev.filter(r => r.id !== data.id));
           
+          // Show aggressive notification
           setNotification({ 
             show: true, 
-            message: "تم تحويل طلب لك من الإدارة - ابدأ التوجه للزبون", 
+            message: "🚨 طلب جديد من الإدارة! ابدأ التوجه للزبون الآن", 
             type: "success" 
           });
           
@@ -451,8 +490,10 @@ export default function DriverDashboard() {
             setNotification(n => ({ ...n, show: false }));
           }, 5000);
           
-          // تحديث البيانات
+          // Force refetch
           refetch();
+          
+          console.log("✅ [CRITICAL] UI FORCED TO ACTIVE ORDER STATE");
         } else {
           // إذا كان لديه طلب نشط، أضف الطلب الجديد للقائمة
           setAvailableRequests(prev => {
@@ -469,7 +510,8 @@ export default function DriverDashboard() {
       };
       
       socket.on("order_assigned", handleOrderAssigned);
-      socket.on("ORDER_UPDATED", handleOrderAssigned); // للتوافق
+      socket.on("ORDER_UPDATED", handleOrderAssigned);
+      socket.on("NEW_ORDER_ASSIGNED", handleOrderAssigned); // New explicit event
       
       // Handle order deletion by admin
       socket.on("order_deleted_by_admin", (data: any) => {
@@ -487,6 +529,28 @@ export default function DriverDashboard() {
           }, 5000);
         }
         setAvailableRequests(prev => prev.filter(r => r.id !== data.requestId));
+      });
+      
+      // CRITICAL: Handle Admin Force Complete
+      socket.on("ADMIN_FORCE_COMPLETE", (data: any) => {
+        console.log("🚨 [ADMIN] Force completing order:", data);
+        if (activeOrder && activeOrder.id === data.requestId) {
+          // FORCE CLEAR activeOrder
+          setActiveOrder(null);
+          setOrderStage("heading_to_pickup");
+          setActiveTab("map");
+          setNotification({ 
+            show: true, 
+            message: "تم إتمام الطلب من قبل الإدارة - تم خصم العمولة", 
+            type: "success" 
+          });
+          setTimeout(() => {
+            setNotification(n => ({ ...n, show: false }));
+          }, 5000);
+          
+          // Force refetch to update wallet
+          refetch();
+        }
       });
 
       socket.on("new_message", (msg: any) => {
@@ -515,7 +579,9 @@ export default function DriverDashboard() {
         socket.off("new_request_available"); 
         socket.off("order_assigned");
         socket.off("ORDER_UPDATED");
+        socket.off("NEW_ORDER_ASSIGNED");
         socket.off("order_deleted_by_admin");
+        socket.off("ADMIN_FORCE_COMPLETE");
         socket.off("new_message");
         socket.off("customer_info");
       };

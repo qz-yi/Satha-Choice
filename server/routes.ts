@@ -887,16 +887,19 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       io.to(`order_${requestId}`).emit("status_changed", payload);
       io.emit(`order_status_${requestId}`, payload);
 
-      // CRITICAL: إشعار السائق بالطلب الجديد مع كل التفاصيل
+      // CRITICAL: إشعار السائق بالطلب الجديد مع كل التفاصيل - FORCE UI TRANSITION
       if (driverId) {
-        console.log(`[Socket] Emitting to driver_${driverId}:`, fullOrderData);
+        console.log(`🚨 [CRITICAL] Emitting to driver_${driverId}:`, fullOrderData);
         
-        // أرسل البيانات الكاملة للطلب
+        // EMIT MULTIPLE EVENTS FOR REDUNDANCY AND FORCE UI UPDATE
         io.to(`driver_${driverId}`).emit("order_assigned", fullOrderData);
-        io.to(`driver_${driverId}`).emit("ORDER_UPDATED", fullOrderData); // للتوافق
+        io.to(`driver_${driverId}`).emit("ORDER_UPDATED", fullOrderData);
+        io.to(`driver_${driverId}`).emit("NEW_ORDER_ASSIGNED", fullOrderData); // NEW explicit event
         
         // إرسال معلومات الزبون للسائق
         io.to(`driver_${driverId}`).emit("customer_info", payload.customerInfo);
+        
+        console.log(`✅ [CRITICAL] Successfully emitted ALL assignment events to driver_${driverId}`);
       }
 
       // إزالة الطلب من قوائم السائقين الآخرين
@@ -968,6 +971,86 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     } catch (err: any) {
       console.error("Delete order error:", err);
       res.status(500).json({ message: "فشل في حذف الطلب" });
+    }
+  });
+
+  // CRITICAL: Admin Force Complete Order
+  app.post("/api/admin/requests/:requestId/force-complete", async (req, res) => {
+    try {
+      const requestId = parseInt(req.params.requestId);
+      console.log(`🚨 [ADMIN] Force completing request ${requestId}`);
+      
+      const request = await storage.getRequest(requestId);
+      if (!request) {
+        return res.status(404).json({ message: "الطلب غير موجود" });
+      }
+      
+      const driverId = request.driverId;
+      if (!driverId) {
+        return res.status(400).json({ message: "لا يوجد سائق مرتبط بهذا الطلب" });
+      }
+      
+      const driver = await storage.getDriver(driverId);
+      if (!driver) {
+        return res.status(404).json({ message: "السائق غير موجود" });
+      }
+      
+      // Get commission settings
+      const settingsData = await storage.getSettings();
+      const fee = parseFloat(settingsData.commissionAmount?.toString() || "0");
+      
+      // Update order status to completed
+      await storage.updateRequestStatus(requestId, "completed");
+      
+      // Deduct commission from driver
+      const currentBalance = parseFloat(driver.walletBalance || "0");
+      const newBalance = (currentBalance - fee).toFixed(2);
+      await storage.updateDriver(driverId, { walletBalance: newBalance.toString() });
+      
+      // Create transaction record
+      await storage.createTransaction({
+        driverId,
+        amount: (-fee).toString(),
+        type: "fee",
+        status: "completed",
+        referenceId: `ADMIN_COMPLETE_${requestId}`
+      });
+      
+      console.log(`✅ [ADMIN] Order ${requestId} force-completed. Driver ${driverId} balance: ${currentBalance} → ${newBalance}`);
+      
+      // FORCE CLEAR Driver's activeOrder via socket
+      io.to(`driver_${driverId}`).emit("ADMIN_FORCE_COMPLETE", { 
+        requestId,
+        newBalance,
+        message: `تم إتمام الطلب #${requestId} من قبل الإدارة`
+      });
+      
+      // Notify customer
+      io.to(`order_${requestId}`).emit("status_changed", { 
+        status: "completed", 
+        resetToBooking: true 
+      });
+      io.emit(`order_status_${requestId}`, { 
+        status: "completed", 
+        resetToBooking: true 
+      });
+      
+      // Notify all drivers to remove from lists
+      io.emit("request_removed", { id: requestId });
+      io.emit("update_order_status", { orderId: requestId, status: "completed" });
+      
+      // Update admin dashboard
+      io.emit("request_updated", { id: requestId, status: "completed" });
+      
+      res.json({ 
+        success: true, 
+        message: "تم إتمام الطلب بنجاح من قبل الإدارة",
+        newBalance,
+        fee
+      });
+    } catch (err: any) {
+      console.error("[Admin Force Complete Error]:", err);
+      res.status(500).json({ message: "فشل في إتمام الطلب: " + err.message });
     }
   });
 
