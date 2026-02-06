@@ -9,14 +9,15 @@ import {
   PlusCircle, CreditCard, Info, ShieldCheck, Receipt, DollarSign, ArrowDownCircle
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapContainer, TileLayer, useMap, Marker, Popup, Polyline } from "react-leaflet"; 
+import { MapContainer, TileLayer, useMap, Marker, Popup } from "react-leaflet"; 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { io } from "socket.io-client";
 import { useQuery } from "@tanstack/react-query";
 import { Driver } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient"; 
-import { useToast } from "@/hooks/use-toast"; 
+import { useToast } from "@/hooks/use-toast";
+import { RoutingPolyline } from "@/components/RoutingPolyline"; 
 
 const getOrangeArrowIcon = (rotation: number) => L.divIcon({
   html: `
@@ -277,7 +278,15 @@ export default function DriverDashboard() {
         // الانضمام لغرفة الدردشة الخاصة بالطلب
         socket.emit("join_order", req.id);
         
+        // إزالة الطلب من القائمة المتاحة فوراً
+        setAvailableRequests(prev => prev.filter(r => r.id !== req.id));
+        
         setNotification({ show: true, message: "تم قبول الطلب بنجاح", type: "success" });
+        
+        // إخفاء التنبيه بعد 3 ثواني
+        setTimeout(() => {
+          setNotification(n => ({ ...n, show: false }));
+        }, 3000);
       } else {
         const data = await res.json();
         toast({ 
@@ -352,8 +361,11 @@ export default function DriverDashboard() {
       const response = await fetch('/api/requests');
       if (response.ok) {
         const allRequests = await response.json();
+        // تصفية الطلبات: فقط pending وفي نفس المدينة وليس مكتملاً
         const myCityRequests = allRequests.filter((req: any) => 
-          req.city?.trim() === driverInfo?.city?.trim() && req.status === "pending"
+          req.city?.trim() === driverInfo?.city?.trim() && 
+          (req.status === "pending" || req.status === "confirmed") &&
+          req.status !== "completed"
         );
         setAvailableRequests(myCityRequests);
       }
@@ -362,7 +374,7 @@ export default function DriverDashboard() {
       setNotification({ show: true, message: "فشل التحديث", type: "error" });
     } finally {
       setIsRefreshing(false);
-      setTimeout(() => setNotification(n => ({ ...n, show: false })), 2000);
+      setTimeout(() => setNotification(n => ({ ...n, show: false })), 3000);
     }
   };
 
@@ -385,7 +397,7 @@ export default function DriverDashboard() {
 
       // 3. حذف الطلب إذا تغيرت حالته (حماية إضافية)
       socket.on("update_order_status", (data: any) => {
-         if (data.status !== 'pending') {
+         if (data.status === 'completed' || data.status === 'accepted' || data.status === 'confirmed') {
             setAvailableRequests(prev => prev.filter(r => r.id !== data.orderId));
          }
       });
@@ -402,9 +414,21 @@ export default function DriverDashboard() {
         }
       });
 
-      socket.on("receive_message", (msg: any) => {
-        setMessages(prev => [...prev, { ...msg, id: Date.now() }]);
-        if (!isChatOpen) setUnreadCount(prev => prev + 1);
+      socket.on("new_message", (msg: any) => {
+        if (activeOrder && Number(msg.orderId) === Number(activeOrder.id)) {
+          setMessages(prev => {
+            const exists = prev.find(m => m.id === msg.id);
+            if (exists) return prev;
+            return [...prev, { 
+              id: msg.id, 
+              text: msg.content || msg.message, 
+              sender: msg.senderType === 'driver' ? 'driver' : 'customer',
+              senderName: msg.senderName,
+              timestamp: msg.createdAt
+            }];
+          });
+          if (!isChatOpen) setUnreadCount(prev => prev + 1);
+        }
       });
       
       // استقبال معلومات الزبون عند القبول
@@ -415,7 +439,7 @@ export default function DriverDashboard() {
       return () => { 
         socket.off("new_request_available"); 
         socket.off("order_assigned");
-        socket.off("receive_message");
+        socket.off("new_message");
         socket.off("customer_info");
       };
     }
@@ -496,14 +520,14 @@ export default function DriverDashboard() {
                     <Popup><div className="text-right font-black font-sans">أنت هنا كابتن {driverInfo.name} <br/><span className="text-orange-500 text-[10px]">جاري تتبع موقعك المباشر</span></div></Popup>
                   </Marker>
                 )}
-                {/* خط الملاحة بين السائق والزبون عند وجود طلب نشط */}
+                {/* خط الملاحة بين السائق والزبون عند وجود طلب نشط - باستخدام الطرق الفعلية */}
                 {activeOrder && currentCoords && (
-                  <Polyline 
-                    positions={[currentCoords, [activeOrder.pickupLat, activeOrder.pickupLng]]} 
+                  <RoutingPolyline 
+                    start={currentCoords}
+                    end={[activeOrder.pickupLat, activeOrder.pickupLng]} 
                     color="#f97316" 
                     weight={4} 
                     opacity={0.7}
-                    dashArray="10, 10"
                   />
                 )}
                 {activeOrder && (
@@ -794,12 +818,36 @@ export default function DriverDashboard() {
                 ))}
               </div>
               <div className="p-4 border-t flex gap-2">
-                <input type="text" value={chatMessage} onChange={(e) => setChatMessage(e.target.value)} placeholder="اكتب رسالة..." className="flex-1 bg-gray-100 rounded-xl px-4 text-right font-bold focus:outline-none"/>
+                <input 
+                  type="text" 
+                  value={chatMessage} 
+                  onChange={(e) => setChatMessage(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && chatMessage.trim() && activeOrder) {
+                      const payload = {
+                        orderId: activeOrder.id,
+                        message: chatMessage,
+                        senderId: driverInfo?.id,
+                        senderType: 'driver',
+                        senderName: driverInfo?.name || 'السائق'
+                      };
+                      socket.emit("send_message", payload);
+                      setChatMessage("");
+                    }
+                  }}
+                  placeholder="اكتب رسالة..." 
+                  className="flex-1 bg-gray-100 rounded-xl px-4 text-right font-bold focus:outline-none"
+                />
                 <Button onClick={() => {
-                  if(!chatMessage.trim()) return;
-                  const newMsg = { text: chatMessage, sender: 'driver', id: Date.now() };
-                  socket.emit("send_message", { ...newMsg, orderId: activeOrder.id });
-                  setMessages([...messages, newMsg]);
+                  if(!chatMessage.trim() || !activeOrder) return;
+                  const payload = {
+                    orderId: activeOrder.id,
+                    message: chatMessage,
+                    senderId: driverInfo?.id,
+                    senderType: 'driver',
+                    senderName: driverInfo?.name || 'السائق'
+                  };
+                  socket.emit("send_message", payload);
                   setChatMessage("");
                 }} className="bg-orange-500 rounded-xl"><Send className="w-5 h-5 rotate-180"/></Button>
               </div>

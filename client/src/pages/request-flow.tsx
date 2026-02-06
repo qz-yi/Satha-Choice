@@ -13,12 +13,13 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { MapContainer, TileLayer, useMapEvents, Marker, useMap, Popup, Polyline } from "react-leaflet";
+import { MapContainer, TileLayer, useMapEvents, Marker, useMap, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { io } from "socket.io-client";
 import { useLocation } from "wouter";
-import { useToast } from "@/hooks/use-toast"; 
+import { useToast } from "@/hooks/use-toast";
+import { RoutingPolyline } from "@/components/RoutingPolyline"; 
 
 // إعداد السوكيت مع خيارات إعادة الاتصال لضمان الثبات
 const socket = io(window.location.origin, {
@@ -259,33 +260,28 @@ export default function RequestFlow() {
     const handleNewMessage = (msg: any) => {
       if (Number(msg.orderId) === Number(activeOrderId)) {
         setMessages(prev => {
-          const exists = prev.find(m => m.id === msg.id || (m.content === msg.content && Math.abs(new Date(m.timestamp).getTime() - new Date(msg.timestamp).getTime()) < 1000));
+          const exists = prev.find(m => m.id === msg.id);
           if (exists) return prev;
-          return [...prev, msg];
+          return [...prev, {
+            id: msg.id,
+            orderId: msg.orderId,
+            content: msg.content || msg.message,
+            senderId: msg.senderId,
+            senderType: msg.senderType,
+            senderName: msg.senderName,
+            createdAt: msg.createdAt,
+            timestamp: msg.createdAt
+          }];
         });
         if (!isChatOpen) setUnreadCount(prev => prev + 1);
         setTimeout(scrollChatToBottom, 100);
       }
     };
 
-      socket.on("new_message", handleNewMessage);
-    
-    // استقبال رسائل السائق المباشرة
-    socket.on("receive_message", (msg: any) => {
-      if (Number(msg.orderId) === Number(activeOrderId)) {
-        setMessages(prev => {
-          const exists = prev.find(m => m.id === msg.id);
-          if (exists) return prev;
-          return [...prev, msg];
-        });
-        if (!isChatOpen) setUnreadCount(prev => prev + 1);
-        setTimeout(scrollChatToBottom, 100);
-      }
-    });
+    socket.on("new_message", handleNewMessage);
     
     return () => { 
       socket.off("new_message", handleNewMessage);
-      socket.off("receive_message");
     };
   }, [isChatOpen, activeOrderId]);
 
@@ -622,14 +618,14 @@ export default function RequestFlow() {
                 <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="&copy; Google Maps" detectRetina={true} tileSize={256}/>
                 {driverLocation && <Marker position={driverLocation} icon={getOrangeArrowIcon(driverHeading)} />}
                 <Marker position={[formData.pickupLat, formData.pickupLng]} />
-                {/* خط الملاحة بين السائق والزبون */}
+                {/* خط الملاحة بين السائق والزبون باستخدام الطرق الفعلية */}
                 {driverLocation && (
-                  <Polyline 
-                    positions={[driverLocation, [formData.pickupLat, formData.pickupLng]]} 
+                  <RoutingPolyline 
+                    start={driverLocation}
+                    end={[formData.pickupLat, formData.pickupLng]} 
                     color="#f97316" 
                     weight={4} 
                     opacity={0.7}
-                    dashArray="10, 10"
                   />
                 )}
                 <FlyToMarker center={driverLocation || [formData.pickupLat, formData.pickupLng]} shouldFly={!!driverLocation} />

@@ -642,6 +642,10 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       // إشعار الزبون بالاستكمال وإعادة التوجيه لصفحة Booking
       io.to(`order_${requestId}`).emit("status_changed", { status: "completed", resetToBooking: true });
       io.emit(`order_status_${requestId}`, { status: "completed", resetToBooking: true });
+      
+      // إشعار جميع السائقين لإزالة هذا الطلب من قوائمهم
+      io.emit("request_removed", { id: requestId });
+      io.emit("update_order_status", { orderId: requestId, status: "completed" });
 
       // إشعار المدير باكتمال الطلب
       io.emit("request_updated", { id: requestId, status: "completed" });
