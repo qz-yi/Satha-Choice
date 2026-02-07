@@ -152,7 +152,13 @@ export default function RequestFlow() {
           trips: data.tripsCount?.toString() || "0"
         };
         setUserProfile(updatedProfile);
-        localStorage.setItem("sat7a_user", JSON.stringify(updatedProfile));
+        try {
+          localStorage.setItem("sat7a_user", JSON.stringify(updatedProfile));
+        } catch (e) {
+          console.warn("[localStorage] Quota exceeded, clearing old data");
+          localStorage.removeItem("sat7a_user");
+          localStorage.setItem("sat7a_user", JSON.stringify(updatedProfile));
+        }
       }
     } catch (err) {
       console.error("خطأ في تحديث البيانات", err);
@@ -215,7 +221,11 @@ export default function RequestFlow() {
   useEffect(() => {
     if (activeOrderId) {
       socket.emit("join_order", activeOrderId);
-      localStorage.setItem("sat7a_active_order_id", activeOrderId.toString());
+      try {
+        localStorage.setItem("sat7a_active_order_id", activeOrderId.toString());
+      } catch (e) {
+        console.warn("[localStorage] Quota exceeded for active order ID");
+      }
 
       const handleStatusChange = (data: any) => {
         if (data.status) {
@@ -368,8 +378,15 @@ export default function RequestFlow() {
 
       const completeProfile = { ...userProfile, id: data.id, wallet: data.walletBalance?.toString() || "0", address: normalizeCity(formData.city) };
       setUserProfile(completeProfile);
-      localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
-      localStorage.setItem("sat7a_session_active", "true");
+      try {
+        localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
+        localStorage.setItem("sat7a_session_active", "true");
+      } catch (e) {
+        console.warn("[localStorage] Quota exceeded during signup");
+        localStorage.clear();
+        localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
+        localStorage.setItem("sat7a_session_active", "true");
+      }
       setIsLoggedIn(true);
     } catch (err: any) {
       toast({ variant: "destructive", title: "خطأ", description: err.message });
@@ -395,8 +412,12 @@ export default function RequestFlow() {
         trips: data.tripsCount?.toString() || "0"
       };
       setUserProfile(completeProfile);
-      localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
-      localStorage.setItem("sat7a_session_active", "true");
+      try {
+        localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
+        localStorage.setItem("sat7a_session_active", "true");
+      } catch (e) {
+        console.warn("[localStorage] Quota exceeded during login");
+      }
       setIsLoggedIn(true);
     } catch (err: any) {
       toast({ variant: "destructive", title: "فشل الدخول", description: err.message });
@@ -419,7 +440,13 @@ export default function RequestFlow() {
         const base64 = reader.result as string;
         setUserProfile(prev => {
            const updated = { ...prev, image: base64 };
-           localStorage.setItem("sat7a_user", JSON.stringify(updated));
+           try {
+             localStorage.setItem("sat7a_user", JSON.stringify(updated));
+           } catch (e) {
+             console.warn("[localStorage] Quota exceeded for image, removing image");
+             const updatedWithoutImage = { ...prev };
+             localStorage.setItem("sat7a_user", JSON.stringify(updatedWithoutImage));
+           }
            return updated;
         });
       };

@@ -41,6 +41,13 @@ const socket = io({
 // Debug socket connection
 socket.on("connect", () => {
   console.log("✅ [Socket] Connected with ID:", socket.id);
+  
+  // On reconnection, rejoin rooms automatically
+  const driverId = localStorage.getItem("currentDriverId");
+  if (driverId) {
+    socket.emit("join_driver_room", parseInt(driverId));
+    console.log(`[Socket Reconnect] Rejoined driver room: ${driverId}`);
+  }
 });
 
 socket.on("disconnect", (reason) => {
@@ -165,6 +172,40 @@ export default function DriverDashboard() {
     console.log("الوضع الحالي للطلب:", orderStage);
   }, [orderStage]);
   
+  // CRITICAL: State Recovery on App Mount/Reload
+  useEffect(() => {
+    if (driverInfo?.activeOrder && !activeOrder) {
+      console.log("🔄 [STATE RECOVERY] Active order found in DB, restoring state:", driverInfo.activeOrder);
+      
+      const recoveredOrder = driverInfo.activeOrder;
+      setActiveOrder(recoveredOrder);
+      
+      // Determine stage based on order status
+      if (recoveredOrder.status === "accepted") {
+        setOrderStage("heading_to_pickup");
+        setActiveTab("map");
+      } else if (recoveredOrder.status === "arrived") {
+        setOrderStage("waiting_for_customer");
+        setActiveTab("map");
+      } else if (recoveredOrder.status === "picked_up" || recoveredOrder.status === "in_progress") {
+        setOrderStage("heading_to_destination");
+        setActiveTab("map");
+      }
+      
+      // Re-join order room for socket updates
+      if (socket.connected && recoveredOrder.id) {
+        socket.emit("join_order", recoveredOrder.id);
+        console.log(`🔄 [STATE RECOVERY] Rejoined order room: ${recoveredOrder.id}`);
+      }
+      
+      toast({
+        title: "✅ تم استرجاع الطلب",
+        description: "تم استعادة طلبك النشط بنجاح",
+        className: "bg-green-600 text-white font-black rounded-[24px]"
+      });
+    }
+  }, [driverInfo?.activeOrder, activeOrder]);
+  
   // CRITICAL FIX: Driver must join their private room to receive admin assignments
   useEffect(() => {
     if (driverInfo?.id) {
@@ -183,6 +224,12 @@ export default function DriverDashboard() {
           cityRoom: `city_${driverInfo.city}`,
           connected: socket.connected
         });
+        
+        // CRITICAL: If there's an active order, rejoin its room immediately
+        if (activeOrder?.id) {
+          socket.emit("join_order", activeOrder.id);
+          console.log(`[Socket] Rejoined order room: ${activeOrder.id}`);
+        }
       }, 500);
       
       return () => clearTimeout(joinTimer);
