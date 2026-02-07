@@ -232,35 +232,60 @@ export default function RequestFlow() {
     try {
       console.log("🔄 [CUSTOMER RECOVERY] Fetching active order from API for:", customerPhone);
       
-      const response = await fetch(`/api/requests?customerPhone=${customerPhone}&status=active`);
+      // Use correct endpoint: /api/users/:phone/requests
+      const response = await fetch(`/api/users/${customerPhone}/requests`);
       
       if (!response.ok) {
-        console.log("🔄 [CUSTOMER RECOVERY] No active orders found");
+        console.log("🔄 [CUSTOMER RECOVERY] API request failed");
         return;
       }
       
       const orders = await response.json();
+      console.log("🔄 [CUSTOMER RECOVERY] Fetched orders:", orders);
+      
+      // STRICT FILTERING: Only restore VALID, NON-COMPLETED orders
+      // Exclude: 'completed', 'delivered', 'cancelled'
       const activeOrder = orders.find((order: any) => 
-        ["accepted", "arrived", "picked_up", "in_progress"].includes(order.status)
+        ["pending", "accepted", "arrived", "picked_up", "in_progress"].includes(order.status)
       );
       
       if (activeOrder) {
         console.log("🔄 [CUSTOMER RECOVERY] Active order found, restoring:", activeOrder);
         
+        // CRITICAL: Verify order is truly active before restoration
+        if (!["pending", "accepted", "arrived", "picked_up", "in_progress"].includes(activeOrder.status)) {
+          console.log("🚫 [CUSTOMER RECOVERY] Order status invalid, aborting:", activeOrder.status);
+          localStorage.removeItem("sat7a_active_order_id");
+          return;
+        }
+        
         setActiveOrderId(activeOrder.id);
         setRequestStatus(activeOrder.status);
-        setViewState("tracking");
+        
+        // CRITICAL: Only transition to tracking if driver is assigned (not just pending)
+        if (activeOrder.status === "pending") {
+          setViewState("success"); // Show "Searching for driver" state
+          console.log("🔄 [CUSTOMER RECOVERY] Order is pending - showing search state");
+        } else {
+          setViewState("tracking"); // Show tracking state with driver
+          console.log("🔄 [CUSTOMER RECOVERY] Order active - showing tracking state");
+        }
         
         // Restore driver info if driver is assigned
-        if (activeOrder.driverId && activeOrder.driverName) {
-          setDriverInfo({
-            id: activeOrder.driverId,
-            name: activeOrder.driverName,
-            phone: activeOrder.driverPhone || "07XXXXXXXXX",
-            avatarUrl: activeOrder.driverAvatar || "",
-            vehicleType: activeOrder.vehicleType || "سطحة",
-            plateNumber: activeOrder.plateNumber || ""
-          });
+        if (activeOrder.driverId) {
+          // Fetch driver details from the order or make separate call if needed
+          const driverResponse = await fetch(`/api/drivers/${activeOrder.driverId}`);
+          if (driverResponse.ok) {
+            const driverData = await driverResponse.json();
+            setDriverInfo({
+              id: driverData.id,
+              name: driverData.name,
+              phone: driverData.phone,
+              avatarUrl: driverData.avatarUrl || "",
+              vehicleType: driverData.vehicleType || "سطحة",
+              plateNumber: driverData.plateNumber || ""
+            });
+          }
         }
         
         // Restore form data for map display
@@ -283,7 +308,7 @@ export default function RequestFlow() {
           className: "bg-green-600 text-white font-black rounded-[24px]"
         });
       } else {
-        console.log("🔄 [CUSTOMER RECOVERY] No active orders in valid status");
+        console.log("🔄 [CUSTOMER RECOVERY] No active orders found");
         // Clear any stale localStorage
         localStorage.removeItem("sat7a_active_order_id");
       }
@@ -331,26 +356,39 @@ export default function RequestFlow() {
           }
 
           if (data.status === "completed") {
-            toast({ title: "وصلت بالسلامة", description: "تم إكمال الطلب بنجاح" });
+            console.log("🚀 [ORDER COMPLETE] Customer side - Order completed, cleaning up");
             
-            // CRITICAL: Leave socket room and cleanup
-            if (activeOrderId) {
-              socket.emit("leave_order", activeOrderId);
-              console.log("🧹 [CLEANUP] Order completed - left room:", activeOrderId);
-            }
-            localStorage.removeItem("sat7a_active_order_id");
-            
-            // CRITICAL: Close ALL modals before resetting
-            setShowCancelModal(false);
-            setIsChatOpen(false);
-            
-            // إعادة التوجيه الفوري إلى صفحة Booking عند الاستكمال
-            setViewState("booking");
+            // IMMEDIATE STATE CLEANUP - Prevent any restoration attempts
+            console.log("🧹 [CLEANUP] Step 1: Clearing all state IMMEDIATELY");
             setActiveOrderId(null);
             setDriverInfo(null);
             setRequestStatus("pending");
             setMessages([]);
             setDriverLocation(null);
+            
+            // IMMEDIATE localStorage cleanup
+            console.log("🧹 [CLEANUP] Step 2: Removing from localStorage");
+            localStorage.removeItem("sat7a_active_order_id");
+            
+            // IMMEDIATE socket room cleanup
+            if (activeOrderId) {
+              console.log("🧹 [CLEANUP] Step 3: Leaving socket room");
+              socket.emit("leave_order", activeOrderId);
+            }
+            
+            // CRITICAL: Close ALL modals
+            console.log("🧹 [CLEANUP] Step 4: Closing modals");
+            setShowCancelModal(false);
+            setIsChatOpen(false);
+            
+            // IMMEDIATE view reset
+            console.log("🧹 [CLEANUP] Step 5: Resetting view to booking");
+            setViewState("booking");
+            
+            // Show completion toast AFTER cleanup
+            toast({ title: "وصلت بالسلامة", description: "تم إكمال الطلب بنجاح" });
+            
+            console.log("✅ [ORDER COMPLETE] Customer cleanup complete");
           }
         }
       };
@@ -367,24 +405,44 @@ export default function RequestFlow() {
 
       // CRITICAL FIX: Handle order deletion by admin
       socket.on("order_deleted_by_admin", (data: any) => {
-        console.log("[Customer] Order deleted by admin:", data);
-        localStorage.removeItem("sat7a_active_order_id");
-
-        // CRITICAL: Close ALL modals first
-        setShowCancelModal(false);
-        setIsChatOpen(false);
-
-        setViewState("booking");
+        console.log("🚀 [ADMIN DELETE] Order deleted by admin, immediate cleanup");
+        
+        // IMMEDIATE STATE CLEANUP
+        console.log("🧹 [CLEANUP] Step 1: Clearing all state IMMEDIATELY");
+        const orderIdToLeave = activeOrderId; // Capture before clearing
         setActiveOrderId(null);
         setDriverInfo(null);
         setRequestStatus("pending");
         setMessages([]);
         setDriverLocation(null);
+        
+        // IMMEDIATE localStorage cleanup
+        console.log("🧹 [CLEANUP] Step 2: Removing from localStorage");
+        localStorage.removeItem("sat7a_active_order_id");
+        
+        // IMMEDIATE socket room cleanup
+        if (orderIdToLeave) {
+          console.log("🧹 [CLEANUP] Step 3: Leaving socket room");
+          socket.emit("leave_order", orderIdToLeave);
+        }
+        
+        // CRITICAL: Close ALL modals
+        console.log("🧹 [CLEANUP] Step 4: Closing modals");
+        setShowCancelModal(false);
+        setIsChatOpen(false);
+        
+        // IMMEDIATE view reset
+        console.log("🧹 [CLEANUP] Step 5: Resetting view to booking");
+        setViewState("booking");
+        
+        // Show notification AFTER cleanup
         toast({ 
           variant: "destructive",
           title: "تم إلغاء الطلب", 
           description: data.message || "تم إلغاء طلبك من قبل الإدارة" 
         });
+        
+        console.log("✅ [ADMIN DELETE] Customer cleanup complete");
       });
 
       return () => {

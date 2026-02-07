@@ -192,21 +192,29 @@ export default function DriverDashboard() {
     if (driverInfo?.activeOrder && !activeOrder) {
       const recoveredOrder = driverInfo.activeOrder;
       
-      // STRICT CHECK: Only restore if order is in active status (NOT completed/delivered)
-      const isActiveStatus = ["accepted", "arrived", "picked_up", "in_progress"].includes(recoveredOrder.status);
+      // GUARDED CONDITION: STRICTLY filter valid active statuses ONLY
+      // Exclude: 'pending', 'completed', 'delivered', 'cancelled'
+      const VALID_ACTIVE_STATUSES = ["accepted", "arrived", "picked_up", "in_progress"];
+      const isActiveStatus = VALID_ACTIVE_STATUSES.includes(recoveredOrder.status);
       
       if (!isActiveStatus) {
-        console.log("🚫 [STATE RECOVERY] Order is completed/delivered, skipping recovery:", {
+        console.log("🚫 [STATE RECOVERY] Order is NOT in active status, skipping recovery:", {
           orderId: recoveredOrder.id,
-          status: recoveredOrder.status
+          status: recoveredOrder.status,
+          validStatuses: VALID_ACTIVE_STATUSES
         });
         
-        // Clear any stale localStorage data
+        // IMMEDIATE CLEANUP: Clear any stale data
         localStorage.removeItem(`driver_active_order_${driverInfo.id}`);
-        return; // Do NOT restore completed orders
+        
+        // Do NOT show restoration notification
+        return; // ABORT restoration completely
       }
       
-      console.log("🔄 [STATE RECOVERY] Active order found in DB, restoring state:", recoveredOrder);
+      console.log("🔄 [STATE RECOVERY] VALID active order found, restoring state:", {
+        orderId: recoveredOrder.id,
+        status: recoveredOrder.status
+      });
       
       setActiveOrder(recoveredOrder);
       
@@ -343,32 +351,44 @@ export default function DriverDashboard() {
       const dId = Number(driverInfo.id);
       const oId = Number(orderId);
 
+      console.log("🚀 [ORDER COMPLETE] Starting completion process for order:", oId);
+
+      // IMMEDIATE STATE CLEANUP - BEFORE API call
+      // This prevents any race conditions with recovery logic
+      console.log("🧹 [CLEANUP] Step 1: Clearing local state IMMEDIATELY");
+      setActiveOrder(null);
+      setOrderStage("heading_to_pickup");
+      setActiveTab("map");
+      
+      // IMMEDIATE localStorage cleanup
+      console.log("🧹 [CLEANUP] Step 2: Removing from localStorage");
+      localStorage.removeItem(`driver_active_order_${dId}`);
+      
+      // IMMEDIATE socket room cleanup
+      console.log("🧹 [CLEANUP] Step 3: Leaving socket room");
+      socket.emit("leave_order", oId);
+
+      // NOW make the API call
+      console.log("📡 [API CALL] Calling completion endpoint");
       const response = await apiRequest("POST", `/api/drivers/${dId}/complete/${oId}`);
 
-      // CRITICAL: Leave socket room and cleanup state
-      socket.emit("leave_order", oId);
+      // Emit status update after successful API call
       socket.emit("update_order_status", { 
         orderId: oId, 
         status: "completed",
         driverId: dId
       });
       
-      // Clear localStorage to prevent recovery loop
-      localStorage.removeItem(`driver_active_order_${dId}`);
-      console.log("🧹 [CLEANUP] Left order room and cleared localStorage for order:", oId);
+      console.log("✅ [ORDER COMPLETE] Completion successful for order:", oId);
 
-      // إظهار التنبيه
+      // Show success notification
       setNotification({ show: true, message: "تم إكمال الطلب بنجاح", type: "success" });
 
       setTimeout(() => {
         setNotification(n => ({ ...n, show: false }));
       }, 3500);
 
-      // تنظيف حالة الطلب فوراً لإخفاء واجهة الدفع
-      setActiveOrder(null);
-      setOrderStage("heading_to_pickup");
-      setActiveTab("map");
-
+      // Invalidate queries to refresh driver data
       await queryClient.invalidateQueries({ 
         queryKey: [currentId ? `/api/driver/me/${currentId}` : "/api/driver/me"] 
       });
