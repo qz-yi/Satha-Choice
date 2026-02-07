@@ -171,7 +171,7 @@ export default function RequestFlow() {
         .catch(err => console.error("Error fetching messages:", err));
     }
   }, [isChatOpen, activeOrderId]);
-  
+
   // جلب سجل الرحلات عند فتح القائمة
   useEffect(() => {
     if (isHistoryOpen && userProfile.phone) {
@@ -249,11 +249,11 @@ export default function RequestFlow() {
           if (data.status === "completed") {
             toast({ title: "وصلت بالسلامة", description: "تم إكمال الطلب بنجاح" });
             localStorage.removeItem("sat7a_active_order_id");
-            
+
             // CRITICAL: Close ALL modals before resetting
             setShowCancelModal(false);
             setIsChatOpen(false);
-            
+
             // إعادة التوجيه الفوري إلى صفحة Booking عند الاستكمال
             setViewState("booking");
             setActiveOrderId(null);
@@ -274,16 +274,16 @@ export default function RequestFlow() {
               if (data.heading !== undefined) setDriverHeading(data.heading);
           }
       });
-      
+
       // CRITICAL FIX: Handle order deletion by admin
       socket.on("order_deleted_by_admin", (data: any) => {
         console.log("[Customer] Order deleted by admin:", data);
         localStorage.removeItem("sat7a_active_order_id");
-        
+
         // CRITICAL: Close ALL modals first
         setShowCancelModal(false);
         setIsChatOpen(false);
-        
+
         setViewState("booking");
         setActiveOrderId(null);
         setDriverInfo(null);
@@ -329,7 +329,7 @@ export default function RequestFlow() {
     };
 
     socket.on("new_message", handleNewMessage);
-    
+
     return () => { 
       socket.off("new_message", handleNewMessage);
     };
@@ -435,7 +435,7 @@ export default function RequestFlow() {
         setShowCancelModal(false);
         return;
       }
-      
+
       // CRITICAL: Only allow cancellation if status is pending
       if (requestStatus !== "pending") {
         console.error("[Cancel] Cannot cancel - order status is:", requestStatus);
@@ -447,24 +447,24 @@ export default function RequestFlow() {
         });
         return;
       }
-      
+
       console.log(`[Cancel] Deleting order ${activeOrderId}, status: ${requestStatus}`);
-      
+
       const response = await fetch(`/api/requests/${activeOrderId}`, {
         method: "DELETE",
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || "فشل في إلغاء الطلب");
       }
-      
+
       console.log("[Cancel] Order deleted successfully");
-      
-      // CLOSE modal first, then clear state
+
+      // CLOSE modal only after success
       setShowCancelModal(false);
-      
-      // Clear local state
+
+      // Clear local state and return to booking
       localStorage.removeItem("sat7a_active_order_id");
       setViewState("booking");
       setActiveOrderId(null);
@@ -472,7 +472,7 @@ export default function RequestFlow() {
       setRequestStatus("pending");
       setMessages([]);
       setDriverLocation(null);
-      
+
       toast({
         title: "تم إلغاء الطلب بنجاح",
         description: "يمكنك إنشاء طلب جديد الآن",
@@ -822,8 +822,6 @@ export default function RequestFlow() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 console.log("[Cancel Button] Clicked - Opening modal");
-                                console.log("[Cancel Button] requestStatus:", requestStatus);
-                                console.log("[Cancel Button] activeOrderId:", activeOrderId);
                                 setShowCancelModal(true);
                               }}
                               style={{ 
@@ -868,6 +866,50 @@ export default function RequestFlow() {
                 </div>
             </div>
         </motion.div>
+
+        {/* Professional Cancel Confirmation Modal - INSIDE TRACKING VIEW */}
+        {showCancelModal && (
+          <div 
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6"
+            style={{ zIndex: 99999, pointerEvents: 'auto' }}
+          >
+            <div
+              className="bg-white rounded-[40px] shadow-2xl max-w-md w-full p-8 relative overflow-hidden"
+              style={{ pointerEvents: 'auto' }}
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-red-50 to-orange-50 opacity-50" />
+              <div className="relative z-10">
+                <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-200">
+                  <X className="w-10 h-10 text-white" />
+                </div>
+                <h3 className="text-2xl font-black text-center text-gray-900 mb-3">إلغاء الرحلة؟</h3>
+                <p className="text-center text-gray-600 font-bold text-sm leading-relaxed mb-8">
+                  هل أنت متأكد من إلغاء هذا الطلب؟ سيتم حذف الطلب نهائياً ولن يتم إشعار السائق.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCancelTrip();
+                    }}
+                    className="flex-1 h-14 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-[20px] font-black text-base shadow-lg shadow-red-200 transition-all active:scale-95"
+                  >
+                    موافق، ألغِ الرحلة
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowCancelModal(false);
+                    }}
+                    className="flex-1 h-14 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-[20px] font-black text-base transition-all active:scale-95"
+                  >
+                    لا، لا تلغِ
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 
@@ -1081,64 +1123,6 @@ export default function RequestFlow() {
             </motion.div>
           )}
       </AnimatePresence>
-      
-      {/* Professional Cancel Confirmation Modal - HIGHEST LAYER */}
-      {showCancelModal && (
-        <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6"
-          style={{ zIndex: 99999, pointerEvents: 'auto' }}
-        >
-          <div
-            className="bg-white rounded-[40px] shadow-2xl max-w-md w-full p-8 relative overflow-hidden"
-            style={{ pointerEvents: 'auto' }}
-          >
-            {/* Decorative gradient background */}
-            <div className="absolute inset-0 bg-gradient-to-br from-red-50 to-orange-50 opacity-50" />
-            
-            {/* Content */}
-            <div className="relative z-10">
-              {/* Icon */}
-              <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-200">
-                <X className="w-10 h-10 text-white" />
-              </div>
-              
-              {/* Title */}
-              <h3 className="text-2xl font-black text-center text-gray-900 mb-3">
-                إلغاء الرحلة؟
-              </h3>
-              
-              {/* Description */}
-              <p className="text-center text-gray-600 font-bold text-sm leading-relaxed mb-8">
-                هل أنت متأكد من إلغاء هذا الطلب؟ سيتم حذف الطلب نهائياً ولن يتم إشعار السائق.
-              </p>
-              
-              {/* Buttons */}
-              <div className="flex gap-3">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    console.log("[Modal] Confirm cancel clicked");
-                    handleCancelTrip();
-                  }}
-                  className="flex-1 h-14 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white rounded-[20px] font-black text-base shadow-lg shadow-red-200 transition-all active:scale-95"
-                >
-                  موافق، ألغِ الرحلة
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    console.log("[Modal] Cancel dismissed");
-                    setShowCancelModal(false);
-                  }}
-                  className="flex-1 h-14 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-[20px] font-black text-base transition-all active:scale-95"
-                >
-                  لا، لا تلغِ
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
