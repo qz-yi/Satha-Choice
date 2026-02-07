@@ -21,11 +21,21 @@ import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { RoutingPolyline } from "@/components/RoutingPolyline"; 
 
-// إعداد السوكيت مع خيارات إعادة الاتصال لضمان الثبات
-const socket = io(window.location.origin, {
-  reconnectionAttempts: 10,
-  reconnectionDelay: 2000,
-}); 
+// CRITICAL: Single socket instance - prevent spam
+let socket: any;
+if (typeof window !== 'undefined') {
+  // @ts-ignore
+  if (!window.__customerSocket) {
+    // @ts-ignore
+    window.__customerSocket = io(window.location.origin, {
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000,
+    });
+    console.log("✅ [Socket] Customer socket initialized");
+  }
+  // @ts-ignore
+  socket = window.__customerSocket;
+} 
 
 const getOrangeArrowIcon = (rotation: number) => L.divIcon({
   html: `
@@ -203,7 +213,6 @@ export default function RequestFlow() {
   useEffect(() => {
     const savedUser = localStorage.getItem("sat7a_user");
     const sessionActive = localStorage.getItem("sat7a_session_active");
-    const savedOrderId = localStorage.getItem("sat7a_active_order_id");
 
     if (savedUser && sessionActive === "true") { 
       const parsed = JSON.parse(savedUser);
@@ -211,12 +220,77 @@ export default function RequestFlow() {
       setIsLoggedIn(true); 
       if (parsed.phone && parsed.password) refreshUserData(parsed.phone, parsed.password);
 
-      if (savedOrderId) {
-        setActiveOrderId(Number(savedOrderId));
-        setViewState("tracking");
+      // CRITICAL: Fetch active order from API instead of localStorage
+      if (parsed.phone) {
+        fetchActiveOrderFromAPI(parsed.phone);
       }
     }
   }, []);
+  
+  // CRITICAL: Customer-side order recovery from API
+  const fetchActiveOrderFromAPI = async (customerPhone: string) => {
+    try {
+      console.log("🔄 [CUSTOMER RECOVERY] Fetching active order from API for:", customerPhone);
+      
+      const response = await fetch(`/api/requests?customerPhone=${customerPhone}&status=active`);
+      
+      if (!response.ok) {
+        console.log("🔄 [CUSTOMER RECOVERY] No active orders found");
+        return;
+      }
+      
+      const orders = await response.json();
+      const activeOrder = orders.find((order: any) => 
+        ["accepted", "arrived", "picked_up", "in_progress"].includes(order.status)
+      );
+      
+      if (activeOrder) {
+        console.log("🔄 [CUSTOMER RECOVERY] Active order found, restoring:", activeOrder);
+        
+        setActiveOrderId(activeOrder.id);
+        setRequestStatus(activeOrder.status);
+        setViewState("tracking");
+        
+        // Restore driver info if driver is assigned
+        if (activeOrder.driverId && activeOrder.driverName) {
+          setDriverInfo({
+            id: activeOrder.driverId,
+            name: activeOrder.driverName,
+            phone: activeOrder.driverPhone || "07XXXXXXXXX",
+            avatarUrl: activeOrder.driverAvatar || "",
+            vehicleType: activeOrder.vehicleType || "سطحة",
+            plateNumber: activeOrder.plateNumber || ""
+          });
+        }
+        
+        // Restore form data for map display
+        setFormData(prev => ({
+          ...prev,
+          pickupLat: activeOrder.pickupLat,
+          pickupLng: activeOrder.pickupLng,
+          destLat: activeOrder.destLat || activeOrder.dropoffLat,
+          destLng: activeOrder.destLng || activeOrder.dropoffLng,
+          location: activeOrder.pickupAddress || activeOrder.location,
+          destination: activeOrder.destination || activeOrder.destAddress
+        }));
+        
+        // Rejoin socket room
+        socket.emit("join_order", activeOrder.id);
+        
+        toast({
+          title: "✅ تم استرجاع الطلب",
+          description: "تم استعادة طلبك النشط بنجاح",
+          className: "bg-green-600 text-white font-black rounded-[24px]"
+        });
+      } else {
+        console.log("🔄 [CUSTOMER RECOVERY] No active orders in valid status");
+        // Clear any stale localStorage
+        localStorage.removeItem("sat7a_active_order_id");
+      }
+    } catch (error) {
+      console.error("❌ [CUSTOMER RECOVERY] Error fetching active order:", error);
+    }
+  };
 
   useEffect(() => {
     if (activeOrderId) {
@@ -258,12 +332,18 @@ export default function RequestFlow() {
 
           if (data.status === "completed") {
             toast({ title: "وصلت بالسلامة", description: "تم إكمال الطلب بنجاح" });
+            
+            // CRITICAL: Leave socket room and cleanup
+            if (activeOrderId) {
+              socket.emit("leave_order", activeOrderId);
+              console.log("🧹 [CLEANUP] Order completed - left room:", activeOrderId);
+            }
             localStorage.removeItem("sat7a_active_order_id");
-
+            
             // CRITICAL: Close ALL modals before resetting
             setShowCancelModal(false);
             setIsChatOpen(false);
-
+            
             // إعادة التوجيه الفوري إلى صفحة Booking عند الاستكمال
             setViewState("booking");
             setActiveOrderId(null);
@@ -487,10 +567,14 @@ export default function RequestFlow() {
       }
 
       console.log("[Cancel] Order deleted successfully");
-
+      
+      // CRITICAL: Leave socket room and cleanup
+      socket.emit("leave_order", activeOrderId);
+      console.log("🧹 [CLEANUP] Customer cancelled order - left room:", activeOrderId);
+      
       // CLOSE modal only after success
       setShowCancelModal(false);
-
+      
       // Clear local state and return to booking
       localStorage.removeItem("sat7a_active_order_id");
       setViewState("booking");

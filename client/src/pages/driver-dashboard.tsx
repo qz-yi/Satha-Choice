@@ -32,31 +32,46 @@ const getOrangeArrowIcon = (rotation: number) => L.divIcon({
   iconAnchor: [22.5, 22.5], 
 });
 
-const socket = io({
-  reconnection: true,
-  reconnectionDelay: 1000,
-  reconnectionAttempts: 10
-});
+// CRITICAL: Single socket instance - prevent spam
+let socket: any;
+if (typeof window !== 'undefined') {
+  // @ts-ignore
+  if (!window.__driverSocket) {
+    // @ts-ignore
+    window.__driverSocket = io({
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 10
+    });
+    
+    // Debug socket connection - only attach once
+    // @ts-ignore
+    window.__driverSocket.on("connect", () => {
+      // @ts-ignore
+      console.log("✅ [Socket] Driver connected with ID:", window.__driverSocket.id);
+      
+      // On reconnection, rejoin rooms automatically
+      const driverId = localStorage.getItem("currentDriverId");
+      if (driverId) {
+        // @ts-ignore
+        window.__driverSocket.emit("join_driver_room", parseInt(driverId));
+        console.log(`[Socket Reconnect] Rejoined driver room: ${driverId}`);
+      }
+    });
 
-// Debug socket connection
-socket.on("connect", () => {
-  console.log("✅ [Socket] Connected with ID:", socket.id);
-  
-  // On reconnection, rejoin rooms automatically
-  const driverId = localStorage.getItem("currentDriverId");
-  if (driverId) {
-    socket.emit("join_driver_room", parseInt(driverId));
-    console.log(`[Socket Reconnect] Rejoined driver room: ${driverId}`);
+    // @ts-ignore
+    window.__driverSocket.on("disconnect", (reason: string) => {
+      console.log("❌ [Socket] Driver disconnected:", reason);
+    });
+
+    // @ts-ignore
+    window.__driverSocket.on("connect_error", (error: any) => {
+      console.error("❌ [Socket] Connection error:", error);
+    });
   }
-});
-
-socket.on("disconnect", (reason) => {
-  console.log("❌ [Socket] Disconnected:", reason);
-});
-
-socket.on("connect_error", (error) => {
-  console.error("❌ [Socket] Connection error:", error);
-});
+  // @ts-ignore
+  socket = window.__driverSocket;
+}
 
 const MapViewHandler = ({ center, isFollowMode }: { center: [number, number], isFollowMode: boolean }) => {
   const map = useMap();
@@ -175,9 +190,24 @@ export default function DriverDashboard() {
   // CRITICAL: State Recovery on App Mount/Reload
   useEffect(() => {
     if (driverInfo?.activeOrder && !activeOrder) {
-      console.log("🔄 [STATE RECOVERY] Active order found in DB, restoring state:", driverInfo.activeOrder);
-      
       const recoveredOrder = driverInfo.activeOrder;
+      
+      // STRICT CHECK: Only restore if order is in active status (NOT completed/delivered)
+      const isActiveStatus = ["accepted", "arrived", "picked_up", "in_progress"].includes(recoveredOrder.status);
+      
+      if (!isActiveStatus) {
+        console.log("🚫 [STATE RECOVERY] Order is completed/delivered, skipping recovery:", {
+          orderId: recoveredOrder.id,
+          status: recoveredOrder.status
+        });
+        
+        // Clear any stale localStorage data
+        localStorage.removeItem(`driver_active_order_${driverInfo.id}`);
+        return; // Do NOT restore completed orders
+      }
+      
+      console.log("🔄 [STATE RECOVERY] Active order found in DB, restoring state:", recoveredOrder);
+      
       setActiveOrder(recoveredOrder);
       
       // Determine stage based on order status
@@ -315,11 +345,17 @@ export default function DriverDashboard() {
 
       const response = await apiRequest("POST", `/api/drivers/${dId}/complete/${oId}`);
 
+      // CRITICAL: Leave socket room and cleanup state
+      socket.emit("leave_order", oId);
       socket.emit("update_order_status", { 
         orderId: oId, 
         status: "completed",
         driverId: dId
       });
+      
+      // Clear localStorage to prevent recovery loop
+      localStorage.removeItem(`driver_active_order_${dId}`);
+      console.log("🧹 [CLEANUP] Left order room and cleared localStorage for order:", oId);
 
       // إظهار التنبيه
       setNotification({ show: true, message: "تم إكمال الطلب بنجاح", type: "success" });
@@ -591,6 +627,11 @@ export default function DriverDashboard() {
       socket.on("order_cancelled_by_customer", (data: any) => {
         console.log("[Driver] Order cancelled by customer:", data);
         if (activeOrder && activeOrder.id === data.requestId) {
+          // CRITICAL: Leave socket room and cleanup
+          socket.emit("leave_order", data.requestId);
+          localStorage.removeItem(`driver_active_order_${driverInfo?.id}`);
+          console.log("🧹 [CLEANUP] Customer cancelled - left room and cleared storage");
+          
           setActiveOrder(null);
           setOrderStage("heading_to_pickup");
           setNotification({ 
@@ -609,6 +650,11 @@ export default function DriverDashboard() {
       socket.on("ADMIN_FORCE_COMPLETE", (data: any) => {
         console.log("🚨 [ADMIN] Force completing order:", data);
         if (activeOrder && activeOrder.id === data.requestId) {
+          // CRITICAL: Leave socket room and cleanup
+          socket.emit("leave_order", data.requestId);
+          localStorage.removeItem(`driver_active_order_${driverInfo?.id}`);
+          console.log("🧹 [CLEANUP] Admin force complete - left room and cleared storage");
+          
           // FORCE CLEAR activeOrder
           setActiveOrder(null);
           setOrderStage("heading_to_pickup");
