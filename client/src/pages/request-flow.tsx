@@ -209,8 +209,20 @@ export default function RequestFlow() {
     }
   }, [isHistoryOpen, userProfile.phone, toast]);
 
+  // SINGLE-USE recovery flag to prevent continuous loops
+  const hasAttemptedRecovery = useRef(false);
+  
   // استعادة الجلسة والبحث عن طلبات نشطة عند التحميل
   useEffect(() => {
+    // CRITICAL: SINGLE-USE recovery check on mount ONLY
+    if (hasAttemptedRecovery.current) {
+      console.log("⏭️ [CUSTOMER RECOVERY] Already attempted, skipping");
+      return;
+    }
+    
+    console.log("🚀 [CUSTOMER RECOVERY] Starting SINGLE-USE recovery check");
+    hasAttemptedRecovery.current = true;
+    
     const savedUser = localStorage.getItem("sat7a_user");
     const sessionActive = localStorage.getItem("sat7a_session_active");
 
@@ -220,98 +232,140 @@ export default function RequestFlow() {
       setIsLoggedIn(true); 
       if (parsed.phone && parsed.password) refreshUserData(parsed.phone, parsed.password);
 
-      // CRITICAL: Fetch active order from API instead of localStorage
+      // CRITICAL: Fetch active order from API FIRST (before rendering)
       if (parsed.phone) {
+        console.log("📡 [CUSTOMER RECOVERY] Calling API to fetch active order");
         fetchActiveOrderFromAPI(parsed.phone);
+      } else {
+        console.log("⚠️ [CUSTOMER RECOVERY] No phone number, aborting recovery");
       }
+    } else {
+      console.log("⚠️ [CUSTOMER RECOVERY] No saved user or session, aborting recovery");
     }
-  }, []);
+  }, []); // Empty deps - runs ONCE on mount only
   
   // CRITICAL: Customer-side order recovery from API
   const fetchActiveOrderFromAPI = async (customerPhone: string) => {
     try {
-      console.log("🔄 [CUSTOMER RECOVERY] Fetching active order from API for:", customerPhone);
+      console.log("📡 [CUSTOMER RECOVERY] Attempting recovery for phone:", customerPhone);
+      console.log("📡 [CUSTOMER RECOVERY] Step 1: Fetching orders from API...");
       
       // Use correct endpoint: /api/users/:phone/requests
       const response = await fetch(`/api/users/${customerPhone}/requests`);
       
       if (!response.ok) {
-        console.log("🔄 [CUSTOMER RECOVERY] API request failed");
+        console.log("❌ [CUSTOMER RECOVERY] API request failed with status:", response.status);
+        console.log("🔄 [CUSTOMER RECOVERY] Recovery aborted: API error");
         return;
       }
       
       const orders = await response.json();
-      console.log("🔄 [CUSTOMER RECOVERY] Fetched orders:", orders);
+      console.log("✅ [CUSTOMER RECOVERY] Step 2: Fetched", orders.length, "orders from API");
+      console.log("📊 [CUSTOMER RECOVERY] Order statuses:", orders.map((o: any) => ({ id: o.id, status: o.status })));
       
-      // STRICT FILTERING: Only restore VALID, NON-COMPLETED orders
-      // Exclude: 'completed', 'delivered', 'cancelled'
-      const activeOrder = orders.find((order: any) => 
-        ["pending", "accepted", "arrived", "picked_up", "in_progress"].includes(order.status)
-      );
+      // MANDATORY FIX: STRICT FILTERING with explicit completed/delivered/cancelled check
+      const activeOrder = orders.find((order: any) => {
+        // CRITICAL: Exclude completed, delivered, cancelled
+        if (order.status === 'delivered' || order.status === 'completed' || order.status === 'cancelled') {
+          console.log("🚫 [CUSTOMER RECOVERY] Skipping order", order.id, "- Status:", order.status, "(completed/delivered/cancelled)");
+          return false;
+        }
+        
+        // ONLY restore these statuses
+        const validStatuses = ["pending", "accepted", "arrived", "picked_up", "in_progress"];
+        const isValid = validStatuses.includes(order.status);
+        
+        if (!isValid) {
+          console.log("🚫 [CUSTOMER RECOVERY] Skipping order", order.id, "- Status:", order.status, "(invalid)");
+        }
+        
+        return isValid;
+      });
       
-      if (activeOrder) {
-        console.log("🔄 [CUSTOMER RECOVERY] Active order found, restoring:", activeOrder);
-        
-        // CRITICAL: Verify order is truly active before restoration
-        if (!["pending", "accepted", "arrived", "picked_up", "in_progress"].includes(activeOrder.status)) {
-          console.log("🚫 [CUSTOMER RECOVERY] Order status invalid, aborting:", activeOrder.status);
-          localStorage.removeItem("sat7a_active_order_id");
-          return;
-        }
-        
-        setActiveOrderId(activeOrder.id);
-        setRequestStatus(activeOrder.status);
-        
-        // CRITICAL: Only transition to tracking if driver is assigned (not just pending)
-        if (activeOrder.status === "pending") {
-          setViewState("success"); // Show "Searching for driver" state
-          console.log("🔄 [CUSTOMER RECOVERY] Order is pending - showing search state");
-        } else {
-          setViewState("tracking"); // Show tracking state with driver
-          console.log("🔄 [CUSTOMER RECOVERY] Order active - showing tracking state");
-        }
-        
-        // Restore driver info if driver is assigned
-        if (activeOrder.driverId) {
-          // Fetch driver details from the order or make separate call if needed
-          const driverResponse = await fetch(`/api/drivers/${activeOrder.driverId}`);
-          if (driverResponse.ok) {
-            const driverData = await driverResponse.json();
-            setDriverInfo({
-              id: driverData.id,
-              name: driverData.name,
-              phone: driverData.phone,
-              avatarUrl: driverData.avatarUrl || "",
-              vehicleType: driverData.vehicleType || "سطحة",
-              plateNumber: driverData.plateNumber || ""
-            });
-          }
-        }
-        
-        // Restore form data for map display
-        setFormData(prev => ({
-          ...prev,
-          pickupLat: activeOrder.pickupLat,
-          pickupLng: activeOrder.pickupLng,
-          destLat: activeOrder.destLat || activeOrder.dropoffLat,
-          destLng: activeOrder.destLng || activeOrder.dropoffLng,
-          location: activeOrder.pickupAddress || activeOrder.location,
-          destination: activeOrder.destination || activeOrder.destAddress
-        }));
-        
-        // Rejoin socket room
-        socket.emit("join_order", activeOrder.id);
-        
-        toast({
-          title: "✅ تم استرجاع الطلب",
-          description: "تم استعادة طلبك النشط بنجاح",
-          className: "bg-green-600 text-white font-black rounded-[24px]"
-        });
-      } else {
+      if (!activeOrder) {
         console.log("🔄 [CUSTOMER RECOVERY] No active orders found");
-        // Clear any stale localStorage
+        console.log("🧹 [CUSTOMER RECOVERY] Cleaning up stale localStorage");
         localStorage.removeItem("sat7a_active_order_id");
+        console.log("✅ [CUSTOMER RECOVERY] Recovery complete: No active order");
+        return;
       }
+      
+      console.log("✅ [CUSTOMER RECOVERY] Active order found:", {
+        id: activeOrder.id,
+        status: activeOrder.status,
+        driverId: activeOrder.driverId
+      });
+      
+      // DOUBLE-CHECK: Verify status is truly active (redundant safety check)
+      if (activeOrder.status === 'delivered' || activeOrder.status === 'completed' || activeOrder.status === 'cancelled') {
+        console.log("🚫 [CUSTOMER RECOVERY] Recovery aborted: Order is", activeOrder.status);
+        console.log("🧹 [CUSTOMER RECOVERY] Clearing ALL LocalStorage for this order");
+        localStorage.removeItem("sat7a_active_order_id");
+        return; // ABORT restoration
+      }
+      
+      console.log("🔄 [CUSTOMER RECOVERY] Step 3: Starting state restoration");
+      
+      setActiveOrderId(activeOrder.id);
+      setRequestStatus(activeOrder.status);
+      console.log("✅ [CUSTOMER RECOVERY] Set order ID:", activeOrder.id, "Status:", activeOrder.status);
+      
+      // CRITICAL: Only transition to tracking if driver is assigned (not just pending)
+      if (activeOrder.status === "pending") {
+        setViewState("success"); // Show "Searching for driver" state
+        console.log("🔄 [CUSTOMER RECOVERY] Order is pending - showing 'Searching' state");
+      } else {
+        setViewState("tracking"); // Show tracking state with driver
+        console.log("🔄 [CUSTOMER RECOVERY] Order accepted/active - showing 'Tracking' state");
+      }
+      
+      // Restore driver info if driver is assigned
+      if (activeOrder.driverId) {
+        console.log("🔄 [CUSTOMER RECOVERY] Step 4: Fetching driver data for ID:", activeOrder.driverId);
+        const driverResponse = await fetch(`/api/drivers/${activeOrder.driverId}`);
+        if (driverResponse.ok) {
+          const driverData = await driverResponse.json();
+          setDriverInfo({
+            id: driverData.id,
+            name: driverData.name,
+            phone: driverData.phone,
+            avatarUrl: driverData.avatarUrl || "",
+            vehicleType: driverData.vehicleType || "سطحة",
+            plateNumber: driverData.plateNumber || ""
+          });
+          console.log("✅ [CUSTOMER RECOVERY] Driver info restored:", driverData.name);
+        } else {
+          console.log("⚠️ [CUSTOMER RECOVERY] Failed to fetch driver data");
+        }
+      } else {
+        console.log("ℹ️ [CUSTOMER RECOVERY] No driver assigned yet");
+      }
+      
+      // Restore form data for map display
+      console.log("🔄 [CUSTOMER RECOVERY] Step 5: Restoring map coordinates");
+      setFormData(prev => ({
+        ...prev,
+        pickupLat: activeOrder.pickupLat,
+        pickupLng: activeOrder.pickupLng,
+        destLat: activeOrder.destLat || activeOrder.dropoffLat,
+        destLng: activeOrder.destLng || activeOrder.dropoffLng,
+        location: activeOrder.pickupAddress || activeOrder.location,
+        destination: activeOrder.destination || activeOrder.destAddress
+      }));
+      console.log("✅ [CUSTOMER RECOVERY] Map data restored");
+      
+      // Rejoin socket room
+      console.log("🔄 [CUSTOMER RECOVERY] Step 6: Rejoining socket room");
+      socket.emit("join_order", activeOrder.id);
+      console.log("✅ [CUSTOMER RECOVERY] Socket room joined");
+      
+      console.log("🎉 [CUSTOMER RECOVERY] Recovery complete successfully!");
+      
+      toast({
+        title: "✅ تم استرجاع الطلب",
+        description: "تم استعادة طلبك النشط بنجاح",
+        className: "bg-green-600 text-white font-black rounded-[24px]"
+      });
     } catch (error) {
       console.error("❌ [CUSTOMER RECOVERY] Error fetching active order:", error);
     }
@@ -319,6 +373,7 @@ export default function RequestFlow() {
 
   useEffect(() => {
     if (activeOrderId) {
+      console.log("🔌 [SOCKET] Joining order room:", activeOrderId);
       socket.emit("join_order", activeOrderId);
       try {
         localStorage.setItem("sat7a_active_order_id", activeOrderId.toString());
@@ -326,8 +381,35 @@ export default function RequestFlow() {
         console.warn("[localStorage] Quota exceeded for active order ID");
       }
 
+      // CRITICAL: Listen for FINAL_CLEANUP event from server
+      socket.on("FINAL_CLEANUP", (data: any) => {
+        console.log("🚨 [FINAL_CLEANUP] Received FINAL_CLEANUP event:", data);
+        
+        if (data.orderId === activeOrderId || data.orderId === Number(activeOrderId)) {
+          console.log("🧹 [FINAL_CLEANUP] Forcing immediate state reset");
+          
+          // FORCE RESET ALL STATE
+          setActiveOrderId(null);
+          setDriverInfo(null);
+          setRequestStatus("pending");
+          setMessages([]);
+          setDriverLocation(null);
+          setShowCancelModal(false);
+          setIsChatOpen(false);
+          
+          // FORCE CLEANUP localStorage
+          localStorage.removeItem("sat7a_active_order_id");
+          
+          // FORCE VIEW RESET
+          setViewState("booking");
+          
+          console.log("✅ [FINAL_CLEANUP] State forcefully reset to idle");
+        }
+      });
+
       const handleStatusChange = (data: any) => {
         if (data.status) {
+          console.log("📡 [STATUS_CHANGE] Received status update:", data.status);
           setRequestStatus(data.status);
 
           if (data.status === "accepted" || data.driverInfo || data.status === "arrived" || data.status === "picked_up") {
@@ -366,9 +448,10 @@ export default function RequestFlow() {
             setMessages([]);
             setDriverLocation(null);
             
-            // IMMEDIATE localStorage cleanup
-            console.log("🧹 [CLEANUP] Step 2: Removing from localStorage");
+            // IMMEDIATE localStorage cleanup - BOTH keys
+            console.log("🧹 [CLEANUP] Step 2: Removing ALL localStorage keys");
             localStorage.removeItem("sat7a_active_order_id");
+            localStorage.removeItem(`driver_active_order_${data.driverId}`); // Driver-side key
             
             // IMMEDIATE socket room cleanup
             if (activeOrderId) {
@@ -450,6 +533,7 @@ export default function RequestFlow() {
         socket.off(`order_status_${activeOrderId}`, handleStatusChange);
         socket.off("driver_location_update");
         socket.off("order_deleted_by_admin");
+        socket.off("FINAL_CLEANUP"); // CRITICAL: Clean up FINAL_CLEANUP listener
       };
     }
   }, [activeOrderId, toast]);

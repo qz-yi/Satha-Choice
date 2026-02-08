@@ -187,62 +187,90 @@ export default function DriverDashboard() {
     console.log("الوضع الحالي للطلب:", orderStage);
   }, [orderStage]);
   
-  // CRITICAL: State Recovery on App Mount/Reload
+  // SINGLE-USE recovery flag to prevent continuous loops
+  const hasAttemptedDriverRecovery = useRef(false);
+  
+  // CRITICAL: State Recovery on App Mount/Reload - SINGLE-USE ONLY
   useEffect(() => {
-    if (driverInfo?.activeOrder && !activeOrder) {
-      const recoveredOrder = driverInfo.activeOrder;
-      
-      // GUARDED CONDITION: STRICTLY filter valid active statuses ONLY
-      // Exclude: 'pending', 'completed', 'delivered', 'cancelled'
-      const VALID_ACTIVE_STATUSES = ["accepted", "arrived", "picked_up", "in_progress"];
-      const isActiveStatus = VALID_ACTIVE_STATUSES.includes(recoveredOrder.status);
-      
-      if (!isActiveStatus) {
-        console.log("🚫 [STATE RECOVERY] Order is NOT in active status, skipping recovery:", {
-          orderId: recoveredOrder.id,
-          status: recoveredOrder.status,
-          validStatuses: VALID_ACTIVE_STATUSES
-        });
-        
-        // IMMEDIATE CLEANUP: Clear any stale data
-        localStorage.removeItem(`driver_active_order_${driverInfo.id}`);
-        
-        // Do NOT show restoration notification
-        return; // ABORT restoration completely
-      }
-      
-      console.log("🔄 [STATE RECOVERY] VALID active order found, restoring state:", {
-        orderId: recoveredOrder.id,
-        status: recoveredOrder.status
-      });
-      
-      setActiveOrder(recoveredOrder);
-      
-      // Determine stage based on order status
-      if (recoveredOrder.status === "accepted") {
-        setOrderStage("heading_to_pickup");
-        setActiveTab("map");
-      } else if (recoveredOrder.status === "arrived") {
-        setOrderStage("waiting_for_customer");
-        setActiveTab("map");
-      } else if (recoveredOrder.status === "picked_up" || recoveredOrder.status === "in_progress") {
-        setOrderStage("heading_to_destination");
-        setActiveTab("map");
-      }
-      
-      // Re-join order room for socket updates
-      if (socket.connected && recoveredOrder.id) {
-        socket.emit("join_order", recoveredOrder.id);
-        console.log(`🔄 [STATE RECOVERY] Rejoined order room: ${recoveredOrder.id}`);
-      }
-      
-      toast({
-        title: "✅ تم استرجاع الطلب",
-        description: "تم استعادة طلبك النشط بنجاح",
-        className: "bg-green-600 text-white font-black rounded-[24px]"
-      });
+    // CRITICAL: SINGLE-USE check - runs ONCE per session
+    if (hasAttemptedDriverRecovery.current) {
+      console.log("⏭️ [DRIVER RECOVERY] Already attempted, skipping");
+      return;
     }
-  }, [driverInfo?.activeOrder, activeOrder]);
+    
+    if (!driverInfo?.activeOrder || activeOrder) {
+      // No order to recover OR already have active order
+      return;
+    }
+    
+    console.log("🚀 [DRIVER RECOVERY] Starting SINGLE-USE recovery check");
+    hasAttemptedDriverRecovery.current = true;
+    
+    const recoveredOrder = driverInfo.activeOrder;
+    console.log("📡 [DRIVER RECOVERY] Found order in driverInfo:", {
+      id: recoveredOrder.id,
+      status: recoveredOrder.status
+    });
+    
+    // MANDATORY FIX: STRICT filtering with explicit completed/delivered/cancelled check
+    if (recoveredOrder.status === 'delivered' || recoveredOrder.status === 'completed' || recoveredOrder.status === 'cancelled') {
+      console.log("🚫 [DRIVER RECOVERY] Recovery aborted: Order is", recoveredOrder.status);
+      console.log("🧹 [DRIVER RECOVERY] Clearing ALL LocalStorage for this order");
+      localStorage.removeItem(`driver_active_order_${driverInfo.id}`);
+      return; // ABORT restoration
+    }
+    
+    // GUARDED CONDITION: STRICTLY filter valid active statuses ONLY
+    const VALID_ACTIVE_STATUSES = ["accepted", "arrived", "picked_up", "in_progress"];
+    const isActiveStatus = VALID_ACTIVE_STATUSES.includes(recoveredOrder.status);
+    
+    if (!isActiveStatus) {
+      console.log("🚫 [DRIVER RECOVERY] Order is NOT in active status:", {
+        orderId: recoveredOrder.id,
+        status: recoveredOrder.status,
+        validStatuses: VALID_ACTIVE_STATUSES
+      });
+      console.log("🧹 [DRIVER RECOVERY] Clearing stale data");
+      localStorage.removeItem(`driver_active_order_${driverInfo.id}`);
+      return; // ABORT restoration completely
+    }
+    
+    console.log("✅ [DRIVER RECOVERY] VALID active order found, proceeding with restoration");
+    console.log("🔄 [DRIVER RECOVERY] Step 1: Setting active order state");
+    
+    setActiveOrder(recoveredOrder);
+    
+    // Determine stage based on order status
+    console.log("🔄 [DRIVER RECOVERY] Step 2: Determining order stage");
+    if (recoveredOrder.status === "accepted") {
+      setOrderStage("heading_to_pickup");
+      setActiveTab("map");
+      console.log("✅ [DRIVER RECOVERY] Stage: heading_to_pickup");
+    } else if (recoveredOrder.status === "arrived") {
+      setOrderStage("waiting_for_customer");
+      setActiveTab("map");
+      console.log("✅ [DRIVER RECOVERY] Stage: waiting_for_customer");
+    } else if (recoveredOrder.status === "picked_up" || recoveredOrder.status === "in_progress") {
+      setOrderStage("heading_to_destination");
+      setActiveTab("map");
+      console.log("✅ [DRIVER RECOVERY] Stage: heading_to_destination");
+    }
+    
+    // Re-join order room for socket updates
+    console.log("🔄 [DRIVER RECOVERY] Step 3: Rejoining socket room");
+    if (socket.connected && recoveredOrder.id) {
+      socket.emit("join_order", recoveredOrder.id);
+      console.log(`✅ [DRIVER RECOVERY] Rejoined order room: ${recoveredOrder.id}`);
+    }
+    
+    console.log("🎉 [DRIVER RECOVERY] Recovery complete successfully!");
+    
+    toast({
+      title: "✅ تم استرجاع الطلب",
+      description: "تم استعادة طلبك النشط بنجاح",
+      className: "bg-green-600 text-white font-black rounded-[24px]"
+    });
+  }, [driverInfo?.id]); // CRITICAL: Changed dependency - only run when driverInfo.id changes (once on load)
   
   // CRITICAL FIX: Driver must join their private room to receive admin assignments
   useEffect(() => {
@@ -360,9 +388,10 @@ export default function DriverDashboard() {
       setOrderStage("heading_to_pickup");
       setActiveTab("map");
       
-      // IMMEDIATE localStorage cleanup
-      console.log("🧹 [CLEANUP] Step 2: Removing from localStorage");
+      // IMMEDIATE localStorage cleanup - BOTH keys
+      console.log("🧹 [CLEANUP] Step 2: Removing ALL localStorage keys");
       localStorage.removeItem(`driver_active_order_${dId}`);
+      localStorage.removeItem("sat7a_active_order_id"); // Customer-side key
       
       // IMMEDIATE socket room cleanup
       console.log("🧹 [CLEANUP] Step 3: Leaving socket room");
@@ -372,6 +401,15 @@ export default function DriverDashboard() {
       console.log("📡 [API CALL] Calling completion endpoint");
       const response = await apiRequest("POST", `/api/drivers/${dId}/complete/${oId}`);
 
+      // CRITICAL: Emit FINAL_CLEANUP to force both parties to reset
+      console.log("📡 [FINAL_CLEANUP] Emitting FINAL_CLEANUP event to all parties");
+      socket.emit("FINAL_CLEANUP", { 
+        orderId: oId,
+        driverId: dId,
+        status: "completed",
+        message: "Order completed - forcing state reset"
+      });
+      
       // Emit status update after successful API call
       socket.emit("update_order_status", { 
         orderId: oId, 
@@ -379,7 +417,7 @@ export default function DriverDashboard() {
         driverId: dId
       });
       
-      console.log("✅ [ORDER COMPLETE] Completion successful for order:", oId);
+      console.log("✅ [ORDER COMPLETE] Completion successful, cleanup events emitted for order:", oId);
 
       // Show success notification
       setNotification({ show: true, message: "تم إكمال الطلب بنجاح", type: "success" });
@@ -644,13 +682,35 @@ export default function DriverDashboard() {
       });
       
       // Handle order cancellation by customer
+      // CRITICAL: Listen for FINAL_CLEANUP event
+      socket.on("FINAL_CLEANUP", (data: any) => {
+        console.log("🚨 [FINAL_CLEANUP] Received FINAL_CLEANUP event:", data);
+        
+        if (activeOrder && (data.orderId === activeOrder.id || data.orderId === Number(activeOrder.id))) {
+          console.log("🧹 [FINAL_CLEANUP] Forcing immediate state reset for driver");
+          
+          // FORCE RESET ALL STATE
+          setActiveOrder(null);
+          setOrderStage("heading_to_pickup");
+          setActiveTab("map");
+          
+          // FORCE CLEANUP localStorage
+          localStorage.removeItem(`driver_active_order_${driverInfo?.id}`);
+          localStorage.removeItem("sat7a_active_order_id");
+          
+          console.log("✅ [FINAL_CLEANUP] Driver state forcefully reset to idle");
+        }
+      });
+      
       socket.on("order_cancelled_by_customer", (data: any) => {
-        console.log("[Driver] Order cancelled by customer:", data);
+        console.log("🚨 [DRIVER] Order cancelled by customer:", data);
         if (activeOrder && activeOrder.id === data.requestId) {
           // CRITICAL: Leave socket room and cleanup
+          console.log("🧹 [CLEANUP] Customer cancellation - starting cleanup");
           socket.emit("leave_order", data.requestId);
           localStorage.removeItem(`driver_active_order_${driverInfo?.id}`);
-          console.log("🧹 [CLEANUP] Customer cancelled - left room and cleared storage");
+          localStorage.removeItem("sat7a_active_order_id");
+          console.log("🧹 [CLEANUP] All localStorage keys cleared");
           
           setActiveOrder(null);
           setOrderStage("heading_to_pickup");
@@ -670,10 +730,12 @@ export default function DriverDashboard() {
       socket.on("ADMIN_FORCE_COMPLETE", (data: any) => {
         console.log("🚨 [ADMIN] Force completing order:", data);
         if (activeOrder && activeOrder.id === data.requestId) {
-          // CRITICAL: Leave socket room and cleanup
+          // CRITICAL: Leave socket room and cleanup ALL keys
+          console.log("🧹 [CLEANUP] Admin force complete - starting cleanup");
           socket.emit("leave_order", data.requestId);
           localStorage.removeItem(`driver_active_order_${driverInfo?.id}`);
-          console.log("🧹 [CLEANUP] Admin force complete - left room and cleared storage");
+          localStorage.removeItem("sat7a_active_order_id");
+          console.log("🧹 [CLEANUP] All localStorage keys cleared");
           
           // FORCE CLEAR activeOrder
           setActiveOrder(null);
@@ -723,6 +785,7 @@ export default function DriverDashboard() {
         socket.off("order_deleted_by_admin");
         socket.off("order_cancelled_by_customer");
         socket.off("ADMIN_FORCE_COMPLETE");
+        socket.off("FINAL_CLEANUP"); // CRITICAL: Clean up FINAL_CLEANUP listener
         socket.off("new_message");
         socket.off("customer_info");
       };
