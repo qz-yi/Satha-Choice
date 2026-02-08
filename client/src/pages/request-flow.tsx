@@ -110,6 +110,7 @@ export default function RequestFlow() {
 
   const [step, setStep] = useState<"pickup" | "dropoff" | "vehicle">("pickup");
   const [viewState, setViewState] = useState<"booking" | "success" | "tracking">("booking");
+  const [isCheckingRecovery, setIsCheckingRecovery] = useState(true); // CRITICAL: Loading state during recovery
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -238,9 +239,11 @@ export default function RequestFlow() {
         fetchActiveOrderFromAPI(parsed.phone);
       } else {
         console.log("⚠️ [CUSTOMER RECOVERY] No phone number, aborting recovery");
+        setIsCheckingRecovery(false); // CRITICAL: End loading state
       }
     } else {
       console.log("⚠️ [CUSTOMER RECOVERY] No saved user or session, aborting recovery");
+      setIsCheckingRecovery(false); // CRITICAL: End loading state - no user logged in
     }
   }, []); // Empty deps - runs ONCE on mount only
   
@@ -256,6 +259,7 @@ export default function RequestFlow() {
       if (!response.ok) {
         console.log("❌ [CUSTOMER RECOVERY] API request failed with status:", response.status);
         console.log("🔄 [CUSTOMER RECOVERY] Recovery aborted: API error");
+        setIsCheckingRecovery(false); // CRITICAL: End loading state
         return;
       }
       
@@ -287,6 +291,7 @@ export default function RequestFlow() {
         console.log("🧹 [CUSTOMER RECOVERY] Cleaning up stale localStorage");
         localStorage.removeItem("sat7a_active_order_id");
         console.log("✅ [CUSTOMER RECOVERY] Recovery complete: No active order");
+        setIsCheckingRecovery(false); // CRITICAL: End loading state - safe to show booking view
         return;
       }
       
@@ -301,10 +306,12 @@ export default function RequestFlow() {
         console.log("🚫 [CUSTOMER RECOVERY] Recovery aborted: Order is", activeOrder.status);
         console.log("🧹 [CUSTOMER RECOVERY] Clearing ALL LocalStorage for this order");
         localStorage.removeItem("sat7a_active_order_id");
+        setIsCheckingRecovery(false); // CRITICAL: End loading state
         return; // ABORT restoration
       }
       
       console.log("🔄 [CUSTOMER RECOVERY] Step 3: Starting state restoration");
+      console.log(`📋 Restoring Customer State: Order ID ${activeOrder.id} - Status ${activeOrder.status}`);
       
       setActiveOrderId(activeOrder.id);
       setRequestStatus(activeOrder.status);
@@ -361,6 +368,9 @@ export default function RequestFlow() {
       
       console.log("🎉 [CUSTOMER RECOVERY] Recovery complete successfully!");
       
+      // CRITICAL: End loading state - order restored successfully
+      setIsCheckingRecovery(false);
+      
       toast({
         title: "✅ تم استرجاع الطلب",
         description: "تم استعادة طلبك النشط بنجاح",
@@ -368,6 +378,7 @@ export default function RequestFlow() {
       });
     } catch (error) {
       console.error("❌ [CUSTOMER RECOVERY] Error fetching active order:", error);
+      setIsCheckingRecovery(false); // CRITICAL: End loading state even on error
     }
   };
 
@@ -969,6 +980,29 @@ export default function RequestFlow() {
              <ShieldCheck className="w-3 h-3" /> نظام حماية البيانات 2026
            </p>
         </div>
+      </div>
+    );
+  }
+
+  // CRITICAL: Loading state during recovery check - DO NOT render booking view until check completes
+  if (isCheckingRecovery) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-8" dir="rtl">
+        <motion.div 
+          initial={{ scale: 0.8, opacity: 0 }} 
+          animate={{ scale: 1, opacity: 1 }}
+          className="space-y-6 text-center"
+        >
+          <div className="relative">
+            <div className="w-24 h-24 bg-orange-500 rounded-[32px] flex items-center justify-center mx-auto shadow-2xl">
+              <Loader2 className="w-12 h-12 text-white animate-spin" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-black text-gray-900">جاري التحقق...</h2>
+            <p className="text-gray-400 font-bold text-sm">يرجى الانتظار بينما نتحقق من طلباتك النشطة</p>
+          </div>
+        </motion.div>
       </div>
     );
   }
