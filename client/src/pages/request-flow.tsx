@@ -546,6 +546,50 @@ export default function RequestFlow() {
                   className: "bg-green-600 text-white font-black rounded-2xl shadow-2xl border-none"
                 });
             }
+            
+            // CRITICAL: System Notification when driver arrives
+            if (data.status === "arrived") {
+              console.log("🔔 [NOTIFICATION] Driver arrived - triggering system notification");
+              
+              if ("Notification" in window) {
+                Notification.requestPermission().then(permission => {
+                  if (permission === "granted") {
+                    const notification = new Notification("SATHA - سطحة", {
+                      body: "الكابتن وصل للموقع",
+                      icon: "/logo.png",
+                      badge: "/logo.png",
+                      tag: "driver-arrived",
+                      requireInteraction: true,
+                      vibrate: [200, 100, 200]
+                    });
+                    
+                    // Play notification sound
+                    try {
+                      const audio = new Audio("/notification.mp3");
+                      audio.play().catch(e => console.log("Audio play failed:", e));
+                    } catch (e) {
+                      console.log("Audio creation failed:", e);
+                    }
+                    
+                    // Auto-close after 10 seconds
+                    setTimeout(() => notification.close(), 10000);
+                    
+                    console.log("✅ [NOTIFICATION] System notification sent to customer");
+                  } else {
+                    console.log("⚠️ [NOTIFICATION] Permission denied");
+                  }
+                });
+              } else {
+                console.log("⚠️ [NOTIFICATION] Notification API not available");
+              }
+              
+              // Also show in-app toast
+              toast({ 
+                title: "📍 الكابتن وصل للموقع", 
+                description: "الرجاء التوجه للموقع المحدد",
+                className: "bg-blue-600 text-white font-black rounded-2xl shadow-2xl border-none"
+              });
+            }
           }
 
           if (data.status === "completed") {

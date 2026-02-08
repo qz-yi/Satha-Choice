@@ -558,10 +558,11 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
           lat: driver?.lastLat, 
           lng: driver?.lastLng 
         },
-        // إضافة معلومات الزبون للسائق
+        // إضافة معلومات الزبون للسائق (including customer image)
         customerInfo: {
           name: request?.customerName,
           phone: request?.customerPhone,
+          image: (request as any)?.customerImage || null, // Include customer profile image
           pickupLat: request?.pickupLat,
           pickupLng: request?.pickupLng,
           dropoffLat: request?.destLat,
@@ -900,6 +901,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         customerInfo: {
           name: requestDetails.customerName,
           phone: requestDetails.customerPhone,
+          image: (requestDetails as any).customerImage || null, // Include customer profile image
           pickupLat: requestDetails.pickupLat,
           pickupLng: requestDetails.pickupLng,
           dropoffLat: requestDetails.destLat,

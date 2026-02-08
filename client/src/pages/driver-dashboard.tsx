@@ -160,6 +160,7 @@ export default function DriverDashboard() {
 
   const [isFollowMode, setIsFollowMode] = useState(true); 
   const [isRequestsSheetOpen, setIsRequestsSheetOpen] = useState(true);
+  const [isActiveOrderExpanded, setIsActiveOrderExpanded] = useState(true); // Smart handle for active order card
 
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -1165,12 +1166,39 @@ export default function DriverDashboard() {
 
         {activeOrder && orderStage !== "payment" && (
           <motion.div 
-            initial={{ y: "100%" }} 
-            animate={{ y: 0 }} 
+            drag="y"
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={0.1}
+            initial={{ y: "100%" }}
+            animate={{ 
+              y: isActiveOrderExpanded ? 0 : "calc(100% - 140px)" // Expanded: Full | Minimized: 140px peek
+            }}
+            onDragEnd={(e, info) => {
+              // Smart snapping based on drag direction
+              if (info.offset.y > 100) {
+                setIsActiveOrderExpanded(false); // Drag down = minimize
+              } else if (info.offset.y < -50) {
+                setIsActiveOrderExpanded(true);  // Drag up = expand
+              }
+            }}
+            transition={{ type: "spring", damping: 30, stiffness: 300 }}
             className="absolute inset-x-0 bottom-0 z-[1300] bg-white rounded-t-[45px] shadow-[0_-20px_60px_rgba(0,0,0,0.15)]"
           >
+            {/* SMART HANDLE - Click to toggle, Drag to move */}
+            <div 
+              className="w-full flex flex-col items-center py-4 cursor-grab active:cursor-grabbing"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsActiveOrderExpanded(!isActiveOrderExpanded);
+              }}
+              style={{ touchAction: 'none' }}
+            >
+              <div className="w-16 h-2 bg-gray-300 rounded-full mb-2" />
+              <GripHorizontal className={`w-6 h-6 transition-all duration-300 ${isActiveOrderExpanded ? 'text-gray-300' : 'text-orange-500 rotate-180'}`} />
+            </div>
+
             {/* PROFESSIONAL CUSTOMER PROFILE SECTION */}
-            <div className="p-6 pb-8 space-y-6">
+            <div className="px-6 pb-8 space-y-6">
               {/* Customer Header Row */}
               <div className="flex items-center gap-4">
                 {/* Customer Profile Image */}
@@ -1228,17 +1256,23 @@ export default function DriverDashboard() {
 
               {/* Navigation Button */}
               <Button 
-                onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${activeOrder.pickupLat},${activeOrder.pickupLng}`, '_blank')}
-                className="w-full h-14 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-[24px] font-black text-sm shadow-lg shadow-orange-200 flex items-center justify-center gap-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.open(`https://www.google.com/maps/dir/?api=1&destination=${activeOrder.pickupLat},${activeOrder.pickupLng}`, '_blank');
+                }}
+                className="w-full h-14 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-[24px] font-black text-sm shadow-lg shadow-orange-200 flex items-center justify-center gap-2 active:scale-95 transition-transform"
               >
                 <Navigation className="w-5 h-5" />
                 <span>فتح في خرائط جوجل</span>
                 <ExternalLink className="w-4 h-4" />
               </Button>
             </div>
+            
             {/* Primary Action Button */}
-            <Button 
-              onClick={() => {
+            <div className="px-6 pb-6">
+              <Button 
+                onClick={(e) => {
+                  e.stopPropagation();
                 let nextStage = "";
                 let nextStatus = "";
                 if (orderStage === "heading_to_pickup") { 
@@ -1252,14 +1286,34 @@ export default function DriverDashboard() {
                   nextStatus = "arrived_dropoff"; 
                 }
 
-                setOrderStage(nextStage);
-                socket.emit("update_order_status", { orderId: activeOrder.id, status: nextStatus, driverId: driverInfo.id });
-              }} 
-              className="w-full h-16 bg-gradient-to-r from-black to-gray-800 hover:from-orange-500 hover:to-orange-600 text-white rounded-[26px] font-black text-lg shadow-xl transition-all"
-            >
-              {orderStage === "heading_to_pickup" ? "وصلت لموقع الزبون" : 
-               orderStage === "arrived_pickup" ? "تأكيد رفع السيارة" : "إتمام الرحلة"}
-            </Button>
+                  setOrderStage(nextStage);
+                  
+                  // CRITICAL: Trigger System Notification when driver arrives
+                  if (nextStatus === "arrived" && "Notification" in window) {
+                    Notification.requestPermission().then(permission => {
+                      if (permission === "granted") {
+                        new Notification("SATHA - سطحة", {
+                          body: "تم تحديث حالة الطلب",
+                          icon: "/logo.png",
+                          badge: "/logo.png"
+                        });
+                      }
+                    });
+                  }
+                  
+                  socket.emit("update_order_status", { 
+                    orderId: activeOrder.id, 
+                    status: nextStatus, 
+                    driverId: driverInfo.id,
+                    customerPhone: activeOrder.customerPhone // Pass customer phone for targeted notification
+                  });
+                }} 
+                className="w-full h-16 bg-gradient-to-r from-black to-gray-800 hover:from-orange-500 hover:to-orange-600 text-white rounded-[26px] font-black text-lg shadow-xl transition-all active:scale-95"
+              >
+                {orderStage === "heading_to_pickup" ? "وصلت لموقع الزبون" : 
+                 orderStage === "arrived_pickup" ? "تأكيد رفع السيارة" : "إتمام الرحلة"}
+              </Button>
+            </div>
           </motion.div>
         )}
 

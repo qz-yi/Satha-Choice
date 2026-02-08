@@ -138,16 +138,44 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDriverRequests(driverId: number): Promise<Request[]> {
-    return await db
-      .select()
+    const results = await db
+      .select({
+        request: requests,
+        customer: users
+      })
       .from(requests)
+      .leftJoin(users, eq(requests.customerPhone, users.phone))
       .where(eq(requests.driverId, driverId))
       .orderBy(desc(requests.createdAt));
+    
+    // Map results to include customer info in the request object
+    return results.map(r => ({
+      ...r.request,
+      customerName: r.customer?.username || r.request.customerName,
+      customerImage: r.customer?.image || null,
+      customerPhone: r.request.customerPhone
+    }));
   }
 
   async getRequest(id: number): Promise<Request | undefined> {
-    const [request] = await db.select().from(requests).where(eq(requests.id, id));
-    return request;
+    const results = await db
+      .select({
+        request: requests,
+        customer: users
+      })
+      .from(requests)
+      .leftJoin(users, eq(requests.customerPhone, users.phone))
+      .where(eq(requests.id, id));
+    
+    if (results.length === 0) return undefined;
+    
+    const r = results[0];
+    return {
+      ...r.request,
+      customerName: r.customer?.username || r.request.customerName,
+      customerImage: r.customer?.image || null,
+      customerPhone: r.request.customerPhone
+    } as Request;
   }
 
   async assignRequestToDriver(requestId: number, driverId: number): Promise<Request> {
