@@ -1315,7 +1315,7 @@ export default function RequestFlow() {
           <div className="flex items-start gap-3 w-full">
               <Sheet>
                 <SheetTrigger asChild><Button variant="secondary" size="icon" className="rounded-2xl shadow-xl bg-white text-black w-14 h-14 border-none hover:bg-gray-50"><Menu className="w-6 h-6" /></Button></SheetTrigger>
-                <SheetContent side="right" className="w-[85%] p-0 z-[6000] border-none text-right flex flex-col bg-white">
+                <SheetContent side="right" className="w-[85%] p-0 z-[9000] border-none text-right flex flex-col bg-white">
                     <div className="p-8 pt-20 bg-orange-500 text-right rounded-bl-[60px] shadow-2xl relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none"><Truck className="w-64 h-64 -rotate-12 absolute -right-10 -bottom-10" /></div>
                         <div className="relative group w-24 h-24 mb-6">
@@ -1495,16 +1495,17 @@ export default function RequestFlow() {
             <motion.div 
               initial={{ opacity: 0, y: 10 }} 
               animate={{ opacity: 1, y: 0 }} 
-              className="fixed inset-0 z-[9999] bg-white flex flex-col font-sans text-right"
+              className="fixed inset-0 z-[10000] bg-white flex flex-col font-sans text-right"
               dir="rtl"
-              onClick={(e) => e.stopPropagation()}
+              style={{ pointerEvents: 'auto' }}
             >
-              <div className="p-6 flex items-center justify-between border-b border-gray-50 bg-white">
+              <div className="p-6 flex items-center justify-between border-b border-gray-50 bg-white" style={{ zIndex: 10001 }}>
                 <Button 
                   variant="ghost" 
                   size="icon" 
                   onClick={() => setIsWalletOpen(false)}
                   className="rounded-full bg-gray-100 h-10 w-10"
+                  style={{ pointerEvents: 'auto' }}
                 >
                   <X className="w-6 h-6 text-black" />
                 </Button>
@@ -1512,7 +1513,7 @@ export default function RequestFlow() {
                 <div className="w-10"></div>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8">
+              <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8" style={{ pointerEvents: 'auto' }}>
                 <div className="bg-[#FF7A00] p-7 rounded-[30px] text-white shadow-lg relative overflow-hidden">
                   <p className="text-white/80 text-xs font-bold mb-1">رصيدك الحالي المتاح</p>
                   <div className="flex items-baseline gap-2">
@@ -1529,6 +1530,7 @@ export default function RequestFlow() {
                     type="number" 
                     placeholder="أدخل المبلغ..."
                     className="w-full h-16 bg-gray-50 border-2 border-gray-100 rounded-[22px] px-6 text-xl font-black text-gray-800 focus:border-orange-500 focus:outline-none transition-all"
+                    style={{ pointerEvents: 'auto', userSelect: 'auto' }}
                   />
                 </div>
 
@@ -1537,6 +1539,7 @@ export default function RequestFlow() {
                   <button 
                     onClick={() => setWalletPaymentMethod('zain')}
                     className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${walletPaymentMethod === 'zain' ? 'border-orange-500 bg-orange-50/20' : 'border-gray-100'}`}
+                    style={{ pointerEvents: 'auto' }}
                   >
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center p-1">
@@ -1552,6 +1555,7 @@ export default function RequestFlow() {
                   <button 
                     onClick={() => setWalletPaymentMethod('card')}
                     className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${walletPaymentMethod === 'card' ? 'border-blue-500 bg-blue-50/20' : 'border-gray-100'}`}
+                    style={{ pointerEvents: 'auto' }}
                   >
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white">
@@ -1583,11 +1587,12 @@ export default function RequestFlow() {
                 </div>
               </div>
 
-              <div className="p-6 bg-white border-t border-gray-50 pb-8">
+              <div className="p-6 bg-white border-t border-gray-50 pb-8" style={{ pointerEvents: 'auto' }}>
                 <Button 
                   disabled={isDepositing || !walletPaymentMethod}
                   onClick={() => handleCustomerDeposit(walletPaymentMethod === 'card' ? 'master' : 'zain')}
                   className="w-full h-16 rounded-[22px] bg-orange-500 text-white text-xl font-black shadow-lg hover:bg-orange-600 disabled:opacity-50"
+                  style={{ pointerEvents: 'auto' }}
                 >
                   {isDepositing ? <Loader2 className="w-6 h-6 animate-spin" /> : "تأكيد عملية الشحن"}
                 </Button>
