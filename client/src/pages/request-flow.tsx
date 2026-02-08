@@ -355,6 +355,12 @@ export default function RequestFlow() {
       if (activeOrder.driverId && activeOrder.driver) {
         console.log("🔄 [CUSTOMER RECOVERY] Step 4: Hydrating driver data from API response");
         console.log("✅ [CUSTOMER RECOVERY] Driver object received:", activeOrder.driver);
+        console.log("✅ [CUSTOMER RECOVERY] Driver coordinates:", {
+          lat: activeOrder.driver.lat,
+          lng: activeOrder.driver.lng,
+          lastLat: activeOrder.driver.lastLat,
+          lastLng: activeOrder.driver.lastLng
+        });
         
         // IMMEDIATE STATE HYDRATION - Set ALL driver state from API response
         setDriverInfo({
@@ -429,6 +435,13 @@ export default function RequestFlow() {
       console.log("🔄 [CUSTOMER RECOVERY] Step 6: Rejoining socket room");
       socket.emit("join_order", activeOrder.id);
       console.log("✅ [CUSTOMER RECOVERY] Socket room joined - will receive live updates");
+      
+      // CRITICAL: Emit customer_ready event to notify server/driver that customer is back online
+      socket.emit("customer_ready", { 
+        orderId: activeOrder.id, 
+        customerPhone: customerPhone 
+      });
+      console.log("✅ [CUSTOMER RECOVERY] Notified server that customer is ready");
       
       // Store order ID in localStorage for persistence
       try {
@@ -866,20 +879,47 @@ export default function RequestFlow() {
   };
 
   const handleGetCurrentLocation = () => {
-    if (!navigator.geolocation) return;
-    setShouldFly(true);
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const { latitude, longitude } = pos.coords;
-      if (step === "pickup") {
-        setFormData(p => ({ ...p, pickupLat: latitude, pickupLng: longitude }));
-        reverseGeocode(latitude, longitude); 
+    if (!navigator.geolocation) {
+      toast({ variant: "destructive", title: "خطأ", description: "GPS غير متاح على هذا الجهاز" });
+      return;
+    }
+    
+    console.log("📍 [GPS] Getting current location with high accuracy...");
+    
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        console.log("✅ [GPS] Position acquired:", { lat: latitude, lng: longitude });
+        
+        // Update formData state FIRST
+        if (step === "pickup") {
+          setFormData(p => ({ ...p, pickupLat: latitude, pickupLng: longitude }));
+          reverseGeocode(latitude, longitude); 
+        } else {
+          setFormData(p => ({ ...p, destLat: latitude, destLng: longitude }));
+          reverseGeocode(latitude, longitude);
+        }
+        
+        // Trigger fly animation AFTER state update
+        setShouldFly(true);
+        setTimeout(() => setShouldFly(false), 2000);
+        
+        toast({ title: "تم تحديد موقعك", description: "GPS", className: "bg-green-600 text-white font-black" });
+      },
+      (error) => {
+        console.error("❌ [GPS] Error:", error);
+        toast({ 
+          variant: "destructive", 
+          title: "فشل تحديد الموقع", 
+          description: error.message || "تأكد من تفعيل خدمة الموقع"
+        });
+      },
+      { 
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
       }
-      else {
-        setFormData(p => ({ ...p, destLat: latitude, destLng: longitude }));
-        reverseGeocode(latitude, longitude);
-      }
-      setTimeout(() => setShouldFly(false), 2000);
-    });
+    );
   };
 
   const handleSelectResult = (result: any) => {
