@@ -326,9 +326,41 @@ export default function RequestFlow() {
         console.log("🔄 [CUSTOMER RECOVERY] Order accepted/active - showing 'Tracking' state");
       }
       
-      // Restore driver info if driver is assigned
-      if (activeOrder.driverId) {
-        console.log("🔄 [CUSTOMER RECOVERY] Step 4: Fetching driver data for ID:", activeOrder.driverId);
+      // CRITICAL FIX: Hydrate driver data directly from API response (no separate fetch)
+      if (activeOrder.driverId && activeOrder.driver) {
+        console.log("🔄 [CUSTOMER RECOVERY] Step 4: Hydrating driver data from API response");
+        console.log("✅ [CUSTOMER RECOVERY] Driver object received:", activeOrder.driver);
+        
+        // IMMEDIATE STATE HYDRATION - Set ALL driver state from API response
+        setDriverInfo({
+          id: activeOrder.driver.id,
+          name: activeOrder.driver.name,
+          phone: activeOrder.driver.phone,
+          avatarUrl: activeOrder.driver.avatarUrl || "",
+          vehicleType: activeOrder.driver.vehicleType || "سطحة",
+          plateNumber: activeOrder.driver.plateNumber || ""
+        });
+        console.log("✅ [CUSTOMER RECOVERY] Driver info hydrated:", activeOrder.driver.name);
+        
+        // CRITICAL: Restore driver's LIVE LOCATION for immediate tracking
+        if (activeOrder.driver.lat && activeOrder.driver.lng) {
+          const driverLat = Number(activeOrder.driver.lat);
+          const driverLng = Number(activeOrder.driver.lng);
+          setDriverLocation([driverLat, driverLng]);
+          console.log("✅ [CUSTOMER RECOVERY] Driver live location hydrated:", {lat: driverLat, lng: driverLng});
+        } else if (activeOrder.driver.lastLat && activeOrder.driver.lastLng) {
+          const driverLat = Number(activeOrder.driver.lastLat);
+          const driverLng = Number(activeOrder.driver.lastLng);
+          setDriverLocation([driverLat, driverLng]);
+          console.log("✅ [CUSTOMER RECOVERY] Driver live location hydrated (from lastLat/lastLng):", {lat: driverLat, lng: driverLng});
+        } else {
+          console.log("⚠️ [CUSTOMER RECOVERY] No live location available in driver object");
+        }
+        
+        console.log("🎉 [CUSTOMER RECOVERY] Complete driver state hydration successful!");
+      } else if (activeOrder.driverId && !activeOrder.driver) {
+        // Fallback: If driver object is missing from API, fetch separately (backwards compatibility)
+        console.log("⚠️ [CUSTOMER RECOVERY] Driver object missing from API response, fetching separately");
         const driverResponse = await fetch(`/api/drivers/${activeOrder.driverId}`);
         if (driverResponse.ok) {
           const driverData = await driverResponse.json();
@@ -340,19 +372,16 @@ export default function RequestFlow() {
             vehicleType: driverData.vehicleType || "سطحة",
             plateNumber: driverData.plateNumber || ""
           });
-          console.log("✅ [CUSTOMER RECOVERY] Driver info restored:", driverData.name);
+          console.log("✅ [CUSTOMER RECOVERY] Driver info restored (fallback fetch):", driverData.name);
           
-          // CRITICAL FIX: Restore driver's LIVE LOCATION for immediate tracking
           if (driverData.lat && driverData.lng) {
             const driverLat = Number(driverData.lat);
             const driverLng = Number(driverData.lng);
             setDriverLocation([driverLat, driverLng]);
-            console.log("✅ [CUSTOMER RECOVERY] Driver live location restored:", {lat: driverLat, lng: driverLng});
-          } else {
-            console.log("⚠️ [CUSTOMER RECOVERY] No live location available for driver");
+            console.log("✅ [CUSTOMER RECOVERY] Driver live location restored (fallback):", {lat: driverLat, lng: driverLng});
           }
         } else {
-          console.log("⚠️ [CUSTOMER RECOVERY] Failed to fetch driver data");
+          console.log("⚠️ [CUSTOMER RECOVERY] Fallback fetch failed");
         }
       } else {
         console.log("ℹ️ [CUSTOMER RECOVERY] No driver assigned yet");

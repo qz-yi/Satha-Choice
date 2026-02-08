@@ -293,19 +293,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
-  app.get("/api/users/:phone/requests", async (req, res) => {
-    try {
-      const phone = req.params.phone;
-      const allRequests = await storage.getRequests();
-      const userRequests = allRequests
-        .filter(r => r.customerPhone === phone)
-        .sort((a, b) => b.id - a.id);
-      res.json(userRequests);
-    } catch (err: any) {
-      res.status(500).json({ message: "فشل في جلب سجل رحلات الزبون" });
-    }
-  });
-
   // --- مسارات السائقين ---
 
   app.post("/api/drivers", async (req, res) => {
@@ -727,21 +714,50 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       console.log(`[Trip History] Found ${userRequests.length} requests for ${phone}`);
       console.log(`[Trip History] Statuses:`, userRequests.map(r => ({ id: r.id, status: r.status })));
       
+      // CRITICAL FIX: Include FULL driver data with JOIN for complete state hydration
       const detailedRequests = await Promise.all(userRequests.map(async (req) => {
         const driver = req.driverId ? await storage.getDriver(req.driverId) : null;
         return {
+          // Order fields
           id: req.id,
           status: req.status,
-          pickupLocation: req.pickupAddress || req.location || "غير محدد",
+          pickupLat: req.pickupLat,
+          pickupLng: req.pickupLng,
+          pickupAddress: req.pickupAddress || req.location || "غير محدد",
+          destLat: req.destLat,
+          destLng: req.destLng,
+          dropoffLat: req.destLat, // Alias for compatibility
+          dropoffLng: req.destLng, // Alias for compatibility
           destination: req.destination || "غير محدد",
+          location: req.pickupAddress || req.location,
           price: req.price,
           vehicleType: req.vehicleType,
+          customerName: req.customerName,
+          customerPhone: req.customerPhone,
           createdAt: req.createdAt,
+          driverId: req.driverId,
+          
+          // CRITICAL: Full driver object for immediate state hydration
+          driver: driver ? {
+            id: driver.id,
+            name: driver.name,
+            phone: driver.phone,
+            avatarUrl: driver.avatarUrl || "",
+            vehicleType: driver.vehicleType || "سطحة",
+            plateNumber: driver.plateNumber || "",
+            lat: driver.lastLat || driver.lat, // Live location
+            lng: driver.lastLng || driver.lng, // Live location
+            lastLat: driver.lastLat,
+            lastLng: driver.lastLng
+          } : null,
+          
+          // Legacy fields for backwards compatibility
           driverName: driver?.name || "غير معروف",
           driverPhone: driver?.phone
         };
       }));
       
+      console.log(`[Trip History] Returning ${detailedRequests.length} detailed requests with driver data`);
       res.json(detailedRequests);
     } catch (err: any) {
       console.error("[Trip History Error]:", err);
@@ -897,15 +913,16 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       io.to(`order_${requestId}`).emit("status_changed", payload);
       io.emit(`order_status_${requestId}`, payload);
 
-      // CRITICAL: If this is a TRANSFER, notify the previous driver
+      // CRITICAL: If this is a TRANSFER, notify the previous driver to IMMEDIATELY clear their UI
       if (isTransfer && previousDriverId) {
-        console.log(`🔄 [TRANSFER] Notifying previous driver ${previousDriverId} that order is being transferred`);
-        io.to(`driver_${previousDriverId}`).emit("order_transferred", {
+        console.log(`🔄 [TRANSFER] Notifying previous driver ${previousDriverId} to remove order from their screen`);
+        io.to(`driver_${previousDriverId}`).emit("order_removed_from_driver", {
           orderId: requestId,
           newDriverId: driverId,
-          message: "تم نقل الطلب إلى سائق آخر من قبل الإدارة"
+          message: "تم نقل الطلب إلى سائق آخر من قبل الإدارة",
+          reason: "admin_transfer"
         });
-        console.log(`✅ [TRANSFER] Previous driver ${previousDriverId} notified successfully`);
+        console.log(`✅ [TRANSFER] Previous driver ${previousDriverId} notified via order_removed_from_driver event`);
       }
 
       // CRITICAL: إشعار السائق بالطلب الجديد مع كل التفاصيل - FORCE UI TRANSITION

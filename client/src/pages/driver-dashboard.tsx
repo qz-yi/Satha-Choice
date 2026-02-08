@@ -668,38 +668,40 @@ export default function DriverDashboard() {
       socket.on("ORDER_UPDATED", handleOrderAssigned);
       socket.on("NEW_ORDER_ASSIGNED", handleOrderAssigned); // New explicit event
       
-      // CRITICAL FIX: Handle order transfer from this driver to another
-      socket.on("order_transferred", (data: any) => {
-        console.log("🔄 [TRANSFER] Order transferred away from this driver:", data);
-        // Check if the order being transferred is the current active order
+      // CRITICAL FIX: Handle order removal when admin transfers to another driver
+      socket.on("order_removed_from_driver", (data: any) => {
+        console.log("🚨 [ADMIN TRANSFER] Order removed from this driver by admin:", data);
+        // Check if the order being removed is the current active order
         if (activeOrder && activeOrder.id === data.orderId) {
-          console.log("🧹 [TRANSFER] This driver's active order was transferred - clearing state");
+          console.log("🧹 [ADMIN TRANSFER] This driver's active order was transferred - IMMEDIATE UI clearance");
           
-          // IMMEDIATE cleanup
+          // IMMEDIATE cleanup - BEFORE any other operations
           socket.emit("leave_order", data.orderId);
           localStorage.removeItem(`driver_active_order_${driverInfo?.id}`);
           localStorage.removeItem("sat7a_active_order_id");
-          console.log("🧹 [TRANSFER] All localStorage keys cleared");
+          console.log("🧹 [ADMIN TRANSFER] All localStorage keys cleared");
           
-          // Force UI reset to available mode
+          // FORCE UI RESET TO AVAILABLE MODE IMMEDIATELY
           setActiveOrder(null);
           setOrderStage("heading_to_pickup");
           setActiveTab("map");
           
-          // Invalidate queries to refresh available orders
+          // Invalidate queries to refresh available orders list
           queryClient.invalidateQueries(["driverOrders", driverInfo?.id]);
           queryClient.invalidateQueries(["availableRequests"]);
           
           setNotification({ 
             show: true, 
-            message: "تم نقل الطلب إلى سائق آخر من قبل الإدارة", 
+            message: data.message || "تم نقل الطلب إلى سائق آخر من قبل الإدارة", 
             type: "error" 
           });
           setTimeout(() => {
             setNotification(n => ({ ...n, show: false }));
           }, 5000);
           
-          console.log("✅ [TRANSFER] Driver UI reset to available mode without refresh");
+          console.log("✅ [ADMIN TRANSFER] Driver UI reset to available home screen - NO REFRESH REQUIRED");
+        } else {
+          console.log("ℹ️ [ADMIN TRANSFER] Order removal event received but doesn't match active order");
         }
       });
       
@@ -822,7 +824,7 @@ export default function DriverDashboard() {
         socket.off("order_assigned");
         socket.off("ORDER_UPDATED");
         socket.off("NEW_ORDER_ASSIGNED");
-        socket.off("order_transferred"); // CRITICAL: Clean up transfer listener
+        socket.off("order_removed_from_driver"); // CRITICAL: Clean up admin transfer listener
         socket.off("order_deleted_by_admin");
         socket.off("order_cancelled_by_customer");
         socket.off("ADMIN_FORCE_COMPLETE");
