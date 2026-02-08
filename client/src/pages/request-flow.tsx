@@ -7,7 +7,7 @@ import { useCreateRequest } from "@/hooks/use-requests";
 import { 
   MapPin, Check, Search, Loader2, Menu, 
   MessageSquare, History, Wallet, Phone, Truck, ChevronRight,
-  LocateFixed, RotateCcw, X, Star, Navigation, Target, Send, LogOut, Camera, User, Lock, Home, ShieldCheck, CreditCard, QrCode
+  LocateFixed, RotateCcw, X, Star, Navigation, Target, Send, LogOut, Camera, User, Lock, Home, ShieldCheck, CreditCard, QrCode, GripHorizontal
 } from "lucide-react";
 
 import { motion, AnimatePresence } from "framer-motion";
@@ -1240,67 +1240,166 @@ export default function RequestFlow() {
           )}
         </AnimatePresence>
 
-        <motion.div initial={{ y: 100 }} animate={{ y: 0 }} className="absolute inset-x-0 bottom-0 z-[2000] p-6 pb-10 pointer-events-auto">
-            <div className="bg-white rounded-[40px] shadow-2xl p-6 border-t-4 border-orange-500 pointer-events-auto">
-                <div className="text-center space-y-6 pointer-events-auto">
-                     <div className="flex items-center justify-center gap-3 pointer-events-auto relative z-10">
-                        {requestStatus === "pending" && <Loader2 className="w-6 h-6 animate-spin text-orange-500" />}
-                        <h3 className="text-xl font-black text-gray-800 italic">
-                          {requestStatus === "pending" ? "جاري البحث عن سائق..." : 
-                           requestStatus === "accepted" ? "الكابتن قادم إليك" : 
-                           requestStatus === "arrived" ? "الكابتن في الموقع" : "في الطريق للوجهة"}
-                        </h3>
-                        {/* Small elegant cancel button - ONLY during pending status */}
-                        {requestStatus === "pending" && (
-                          <div style={{ position: 'relative', zIndex: 99999, pointerEvents: 'auto' }}>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                console.log("[Cancel Button] Clicked - Opening modal");
-                                setShowCancelModal(true);
-                              }}
-                              style={{ 
-                                pointerEvents: 'auto',
-                                cursor: 'pointer',
-                                touchAction: 'auto'
-                              }}
-                              className="text-red-500 hover:text-red-600 font-bold text-sm underline transition-colors px-3 py-2 -m-2"
-                            >
-                              إلغاء
-                            </button>
+        {/* PROFESSIONAL DRAGGABLE BOTTOM SHEET - SATHA STYLE */}
+        <motion.div 
+          drag="y"
+          dragConstraints={{ top: -200, bottom: 0 }}
+          dragElastic={0.1}
+          initial={{ y: 0 }}
+          className="absolute inset-x-0 bottom-0 z-[2000] pointer-events-auto"
+          style={{ touchAction: 'none' }}
+        >
+          <div className="bg-white rounded-t-[40px] shadow-[0_-10px_60px_rgba(0,0,0,0.2)] pointer-events-auto">
+            {/* DRAG HANDLE */}
+            <div className="w-full flex flex-col items-center pt-4 pb-2 cursor-grab active:cursor-grabbing">
+              <GripHorizontal className="w-8 h-8 text-gray-300 mb-1" />
+              <p className="text-[10px] text-gray-400 font-bold">اسحب للعرض الكامل</p>
+            </div>
+
+            <div className="px-6 pb-8 space-y-5">
+              {/* STATUS HEADER */}
+              <div className="text-center pt-2">
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  {requestStatus === "pending" && <Loader2 className="w-5 h-5 animate-spin text-orange-500" />}
+                  <h3 className="text-lg font-black text-gray-800">
+                    {requestStatus === "pending" ? "جاري البحث..." : 
+                     requestStatus === "accepted" ? "الكابتن قادم" : 
+                     requestStatus === "arrived" ? "وصل الكابتن" : "في الطريق"}
+                  </h3>
+                  {/* Cancel button during pending */}
+                  {requestStatus === "pending" && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowCancelModal(true);
+                      }}
+                      className="text-red-500 text-xs font-bold underline px-2"
+                      style={{ pointerEvents: 'auto' }}
+                    >
+                      إلغاء
+                    </button>
+                  )}
+                </div>
+                {requestStatus !== "pending" && (
+                  <div className="inline-flex items-center gap-1 bg-orange-50 px-3 py-1 rounded-full">
+                    <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
+                    <span className="text-[11px] font-black text-orange-600">مباشر</span>
+                  </div>
+                )}
+              </div>
+
+              {driverInfo && (
+                <>
+                  {/* CAR MODEL HEADER */}
+                  <div className="text-center py-3 bg-gradient-to-r from-orange-50 to-blue-50 rounded-[24px]">
+                    <Truck className="w-6 h-6 text-orange-500 mx-auto mb-1" />
+                    <h2 className="text-xl font-black text-gray-800">
+                      {driverInfo.vehicleType || "سطحة هيدروليك"}
+                    </h2>
+                    <p className="text-[10px] text-gray-500 font-bold">نوع السطحة</p>
+                  </div>
+
+                  {/* DRIVER INFO ROW */}
+                  <div className="flex items-center gap-4">
+                    {/* RIGHT: Driver Profile Image */}
+                    <div className="relative shrink-0">
+                      <div className="w-20 h-20 rounded-full border-4 border-orange-500 overflow-hidden shadow-lg bg-white">
+                        {driverInfo.avatarUrl ? (
+                          <img 
+                            src={driverInfo.avatarUrl} 
+                            className="w-full h-full object-cover" 
+                            onError={(e) => { (e.target as any).src = "https://cdn-icons-png.flaticon.com/512/147/147144.png" }} 
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-orange-100">
+                            <User className="w-10 h-10 text-orange-400" />
                           </div>
                         )}
-                     </div>
-                     {driverInfo && (
-                        <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-[30px] border border-gray-100 shadow-inner">
-                            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-md overflow-hidden border-2 border-white aspect-square shrink-0">
-                              {driverInfo.avatarUrl ? (
-                                <img 
-                                  src={driverInfo.avatarUrl} 
-                                  className="w-full h-full object-cover" 
-                                  onError={(e) => { (e.target as any).src = "https://cdn-icons-png.flaticon.com/512/147/147144.png" }} 
-                                />
-                              ) : (
-                                <User className="text-orange-200 w-8 h-8" />
-                              )}
-                            </div>
-                            <div className="flex-1 text-right min-w-0">
-                                <h3 className="font-black text-base text-gray-800 leading-tight truncate">{driverInfo.name || "كابتن سطحة"}</h3>
-                                <p className="text-[10px] font-bold text-gray-400 mb-1 truncate">{driverInfo.vehicleType || "سطحة"} • {driverInfo.plateNumber || "أربيل - 12345"}</p>
-                                <div className="flex items-center gap-1 text-orange-500 text-[10px] font-black bg-orange-50 w-fit px-2 py-0.5 rounded-full"><Star className="w-2.5 h-2.5 fill-orange-500" /> 4.9 ممتاز</div>
-                            </div>
-                            <div className="flex gap-2 shrink-0">
-                                <button onClick={() => { setIsChatOpen(true); setUnreadCount(0); }} className="bg-green-500 rounded-2xl w-12 h-12 shadow-lg shadow-green-100 flex items-center justify-center relative active:scale-90 transition-transform">
-                                  <MessageSquare className="w-5 h-5 text-white" />
-                                  {unreadCount > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] min-w-[20px] h-5 rounded-full flex items-center justify-center border-2 border-white font-black animate-bounce">{unreadCount}</span>}
-                                </button>
-                                <a href={`tel:${driverInfo.phone}`} className="bg-blue-500 rounded-2xl w-12 h-12 shadow-lg shadow-blue-100 flex items-center justify-center active:scale-90 transition-transform"><Phone className="w-5 h-5 text-white" /></a>
-                            </div>
+                      </div>
+                      <div className="absolute -bottom-1 -right-1 bg-green-500 w-5 h-5 rounded-full border-2 border-white"></div>
+                    </div>
+
+                    {/* CENTER: Driver Name & Type */}
+                    <div className="flex-1 text-right">
+                      <h3 className="text-lg font-black text-gray-900 leading-tight mb-0.5">
+                        {driverInfo.name || "كابتن سطحة"}
+                      </h3>
+                      <p className="text-xs text-gray-500 font-bold mb-2">سائق معتمد</p>
+                      <div className="flex items-center gap-1 text-orange-500 text-[11px] font-black bg-orange-50 w-fit px-3 py-1 rounded-full">
+                        <Star className="w-3 h-3 fill-orange-500" />
+                        <span>4.9</span>
+                        <span className="text-gray-400">• ممتاز</span>
+                      </div>
+                    </div>
+
+                    {/* LEFT: License Plate Graphic */}
+                    <div className="shrink-0">
+                      <div className="bg-white border-4 border-gray-800 rounded-xl px-3 py-2 shadow-md">
+                        <div className="text-center">
+                          <div className="text-[10px] font-bold text-gray-600 mb-0.5">IRAQ</div>
+                          <div className="text-xl font-black text-gray-900 leading-none tracking-wider">
+                            {driverInfo.plateNumber?.split('-')[1] || "123"}
+                          </div>
+                          <div className="text-[10px] font-bold text-gray-600 mt-0.5">
+                            {driverInfo.plateNumber?.split('-')[0] || "بغداد"}
+                          </div>
                         </div>
-                     )}
-                </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ACTION BUTTONS */}
+                  <div className="flex gap-3 pt-2">
+                    <button 
+                      onClick={() => { setIsChatOpen(true); setUnreadCount(0); }}
+                      className="flex-1 bg-gradient-to-r from-green-500 to-green-600 rounded-[20px] h-14 shadow-lg shadow-green-200 flex items-center justify-center gap-2 active:scale-95 transition-transform relative"
+                    >
+                      <MessageSquare className="w-5 h-5 text-white" />
+                      <span className="text-white font-black text-sm">مراسلة</span>
+                      {unreadCount > 0 && (
+                        <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] min-w-[22px] h-5 rounded-full flex items-center justify-center border-2 border-white font-black animate-bounce">
+                          {unreadCount}
+                        </span>
+                      )}
+                    </button>
+                    
+                    <a 
+                      href={`tel:${driverInfo.phone}`}
+                      className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 rounded-[20px] h-14 shadow-lg shadow-blue-200 flex items-center justify-center gap-2 active:scale-95 transition-transform"
+                    >
+                      <Phone className="w-5 h-5 text-white" />
+                      <span className="text-white font-black text-sm">اتصال</span>
+                    </a>
+                  </div>
+
+                  {/* PHONE NUMBER DISPLAY */}
+                  <div className="text-center bg-gray-50 py-3 rounded-[20px]">
+                    <p className="text-[11px] text-gray-500 font-bold mb-1">رقم الهاتف</p>
+                    <p className="text-lg font-black text-gray-800 tracking-wide" dir="ltr">
+                      {driverInfo.phone || "07XXXXXXXXX"}
+                    </p>
+                  </div>
+
+                  {/* CANCEL BUTTON (Footer) */}
+                  {requestStatus !== "pending" && (
+                    <>
+                      <div className="border-t border-gray-100 -mx-6"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowCancelModal(true);
+                        }}
+                        className="w-full py-3 text-center text-red-500 hover:text-red-600 font-bold text-sm transition-colors rounded-[16px] hover:bg-red-50"
+                        style={{ pointerEvents: 'auto' }}
+                      >
+                        إلغاء الرحلة
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
             </div>
+          </div>
         </motion.div>
 
         {/* Professional Cancel Confirmation Modal - INSIDE TRACKING VIEW */}
