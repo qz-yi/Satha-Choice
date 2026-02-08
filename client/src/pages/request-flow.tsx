@@ -1151,7 +1151,13 @@ export default function RequestFlow() {
 
         <AnimatePresence>
           {isChatOpen && (
-            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} className="fixed inset-0 z-[7000] bg-white flex flex-col">
+            <motion.div 
+              initial={{ y: "100%" }} 
+              animate={{ y: 0 }} 
+              exit={{ y: "100%" }} 
+              className="fixed inset-0 z-[9997] bg-white flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div className="p-6 border-b flex justify-between items-center bg-white shadow-sm">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center font-black text-orange-600 overflow-hidden">
@@ -1324,8 +1330,8 @@ export default function RequestFlow() {
                     </div>
 
                     <div className="p-6 pt-10 flex-1 overflow-y-auto">
-                      <SidebarLink onClick={() => setIsHistoryOpen(true)} icon={<History className="w-5 h-5"/>} label="سجل الرحلات" extra={`${userProfile.trips} رحلة`} />
-                      <SidebarLink onClick={() => setIsWalletOpen(true)} icon={<Wallet className="w-5 h-5"/>} label="المحفظة" extra={`${userProfile.wallet} د.ع`} color="text-green-600" extraColor="bg-green-50 text-green-700" />
+                      <SidebarLink onClick={() => !isWalletOpen && setIsHistoryOpen(true)} icon={<History className="w-5 h-5"/>} label="سجل الرحلات" extra={`${userProfile.trips} رحلة`} />
+                      <SidebarLink onClick={() => !isHistoryOpen && setIsWalletOpen(true)} icon={<Wallet className="w-5 h-5"/>} label="المحفظة" extra={`${userProfile.wallet} د.ع`} color="text-green-600" extraColor="bg-green-50 text-green-700" />
                       <SidebarLink icon={<Star className="w-5 h-5"/>} label="التقييم" extra="4.9 ★" color="text-yellow-500" extraColor="bg-yellow-50 text-yellow-700" />
                       <SidebarLink icon={<Phone className="w-5 h-5"/>} label="الدعم الفني" color="text-blue-600" />
                     </div>
@@ -1339,7 +1345,7 @@ export default function RequestFlow() {
                 </SheetContent>
               </Sheet>
 
-              <div onClick={() => step !== "vehicle" && setIsSearchOpen(true)} className="flex-1 bg-white shadow-2xl rounded-[28px] p-4 flex flex-col justify-center border border-white cursor-pointer transition-transform active:scale-95">
+              <div onClick={() => !isWalletOpen && !isHistoryOpen && step !== "vehicle" && setIsSearchOpen(true)} className="flex-1 bg-white shadow-2xl rounded-[28px] p-4 flex flex-col justify-center border border-white cursor-pointer transition-transform active:scale-95">
                 <StepIndicator step={step} />
                 <div className="flex items-center justify-between">
                     <span className="text-sm font-black text-gray-800 truncate">
@@ -1426,8 +1432,8 @@ export default function RequestFlow() {
                 initial={{ y: "100%" }} 
                 animate={{ y: 0 }} 
                 exit={{ y: "100%" }} 
-                className="fixed inset-0 z-[99997] bg-white p-6 flex flex-col"
-                style={{ pointerEvents: 'auto' }}
+                className="fixed inset-0 z-[9996] bg-white p-6 flex flex-col"
+                onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center gap-4 mb-8">
                     <Button variant="ghost" onClick={() => setIsSearchOpen(false)} className="rounded-2xl bg-gray-50"><X className="w-6 h-6" /></Button>
@@ -1457,8 +1463,8 @@ export default function RequestFlow() {
               initial={{ x: "100%" }} 
               animate={{ x: 0 }} 
               exit={{ x: "100%" }} 
-              className="fixed inset-0 z-[99998] bg-white flex flex-col"
-              style={{ pointerEvents: 'auto' }}
+              className="fixed inset-0 z-[9998] bg-white flex flex-col"
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 border-b flex justify-between items-center">
                 <h3 className="font-black text-xl">سجل الرحلات</h3>
@@ -1489,8 +1495,9 @@ export default function RequestFlow() {
             <motion.div 
               initial={{ opacity: 0, y: 10 }} 
               animate={{ opacity: 1, y: 0 }} 
-              className="absolute inset-0 z-[9500] bg-white flex flex-col font-sans text-right"
+              className="fixed inset-0 z-[9999] bg-white flex flex-col font-sans text-right"
               dir="rtl"
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 flex items-center justify-between border-b border-gray-50 bg-white">
                 <Button 
