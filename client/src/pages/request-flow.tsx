@@ -341,6 +341,16 @@ export default function RequestFlow() {
             plateNumber: driverData.plateNumber || ""
           });
           console.log("✅ [CUSTOMER RECOVERY] Driver info restored:", driverData.name);
+          
+          // CRITICAL FIX: Restore driver's LIVE LOCATION for immediate tracking
+          if (driverData.lat && driverData.lng) {
+            const driverLat = Number(driverData.lat);
+            const driverLng = Number(driverData.lng);
+            setDriverLocation([driverLat, driverLng]);
+            console.log("✅ [CUSTOMER RECOVERY] Driver live location restored:", {lat: driverLat, lng: driverLng});
+          } else {
+            console.log("⚠️ [CUSTOMER RECOVERY] No live location available for driver");
+          }
         } else {
           console.log("⚠️ [CUSTOMER RECOVERY] Failed to fetch driver data");
         }

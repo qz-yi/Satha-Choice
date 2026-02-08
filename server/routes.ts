@@ -49,7 +49,8 @@ const uploadStorage = multer.diskStorage({
 const upload = multer({ storage: uploadStorage });
 
 // === دالة مساعدة لتحديد الحالات النشطة ===
-const ACTIVE_STATUSES = ["accepted", "confirmed", "arrived", "in_progress", "arrived_dropoff"];
+// CRITICAL FIX: Include 'picked_up' status for proper recovery of transferred/assigned orders
+const ACTIVE_STATUSES = ["accepted", "confirmed", "arrived", "picked_up", "in_progress", "arrived_dropoff"];
 
 export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   const app: Express = arg1.post ? arg1 : arg2;
@@ -829,6 +830,15 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       
       console.log(`[Admin Assign] Request ${requestId} → Driver ${driverId}`);
       
+      // CRITICAL: Check if this is a TRANSFER (order already has a different driver)
+      const currentRequest = await storage.getRequest(requestId);
+      const previousDriverId = currentRequest?.driverId;
+      const isTransfer = previousDriverId && previousDriverId !== driverId;
+      
+      if (isTransfer) {
+        console.log(`🔄 [TRANSFER] Moving order ${requestId} from Driver ${previousDriverId} to Driver ${driverId}`);
+      }
+      
       // تعيين الطلب للسائق في قاعدة البيانات
       const updated = await storage.assignRequestToDriver(requestId, driverId);
       const driver = await storage.getDriver(driverId);
@@ -886,6 +896,17 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       // إشعار الزبون بقبول الطلب
       io.to(`order_${requestId}`).emit("status_changed", payload);
       io.emit(`order_status_${requestId}`, payload);
+
+      // CRITICAL: If this is a TRANSFER, notify the previous driver
+      if (isTransfer && previousDriverId) {
+        console.log(`🔄 [TRANSFER] Notifying previous driver ${previousDriverId} that order is being transferred`);
+        io.to(`driver_${previousDriverId}`).emit("order_transferred", {
+          orderId: requestId,
+          newDriverId: driverId,
+          message: "تم نقل الطلب إلى سائق آخر من قبل الإدارة"
+        });
+        console.log(`✅ [TRANSFER] Previous driver ${previousDriverId} notified successfully`);
+      }
 
       // CRITICAL: إشعار السائق بالطلب الجديد مع كل التفاصيل - FORCE UI TRANSITION
       if (driverId) {

@@ -212,28 +212,24 @@ export default function DriverDashboard() {
       status: recoveredOrder.status
     });
     
-    // MANDATORY FIX: STRICT filtering with explicit completed/delivered/cancelled check
-    if (recoveredOrder.status === 'delivered' || recoveredOrder.status === 'completed' || recoveredOrder.status === 'cancelled') {
-      console.log("🚫 [DRIVER RECOVERY] Recovery aborted: Order is", recoveredOrder.status);
+    // CRITICAL FIX: Use BLACKLIST approach - reject ONLY completed/cancelled/delivered
+    // This ensures transferred/assigned orders are recovered regardless of specific status
+    const INVALID_STATUSES = ['delivered', 'completed', 'cancelled', 'pending'];
+    
+    if (INVALID_STATUSES.includes(recoveredOrder.status)) {
+      console.log("🚫 [DRIVER RECOVERY] Recovery aborted: Order status is", recoveredOrder.status);
+      console.log("🧹 [DRIVER RECOVERY] Reason:", 
+        recoveredOrder.status === 'pending' ? 'Order not yet accepted by any driver' : 
+        'Order is already completed/cancelled/delivered'
+      );
       console.log("🧹 [DRIVER RECOVERY] Clearing ALL LocalStorage for this order");
       localStorage.removeItem(`driver_active_order_${driverInfo.id}`);
+      localStorage.removeItem("sat7a_active_order_id");
       return; // ABORT restoration
     }
     
-    // GUARDED CONDITION: STRICTLY filter valid active statuses ONLY
-    const VALID_ACTIVE_STATUSES = ["accepted", "arrived", "picked_up", "in_progress"];
-    const isActiveStatus = VALID_ACTIVE_STATUSES.includes(recoveredOrder.status);
-    
-    if (!isActiveStatus) {
-      console.log("🚫 [DRIVER RECOVERY] Order is NOT in active status:", {
-        orderId: recoveredOrder.id,
-        status: recoveredOrder.status,
-        validStatuses: VALID_ACTIVE_STATUSES
-      });
-      console.log("🧹 [DRIVER RECOVERY] Clearing stale data");
-      localStorage.removeItem(`driver_active_order_${driverInfo.id}`);
-      return; // ABORT restoration completely
-    }
+    console.log("✅ [DRIVER RECOVERY] Order is in valid active status:", recoveredOrder.status);
+    console.log("✅ [DRIVER RECOVERY] This includes admin-assigned and transferred orders");
     
     console.log("✅ [DRIVER RECOVERY] VALID active order found, proceeding with restoration");
     console.log("🔄 [DRIVER RECOVERY] Step 1: Setting active order state");
@@ -242,18 +238,27 @@ export default function DriverDashboard() {
     
     // Determine stage based on order status
     console.log("🔄 [DRIVER RECOVERY] Step 2: Determining order stage");
-    if (recoveredOrder.status === "accepted") {
+    if (recoveredOrder.status === "accepted" || recoveredOrder.status === "confirmed") {
       setOrderStage("heading_to_pickup");
       setActiveTab("map");
       console.log("✅ [DRIVER RECOVERY] Stage: heading_to_pickup");
     } else if (recoveredOrder.status === "arrived") {
-      setOrderStage("waiting_for_customer");
+      setOrderStage("arrived_at_pickup");
       setActiveTab("map");
-      console.log("✅ [DRIVER RECOVERY] Stage: waiting_for_customer");
+      console.log("✅ [DRIVER RECOVERY] Stage: arrived_at_pickup");
     } else if (recoveredOrder.status === "picked_up" || recoveredOrder.status === "in_progress") {
-      setOrderStage("heading_to_destination");
+      setOrderStage("in_progress");
       setActiveTab("map");
-      console.log("✅ [DRIVER RECOVERY] Stage: heading_to_destination");
+      console.log("✅ [DRIVER RECOVERY] Stage: in_progress");
+    } else if (recoveredOrder.status === "arrived_dropoff") {
+      setOrderStage("arrived_at_destination");
+      setActiveTab("map");
+      console.log("✅ [DRIVER RECOVERY] Stage: arrived_at_destination");
+    } else {
+      // Default fallback for any other active status
+      setOrderStage("heading_to_pickup");
+      setActiveTab("map");
+      console.log("⚠️ [DRIVER RECOVERY] Unknown status, defaulting to heading_to_pickup");
     }
     
     // Re-join order room for socket updates
@@ -663,6 +668,41 @@ export default function DriverDashboard() {
       socket.on("ORDER_UPDATED", handleOrderAssigned);
       socket.on("NEW_ORDER_ASSIGNED", handleOrderAssigned); // New explicit event
       
+      // CRITICAL FIX: Handle order transfer from this driver to another
+      socket.on("order_transferred", (data: any) => {
+        console.log("🔄 [TRANSFER] Order transferred away from this driver:", data);
+        // Check if the order being transferred is the current active order
+        if (activeOrder && activeOrder.id === data.orderId) {
+          console.log("🧹 [TRANSFER] This driver's active order was transferred - clearing state");
+          
+          // IMMEDIATE cleanup
+          socket.emit("leave_order", data.orderId);
+          localStorage.removeItem(`driver_active_order_${driverInfo?.id}`);
+          localStorage.removeItem("sat7a_active_order_id");
+          console.log("🧹 [TRANSFER] All localStorage keys cleared");
+          
+          // Force UI reset to available mode
+          setActiveOrder(null);
+          setOrderStage("heading_to_pickup");
+          setActiveTab("map");
+          
+          // Invalidate queries to refresh available orders
+          queryClient.invalidateQueries(["driverOrders", driverInfo?.id]);
+          queryClient.invalidateQueries(["availableRequests"]);
+          
+          setNotification({ 
+            show: true, 
+            message: "تم نقل الطلب إلى سائق آخر من قبل الإدارة", 
+            type: "error" 
+          });
+          setTimeout(() => {
+            setNotification(n => ({ ...n, show: false }));
+          }, 5000);
+          
+          console.log("✅ [TRANSFER] Driver UI reset to available mode without refresh");
+        }
+      });
+      
       // Handle order deletion by admin
       socket.on("order_deleted_by_admin", (data: any) => {
         console.log("[Driver] Order deleted by admin:", data);
@@ -782,6 +822,7 @@ export default function DriverDashboard() {
         socket.off("order_assigned");
         socket.off("ORDER_UPDATED");
         socket.off("NEW_ORDER_ASSIGNED");
+        socket.off("order_transferred"); // CRITICAL: Clean up transfer listener
         socket.off("order_deleted_by_admin");
         socket.off("order_cancelled_by_customer");
         socket.off("ADMIN_FORCE_COMPLETE");
