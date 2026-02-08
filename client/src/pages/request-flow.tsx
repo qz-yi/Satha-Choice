@@ -135,7 +135,6 @@ export default function RequestFlow() {
   const [isDepositing, setIsDepositing] = useState(false);
   const [walletPaymentMethod, setWalletPaymentMethod] = useState<'zain' | 'card' | null>(null);
   const [depositAmount, setDepositAmount] = useState<string>("25000");
-  const [isCharging, setIsCharging] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false); 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
