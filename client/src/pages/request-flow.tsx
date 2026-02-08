@@ -465,16 +465,16 @@ export default function RequestFlow() {
       
       // CRITICAL: Use setTimeout to ensure ALL state updates are flushed before ending loading
       // This prevents any flash of the booking view
-      setTimeout(() => {
-        setIsCheckingRecovery(false);
-        console.log("✅ [CUSTOMER RECOVERY] Loading state ended - UI should now show recovered view");
-        
-        toast({
-          title: "✅ تم استرجاع الطلب",
-          description: "تم استعادة طلبك النشط بنجاح",
-          className: "bg-green-600 text-white font-black rounded-[24px]"
-        });
-      }, 100); // Small delay to ensure state is committed
+      // CRITICAL: Immediately end loading state - React batches state updates
+      setIsCheckingRecovery(false);
+      console.log("✅ [CUSTOMER RECOVERY] Loading state ended - UI will now render recovered view");
+      
+      // Show success toast
+      toast({
+        title: "✅ تم استرجاع الطلب",
+        description: "تم استعادة طلبك النشط بنجاح",
+        className: "bg-green-600 text-white font-black rounded-[24px]"
+      });
       
     } catch (error) {
       console.error("❌ [CUSTOMER RECOVERY] Error fetching active order:", error);
@@ -1302,9 +1302,9 @@ export default function RequestFlow() {
           dragElastic={0.1}
           animate={{ 
             y: (() => {
-              // Searching state: Fixed at comfortable viewing height
+              // Searching state: Fixed at comfortable viewing height with cancel button visible
               if (requestStatus === "pending" || !driverInfo) {
-                return "calc(100% - 180px)"; // Show ~180px of content
+                return "calc(100% - 240px)"; // Show ~240px of content (increased for cancel button)
               }
               // Driver found: Toggle between minimized and expanded
               return isSheetExpanded ? 0 : "calc(100% - 120px)"; // Expanded: Full | Minimized: 120px peek
@@ -1332,7 +1332,7 @@ export default function RequestFlow() {
               <GripHorizontal className={`w-6 h-6 transition-all duration-300 ${isSheetExpanded ? 'text-gray-300' : 'text-orange-500 rotate-180'}`} />
             </div>
 
-            <div className="px-6 pb-8 space-y-5">
+            <div className="px-6 pb-16 space-y-5">
               {/* STATUS HEADER */}
               <div className="text-center pt-2">
                 <div className="flex items-center justify-center gap-2 mb-1">
