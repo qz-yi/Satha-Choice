@@ -137,8 +137,8 @@ export default function RequestFlow() {
   const [depositAmount, setDepositAmount] = useState<string>("25000");
   const [showCancelModal, setShowCancelModal] = useState(false); 
   
-  // Bottom Sheet Snap Points State
-  const [sheetPosition, setSheetPosition] = useState(0); // 0 = default, will animate to proper position
+  // Bottom Sheet Smart Handle State
+  const [isSheetExpanded, setIsSheetExpanded] = useState(true); // true = expanded (50%), false = minimized (15%)
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -678,18 +678,11 @@ export default function RequestFlow() {
     };
   }, [isChatOpen, activeOrderId]);
   
-  // Reset sheet position when driver is found (status changes from pending to accepted)
+  // Reset sheet to expanded when driver is found
   useEffect(() => {
     if (requestStatus !== "pending" && driverInfo) {
-      // Driver found - reset to standard view (45%)
-      const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
-      setSheetPosition(-screenHeight * 0.45);
-      console.log("📐 [BOTTOM SHEET] Driver found - setting position to 45% (Standard view)");
-    } else if (requestStatus === "pending") {
-      // Searching - ensure at 25%
-      const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
-      setSheetPosition(-screenHeight * 0.25);
-      console.log("📐 [BOTTOM SHEET] Searching mode - setting position to 25%");
+      setIsSheetExpanded(true); // Driver found - show full details
+      console.log("📐 [BOTTOM SHEET] Driver found - expanding sheet");
     }
   }, [requestStatus, driverInfo]);
 
@@ -1258,88 +1251,41 @@ export default function RequestFlow() {
           )}
         </AnimatePresence>
 
-        {/* PROFESSIONAL DRAGGABLE BOTTOM SHEET - SATHA STYLE WITH SNAP POINTS */}
+        {/* PROFESSIONAL DRAGGABLE BOTTOM SHEET - SATHA STYLE (Smart Handle) */}
         <motion.div 
           drag="y"
-          dragConstraints={(() => {
-            const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
-            
-            // SNAP POINTS BASED ON STATE
-            if (requestStatus === "pending" || !driverInfo) {
-              // SEARCHING STATE: Fixed at 25% of screen
-              return { top: -screenHeight * 0.25, bottom: 0 };
-            } else {
-              // DRIVER FOUND STATE: Full range with snap points
-              // Bottom: 15% (Minimized) | Middle: 45% (Standard) | Top: 60% (Max)
-              return { top: -screenHeight * 0.60, bottom: 0 };
-            }
-          })()}
-          dragElastic={0.05}
-          dragMomentum={false}
+          dragConstraints={{ top: 0, bottom: 0 }}
+          dragElastic={0.1}
           animate={{ 
             y: (() => {
-              const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
-              
-              // Auto-position based on state
+              // Searching state: Fixed at comfortable viewing height
               if (requestStatus === "pending" || !driverInfo) {
-                // Searching: Show at 25% height
-                return -screenHeight * 0.25;
-              } else {
-                // Driver found: Default to standard view (45%)
-                return sheetPosition === 0 ? -screenHeight * 0.45 : sheetPosition;
+                return "calc(100% - 180px)"; // Show ~180px of content
               }
+              // Driver found: Toggle between minimized and expanded
+              return isSheetExpanded ? 0 : "calc(100% - 120px)"; // Expanded: Full | Minimized: 120px peek
             })()
           }}
-          onDragEnd={(event, info) => {
-            const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
-            const currentY = info.point.y;
-            const velocity = info.velocity.y;
-            
-            // Calculate snap points in pixels from bottom
-            const minimized = -screenHeight * 0.15;  // 15% - Show only name/car
-            const standard = -screenHeight * 0.45;    // 45% - Default view
-            const expanded = -screenHeight * 0.60;    // 60% - Full details
-            
-            // Snap to nearest point based on drag distance and velocity
-            if (velocity > 500) {
-              // Fast swipe down - minimize
-              setSheetPosition(minimized);
-            } else if (velocity < -500) {
-              // Fast swipe up - expand
-              setSheetPosition(expanded);
-            } else {
-              // Snap to nearest point
-              const distToMin = Math.abs(info.offset.y - minimized);
-              const distToStd = Math.abs(info.offset.y - standard);
-              const distToExp = Math.abs(info.offset.y - expanded);
-              
-              if (distToMin < distToStd && distToMin < distToExp) {
-                setSheetPosition(minimized);
-              } else if (distToExp < distToStd && distToExp < distToMin) {
-                setSheetPosition(expanded);
-              } else {
-                setSheetPosition(standard);
-              }
+          onDragEnd={(e, info) => {
+            // Smart snapping based on drag direction
+            if (info.offset.y > 100) {
+              setIsSheetExpanded(false); // Drag down = minimize
+            } else if (info.offset.y < -50) {
+              setIsSheetExpanded(true);  // Drag up = expand
             }
           }}
-          transition={{ 
-            type: "spring", 
-            damping: 30, 
-            stiffness: 300,
-            mass: 0.5
-          }}
+          transition={{ type: "spring", damping: 30, stiffness: 300 }}
           className="absolute inset-x-0 bottom-0 z-[2000] pointer-events-auto"
         >
-          <div className="bg-white rounded-t-[40px] shadow-[0_-10px_60px_rgba(0,0,0,0.2)] pointer-events-auto">
-            {/* DRAG HANDLE - Enhanced for touch */}
+          <div className="bg-white rounded-t-[45px] shadow-[0_-20px_60px_rgba(0,0,0,0.15)] pointer-events-auto">
+            {/* SMART HANDLE - Click to toggle, Drag to move (Replicated from DriverDashboard) */}
             <div 
-              className="w-full flex flex-col items-center pt-4 pb-2 cursor-grab active:cursor-grabbing"
+              className="w-full flex flex-col items-center py-5 cursor-grab active:cursor-grabbing"
+              onClick={() => setIsSheetExpanded(!isSheetExpanded)}
               style={{ touchAction: 'none' }}
             >
-              <GripHorizontal className="w-8 h-8 text-gray-300 mb-1" />
-              <p className="text-[10px] text-gray-400 font-bold">
-                {requestStatus === "pending" ? "جاري البحث عن سائق" : "اسحب للأعلى أو الأسفل"}
-              </p>
+              <div className="w-16 h-2 bg-gray-300 rounded-full mb-2" />
+              <GripHorizontal className={`w-6 h-6 transition-all duration-300 ${isSheetExpanded ? 'text-gray-300' : 'text-orange-500 rotate-180'}`} />
             </div>
 
             <div className="px-6 pb-8 space-y-5">

@@ -1164,31 +1164,101 @@ export default function DriverDashboard() {
         )}
 
         {activeOrder && orderStage !== "payment" && (
-          <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} className="absolute inset-x-0 bottom-0 z-[1300] bg-white rounded-t-[45px] p-8 shadow-2xl border-t-4 border-orange-500">
-            <div className="flex items-center justify-between mb-8">
+          <motion.div 
+            initial={{ y: "100%" }} 
+            animate={{ y: 0 }} 
+            className="absolute inset-x-0 bottom-0 z-[1300] bg-white rounded-t-[45px] shadow-[0_-20px_60px_rgba(0,0,0,0.15)]"
+          >
+            {/* PROFESSIONAL CUSTOMER PROFILE SECTION */}
+            <div className="p-6 pb-8 space-y-6">
+              {/* Customer Header Row */}
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-orange-50 rounded-3xl flex items-center justify-center font-bold text-orange-500">{activeOrder.customerName?.charAt(0) || "👤"}</div>
-                <div className="text-right">
-                  <h4 className="font-black text-xl text-gray-800">{activeOrder.customerName || "زبون جديد"}</h4>
-                  <p className="text-xs text-blue-500 font-bold cursor-pointer" onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${activeOrder.pickupLat},${activeOrder.pickupLng}`)}>فتح الخريطة الخارجية <ExternalLink className="w-3 h-3 inline"/></p>
+                {/* Customer Profile Image */}
+                <div className="relative shrink-0">
+                  <div className="w-20 h-20 rounded-full border-4 border-blue-500 overflow-hidden shadow-lg bg-white">
+                    {activeOrder.customerImage ? (
+                      <img 
+                        src={activeOrder.customerImage} 
+                        className="w-full h-full object-cover" 
+                        onError={(e) => { (e.target as any).src = "https://cdn-icons-png.flaticon.com/512/147/147144.png" }} 
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-blue-100">
+                        <User className="w-10 h-10 text-blue-400" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 bg-orange-500 w-5 h-5 rounded-full border-2 border-white"></div>
+                </div>
+
+                {/* Customer Name & Info */}
+                <div className="flex-1 text-right">
+                  <h4 className="text-xl font-black text-gray-900 leading-tight mb-0.5">
+                    {activeOrder.customerName || "زبون جديد"}
+                  </h4>
+                  <p className="text-xs text-gray-500 font-bold mb-2">عميل سطحة</p>
+                  <div className="flex items-center gap-1 text-blue-500 text-[11px] font-black bg-blue-50 w-fit px-3 py-1 rounded-full">
+                    <Star className="w-3 h-3 fill-blue-500" />
+                    <span>4.8</span>
+                    <span className="text-gray-400">• موثوق</span>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex flex-col gap-2 shrink-0">
+                  <button 
+                    onClick={() => { setIsChatOpen(true); setUnreadCount(0); }} 
+                    className="w-14 h-14 bg-gradient-to-r from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200 relative active:scale-90 transition-transform"
+                  >
+                    <MessageSquare className="w-6 h-6 text-white" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] min-w-[22px] h-5 rounded-full flex items-center justify-center border-2 border-white font-black animate-bounce">
+                        {unreadCount}
+                      </span>
+                    )}
+                  </button>
+                  <a 
+                    href={`tel:${activeOrder.customerPhone || '000'}`} 
+                    className="w-14 h-14 bg-gradient-to-r from-green-500 to-green-600 rounded-2xl flex items-center justify-center shadow-lg shadow-green-200 active:scale-90 transition-transform"
+                  >
+                    <Phone className="w-6 h-6 text-white" />
+                  </a>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <button onClick={() => { setIsChatOpen(true); setUnreadCount(0); }} className="w-14 h-14 bg-blue-500 rounded-2xl flex items-center justify-center shadow-lg relative"><MessageSquare className="w-7 h-7 text-white" />{unreadCount > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center border-2 border-white">{unreadCount}</span>}</button>
-                <a href={`tel:${activeOrder.customerPhone || '000'}`} className="w-14 h-14 bg-green-500 rounded-2xl flex items-center justify-center shadow-lg"><Phone className="w-7 h-7 text-white" /></a>
-              </div>
+
+              {/* Navigation Button */}
+              <Button 
+                onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${activeOrder.pickupLat},${activeOrder.pickupLng}`, '_blank')}
+                className="w-full h-14 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-[24px] font-black text-sm shadow-lg shadow-orange-200 flex items-center justify-center gap-2"
+              >
+                <Navigation className="w-5 h-5" />
+                <span>فتح في خرائط جوجل</span>
+                <ExternalLink className="w-4 h-4" />
+              </Button>
             </div>
-            <Button onClick={() => {
+            {/* Primary Action Button */}
+            <Button 
+              onClick={() => {
                 let nextStage = "";
                 let nextStatus = "";
-                if (orderStage === "heading_to_pickup") { nextStage = "arrived_pickup"; nextStatus = "arrived"; }
-                else if (orderStage === "arrived_pickup") { nextStage = "heading_to_dropoff"; nextStatus = "in_progress"; }
-                else { nextStage = "payment"; nextStatus = "arrived_dropoff"; }
+                if (orderStage === "heading_to_pickup") { 
+                  nextStage = "arrived_pickup"; 
+                  nextStatus = "arrived"; 
+                } else if (orderStage === "arrived_pickup") { 
+                  nextStage = "heading_to_dropoff"; 
+                  nextStatus = "in_progress"; 
+                } else { 
+                  nextStage = "payment"; 
+                  nextStatus = "arrived_dropoff"; 
+                }
 
                 setOrderStage(nextStage);
                 socket.emit("update_order_status", { orderId: activeOrder.id, status: nextStatus, driverId: driverInfo.id });
-            }} className="w-full h-18 bg-black hover:bg-orange-600 text-white rounded-[26px] font-black text-xl py-4">
-              {orderStage === "heading_to_pickup" ? "وصلت لموقع الزبون" : orderStage === "arrived_pickup" ? "تأكيد رفع السيارة" : "إتمام الرحلة"}
+              }} 
+              className="w-full h-16 bg-gradient-to-r from-black to-gray-800 hover:from-orange-500 hover:to-orange-600 text-white rounded-[26px] font-black text-lg shadow-xl transition-all"
+            >
+              {orderStage === "heading_to_pickup" ? "وصلت لموقع الزبون" : 
+               orderStage === "arrived_pickup" ? "تأكيد رفع السيارة" : "إتمام الرحلة"}
             </Button>
           </motion.div>
         )}
