@@ -1487,110 +1487,104 @@ export default function RequestFlow() {
 
           {isWalletOpen && (
             <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[99999] flex items-center justify-center"
-              style={{ pointerEvents: 'auto' }}
+              initial={{ opacity: 0, y: 10 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              className="absolute inset-0 z-[9500] bg-white flex flex-col font-sans text-right"
+              dir="rtl"
             >
-              {/* CRITICAL: Backdrop to block all background interactions */}
-              <div 
-                className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-                onClick={() => setIsWalletOpen(false)}
-                style={{ pointerEvents: 'auto' }}
-              />
-              
-              {/* CRITICAL: Wallet modal container - isolated and above everything */}
-              <motion.div 
-                initial={{ scale: 0.9, y: 50 }} 
-                animate={{ scale: 1, y: 0 }} 
-                exit={{ scale: 0.9, y: 50 }}
-                className="relative z-10 bg-white w-full max-w-lg mx-4 rounded-[35px] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
-                style={{ pointerEvents: 'auto' }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="p-6 flex items-center justify-between border-b">
-                  <h2 className="text-xl font-black text-gray-800 italic">المحفظة</h2>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    onClick={() => setIsWalletOpen(false)}
-                    className="rounded-2xl hover:bg-gray-100"
-                  >
-                    <X className="w-6 h-6 text-gray-600" />
-                  </Button>
+              <div className="p-6 flex items-center justify-between border-b border-gray-50 bg-white">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => setIsWalletOpen(false)}
+                  className="rounded-full bg-gray-100 h-10 w-10"
+                >
+                  <X className="w-6 h-6 text-black" />
+                </Button>
+                <h2 className="text-xl font-black text-gray-800 italic">المحفظة</h2>
+                <div className="w-10"></div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8">
+                <div className="bg-[#FF7A00] p-7 rounded-[30px] text-white shadow-lg relative overflow-hidden">
+                  <p className="text-white/80 text-xs font-bold mb-1">رصيدك الحالي المتاح</p>
+                  <div className="flex items-baseline gap-2">
+                    <h3 className="text-4xl font-black tracking-tight">{Number(userProfile.wallet || 0).toLocaleString()}</h3>
+                    <span className="text-lg font-bold opacity-90">د.ع</span>
+                  </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8">
-                  <div className="bg-[#FF7A00] p-7 rounded-[30px] text-white shadow-lg relative overflow-hidden">
-                    <p className="text-white/80 text-xs font-bold mb-1">رصيدك الحالي المتاح</p>
-                    <div className="flex items-baseline gap-2">
-                      <h3 className="text-4xl font-black tracking-tight">{Number(userProfile.wallet || 0).toLocaleString()}</h3>
-                      <span className="text-lg font-bold opacity-90">د.ع</span>
+                <div className="space-y-3">
+                  <label className="text-gray-500 text-sm font-bold block px-2">مبلغ الشحن المطلوب</label>
+                  <input 
+                    value={depositAmount}
+                    onChange={(e) => setDepositAmount(e.target.value)}
+                    type="number" 
+                    placeholder="أدخل المبلغ..."
+                    className="w-full h-16 bg-gray-50 border-2 border-gray-100 rounded-[22px] px-6 text-xl font-black text-gray-800 focus:border-orange-500 focus:outline-none transition-all"
+                  />
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="text-gray-800 font-black text-lg pr-2">وسائل الشحن</h4>
+                  <button 
+                    onClick={() => setWalletPaymentMethod('zain')}
+                    className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${walletPaymentMethod === 'zain' ? 'border-orange-500 bg-orange-50/20' : 'border-gray-100'}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center p-1">
+                        <img src="/zain-logo.png" className="w-full h-full object-contain" alt="Zain" />
+                      </div>
+                      <span className="font-bold text-gray-700 text-lg">زين كاش</span>
                     </div>
-                  </div>
+                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${walletPaymentMethod === 'zain' ? 'border-orange-500' : 'border-gray-200'}`}>
+                      {walletPaymentMethod === 'zain' && <div className="w-3 h-3 bg-orange-500 rounded-full"></div>}
+                    </div>
+                  </button>
 
-                  <div className="space-y-3">
-                    <label className="text-gray-500 text-sm font-bold block px-2">مبلغ الشحن المطلوب</label>
-                    <input 
-                      value={depositAmount}
-                      onChange={(e) => setDepositAmount(e.target.value)}
-                      type="number" 
-                      placeholder="أدخل المبلغ..."
-                      className="w-full h-16 bg-gray-50 border-2 border-gray-100 rounded-[22px] px-6 text-xl font-black text-gray-800 focus:border-orange-500 focus:outline-none transition-all"
-                    />
-                  </div>
-
-                  <div className="space-y-4">
-                    <h4 className="text-gray-800 font-black text-lg pr-2">وسائل الشحن</h4>
-                    <button 
-                      onClick={() => setWalletPaymentMethod('zain')}
-                      className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${walletPaymentMethod === 'zain' ? 'border-orange-500 bg-orange-50/20' : 'border-gray-100'}`}
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center p-1">
-                          <img src="/zain-logo.png" className="w-full h-full object-contain" alt="Zain" />
-                        </div>
-                        <div className="text-right">
-                          <p className="font-black text-gray-800 text-sm">زين كاش</p>
-                          <p className="text-[10px] text-gray-400 font-bold">دفع فوري وآمن</p>
-                        </div>
-                      </div>
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${walletPaymentMethod === 'zain' ? 'border-orange-500' : 'border-gray-300'}`}>
-                        {walletPaymentMethod === 'zain' && <div className="w-3 h-3 bg-orange-500 rounded-full"></div>}
-                      </div>
-                    </button>
-
-                    <button 
-                      onClick={() => setWalletPaymentMethod('card')}
-                      className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${walletPaymentMethod === 'card' ? 'border-orange-500 bg-orange-50/20' : 'border-gray-100'}`}
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center">
-                          <CreditCard className="w-6 h-6 text-gray-600" />
-                        </div>
-                        <div className="text-right">
-                          <p className="font-black text-gray-800 text-sm">بطاقة ائتمان</p>
-                          <p className="text-[10px] text-gray-400 font-bold">Visa / MasterCard</p>
-                        </div>
-                      </div>
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${walletPaymentMethod === 'card' ? 'border-orange-500' : 'border-gray-300'}`}>
-                        {walletPaymentMethod === 'card' && <div className="w-3 h-3 bg-orange-500 rounded-full"></div>}
-                      </div>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="p-6 bg-white border-t border-gray-50 pb-8">
-                  <Button 
-                    disabled={isDepositing || !walletPaymentMethod}
-                    onClick={() => handleCustomerDeposit(walletPaymentMethod === 'card' ? 'master' : 'zain')}
-                    className="w-full h-16 rounded-[22px] bg-orange-500 text-white text-xl font-black shadow-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  <button 
+                    onClick={() => setWalletPaymentMethod('card')}
+                    className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${walletPaymentMethod === 'card' ? 'border-blue-500 bg-blue-50/20' : 'border-gray-100'}`}
                   >
-                    {isDepositing ? <Loader2 className="w-6 h-6 animate-spin" /> : "تأكيد عملية الشحن"}
-                  </Button>
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white">
+                        <CreditCard className="w-6 h-6" />
+                      </div>
+                      <span className="font-bold text-gray-700 text-lg">ماستر كارد / فيزا</span>
+                    </div>
+                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${walletPaymentMethod === 'card' ? 'border-blue-500' : 'border-gray-200'}`}>
+                      {walletPaymentMethod === 'card' && <div className="w-3 h-3 bg-blue-500 rounded-full"></div>}
+                    </div>
+                  </button>
                 </div>
-              </motion.div>
+
+                <div className="pt-4 pb-20">
+                  <h4 className="text-gray-800 font-black text-lg pr-2 mb-4">سجل العمليات</h4>
+                  {tripsHistory && tripsHistory.length > 0 ? (
+                    tripsHistory.map((trip) => (
+                      <div key={trip.id} className="flex items-center justify-between py-5 border-b border-gray-50 px-2">
+                        <div className="text-right">
+                          <p className="font-bold text-gray-800">رحلة مكتملة</p>
+                          <p className="text-[11px] text-gray-400 font-bold">{new Date(trip.createdAt).toLocaleDateString('ar-EG')}</p>
+                        </div>
+                        <div className="text-lg font-black text-red-600">
+                          -{trip.price?.toLocaleString() || 0} د.ع
+                        </div>
+                      </div>
+                    ))
+                  ) : <div className="text-center py-10 opacity-30 italic font-bold">لا توجد عمليات مسجلة</div>}
+                </div>
+              </div>
+
+              <div className="p-6 bg-white border-t border-gray-50 pb-8">
+                <Button 
+                  disabled={isDepositing || !walletPaymentMethod}
+                  onClick={() => handleCustomerDeposit(walletPaymentMethod === 'card' ? 'master' : 'zain')}
+                  className="w-full h-16 rounded-[22px] bg-orange-500 text-white text-xl font-black shadow-lg hover:bg-orange-600 disabled:opacity-50"
+                >
+                  {isDepositing ? <Loader2 className="w-6 h-6 animate-spin" /> : "تأكيد عملية الشحن"}
+                </Button>
+              </div>
             </motion.div>
           )}
       </AnimatePresence>
