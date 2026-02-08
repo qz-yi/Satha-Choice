@@ -130,6 +130,12 @@ export default function RequestFlow() {
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "wallet">("cash");
   const [tripsHistory, setTripsHistory] = useState<any[]>([]);
   const [chargeAmount, setChargeAmount] = useState("");
+  
+  // Professional Wallet States (replicated from Driver)
+  const [isDepositing, setIsDepositing] = useState(false);
+  const [walletPaymentMethod, setWalletPaymentMethod] = useState<'zain' | 'card' | null>(null);
+  const [depositAmount, setDepositAmount] = useState<string>("25000");
+  const [isCharging, setIsCharging] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false); 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -892,32 +898,51 @@ export default function RequestFlow() {
     setTimeout(() => setShouldFly(false), 2000);
   };
 
-  const handleTopUp = async (method: string) => {
-    if (method === "Zain Cash") {
-      if (!chargeAmount || Number(chargeAmount) < 1000) {
-        toast({ variant: "destructive", title: "المبلغ غير صالح", description: "الحد الأدنى للشحن عبر زين كاش هو 1000 د.ع" });
-        return;
-      }
-      setIsCharging(true);
-      try {
-        const response = await fetch("/api/zaincash/initiate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amount: Number(chargeAmount),
-            userId: userProfile.id,
-            userName: userProfile.username,
-            userType: "customer"
-          }),
+  // Professional Wallet Deposit Handler (replicated from Driver)
+  const handleCustomerDeposit = async (method: 'zain' | 'master') => {
+    if (!userProfile.id) {
+      toast({ variant: "destructive", title: "خطأ", description: "لم يتم العثور على بيانات المستخدم" });
+      return;
+    }
+
+    const amountValue = parseInt(depositAmount);
+    if (isNaN(amountValue) || amountValue < 1000) {
+      toast({ variant: "destructive", title: "مبلغ غير صحيح", description: "أقل مبلغ للشحن هو 1000 دينار" });
+      return;
+    }
+
+    setIsDepositing(true);
+    try {
+      const response = await fetch("/api/zaincash/initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: amountValue,
+          userId: Number(userProfile.id),
+          userType: "customer"
+        }),
+      });
+      
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "فشل في بدء عملية الدفع");
+      
+      if (data.url || data.redirectUrl) {
+        window.location.href = data.url || data.redirectUrl;
+      } else {
+        toast({ 
+          title: "✅ تم بدء العملية", 
+          description: "سيتم تحويلك لإكمال الدفع",
+          className: "bg-green-600 text-white font-black rounded-[24px]"
         });
-        const data = await response.json();
-        if (data.url) { window.location.href = data.url; } 
-        else { throw new Error(data.message || "لم يتم استلام رابط الدفع"); }
-      } catch (err: any) {
-        toast({ variant: "destructive", title: "فشل الاتصال بزين كاش", description: err.message });
-      } finally { setIsCharging(false); }
-    } else {
-      toast({ title: "قريباً", description: `بوابة ${method} ستتوفر قريباً.` });
+      }
+    } catch (err: any) {
+      toast({ 
+        variant: "destructive", 
+        title: "خطأ في عملية الشحن", 
+        description: err.message || "فشلت عملية الشحن" 
+      });
+    } finally { 
+      setIsDepositing(false); 
     }
   };
 
@@ -1450,42 +1475,94 @@ export default function RequestFlow() {
           )}
 
           {isWalletOpen && (
-            <motion.div initial={{ y: "100%", opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: "100%", opacity: 0 }} className="absolute inset-0 z-[9000] bg-white flex flex-col overflow-hidden">
-               <div className="relative bg-gradient-to-br from-orange-500 to-orange-400 rounded-b-[45px] p-6 pt-10 shadow-lg overflow-hidden z-20">
-                  <Truck className="absolute -right-10 -bottom-10 w-48 h-48 text-white/10 -rotate-12 pointer-events-none" />
-                  <div className="relative z-30 flex justify-between items-center">
-                    <div>
-                      <p className="text-orange-50 font-black text-xs mb-0.5 tracking-wide opacity-90">الرصيد المتاح</p>
-                      <h2 className="text-4xl font-black text-white tracking-tighter italic">{userProfile.wallet} <span className="text-xl text-orange-100 not-italic">د.ع</span></h2>
-                    </div>
-                    <motion.button whileTap={{ scale: 0.9 }} onClick={() => setIsWalletOpen(false)} className="bg-white/20 hover:bg-white/30 text-white rounded-2xl w-10 h-10 flex items-center justify-center backdrop-blur-md shadow-lg border border-white/20">
-                        <X className="w-5 h-5" />
-                    </motion.button>
+            <motion.div 
+              initial={{ opacity: 0, x: 50 }} 
+              animate={{ opacity: 1, x: 0 }} 
+              exit={{ opacity: 0, x: 50 }}
+              className="absolute inset-0 z-[2000] bg-white flex flex-col"
+            >
+              <div className="p-6 flex items-center gap-4 border-b">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => setIsWalletOpen(false)}
+                  className="rounded-2xl"
+                >
+                  <X className="w-6 h-6 text-black" />
+                </Button>
+                <h2 className="text-xl font-black text-gray-800 italic">المحفظة</h2>
+                <div className="w-10"></div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8">
+                <div className="bg-[#FF7A00] p-7 rounded-[30px] text-white shadow-lg relative overflow-hidden">
+                  <p className="text-white/80 text-xs font-bold mb-1">رصيدك الحالي المتاح</p>
+                  <div className="flex items-baseline gap-2">
+                    <h3 className="text-4xl font-black tracking-tight">{Number(userProfile.wallet || 0).toLocaleString()}</h3>
+                    <span className="text-lg font-bold opacity-90">د.ع</span>
                   </div>
-               </div>
-               <div className="flex-1 p-6 -mt-5 overflow-y-auto space-y-6 bg-white rounded-t-[35px] z-10 relative">
-                  <div className="space-y-4">
-                    <h4 className="font-black text-slate-800 text-sm flex items-center gap-2 px-1"><Wallet className="w-4 h-4 text-orange-500"/> تعبئة الرصيد</h4>
-                    <div className="relative group">
-                      <input type="number" inputMode="numeric" value={chargeAmount} onChange={(e) => setChargeAmount(e.target.value)} placeholder="أدخل مبلغ الشحن بالدينار..." className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pr-12 pl-4 font-black text-base outline-none focus:border-orange-500 focus:bg-white transition-all shadow-sm group-hover:border-orange-200" />
-                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-black text-xs pointer-events-none">د.ع</span>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-gray-500 text-sm font-bold block px-2">مبلغ الشحن المطلوب</label>
+                  <input 
+                    value={depositAmount}
+                    onChange={(e) => setDepositAmount(e.target.value)}
+                    type="number" 
+                    placeholder="أدخل المبلغ..."
+                    className="w-full h-16 bg-gray-50 border-2 border-gray-100 rounded-[22px] px-6 text-xl font-black text-gray-800 focus:border-orange-500 focus:outline-none transition-all"
+                  />
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="text-gray-800 font-black text-lg pr-2">وسائل الشحن</h4>
+                  <button 
+                    onClick={() => setWalletPaymentMethod('zain')}
+                    className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${walletPaymentMethod === 'zain' ? 'border-orange-500 bg-orange-50/20' : 'border-gray-100'}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center p-1">
+                        <img src="/zain-logo.png" className="w-full h-full object-contain" alt="Zain" />
+                      </div>
+                      <div className="text-right">
+                        <p className="font-black text-gray-800 text-sm">زين كاش</p>
+                        <p className="text-[10px] text-gray-400 font-bold">دفع فوري وآمن</p>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <motion.button whileTap={{ scale: 0.96 }} disabled={isCharging} onClick={() => handleTopUp("Zain Cash")} className="flex flex-col items-center justify-center gap-2 bg-white p-4 rounded-[28px] border-2 border-slate-50 hover:border-orange-500 shadow-sm hover:shadow-md transition-all">
-                           <div className="w-12 h-12 flex items-center justify-center">{isCharging ? <Loader2 className="animate-spin text-orange-500 w-5 h-5"/> : <QrCode className="text-orange-500 w-8 h-8" />}</div>
-                           <span className="font-black text-xs text-slate-700">زين كاش</span>
-                        </motion.button>
-                        <motion.button whileTap={{ scale: 0.96 }} onClick={() => handleTopUp("MasterCard")} className="flex flex-col items-center justify-center gap-2 bg-white p-4 rounded-[28px] border-2 border-slate-50 hover:border-orange-500 shadow-sm hover:shadow-md transition-all">
-                           <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center"><CreditCard className="text-slate-600 w-6 h-6" /></div>
-                           <span className="font-black text-xs text-slate-700">ماستر كارد</span>
-                        </motion.button>
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${walletPaymentMethod === 'zain' ? 'border-orange-500' : 'border-gray-300'}`}>
+                      {walletPaymentMethod === 'zain' && <div className="w-3 h-3 bg-orange-500 rounded-full"></div>}
                     </div>
-                  </div>
-                  <div className="p-4 bg-orange-50/50 rounded-2xl border border-orange-100 flex gap-3 items-center backdrop-blur-sm">
-                    <div className="bg-orange-100 p-2 rounded-lg shrink-0"><ShieldCheck className="w-5 h-5 text-orange-500" /></div>
-                    <div><h5 className="font-black text-orange-700 text-[11px] mb-0.5">عملية آمنة وموثوقة</h5><p className="text-[10px] text-orange-600 leading-tight font-bold opacity-80">سيتم تحديث رصيدك فور نجاح عملية الدفع.</p></div>
-                  </div>
-               </div>
+                  </button>
+
+                  <button 
+                    onClick={() => setWalletPaymentMethod('card')}
+                    className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${walletPaymentMethod === 'card' ? 'border-orange-500 bg-orange-50/20' : 'border-gray-100'}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center">
+                        <CreditCard className="w-6 h-6 text-gray-600" />
+                      </div>
+                      <div className="text-right">
+                        <p className="font-black text-gray-800 text-sm">بطاقة ائتمان</p>
+                        <p className="text-[10px] text-gray-400 font-bold">Visa / MasterCard</p>
+                      </div>
+                    </div>
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${walletPaymentMethod === 'card' ? 'border-orange-500' : 'border-gray-300'}`}>
+                      {walletPaymentMethod === 'card' && <div className="w-3 h-3 bg-orange-500 rounded-full"></div>}
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6 bg-white border-t border-gray-50 pb-8">
+                <Button 
+                  disabled={isDepositing || !walletPaymentMethod}
+                  onClick={() => handleCustomerDeposit(walletPaymentMethod === 'card' ? 'master' : 'zain')}
+                  className="w-full h-16 rounded-[22px] bg-orange-500 text-white text-xl font-black shadow-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isDepositing ? <Loader2 className="w-6 h-6 animate-spin" /> : "تأكيد عملية الشحن"}
+                </Button>
+              </div>
             </motion.div>
           )}
       </AnimatePresence>
