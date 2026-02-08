@@ -213,37 +213,57 @@ export default function RequestFlow() {
   // SINGLE-USE recovery flag to prevent continuous loops
   const hasAttemptedRecovery = useRef(false);
   
-  // استعادة الجلسة والبحث عن طلبات نشطة عند التحميل
+  // CRITICAL: Recovery check MUST run ONCE on mount to check for active orders
   useEffect(() => {
-    // CRITICAL: SINGLE-USE recovery check on mount ONLY
+    // SINGLE-USE recovery check - prevent loops
     if (hasAttemptedRecovery.current) {
       console.log("⏭️ [CUSTOMER RECOVERY] Already attempted, skipping");
       return;
     }
     
-    console.log("🚀 [CUSTOMER RECOVERY] Starting SINGLE-USE recovery check");
+    console.log("🚀 [CUSTOMER RECOVERY] Starting MANDATORY recovery check on mount");
     hasAttemptedRecovery.current = true;
     
+    // CRITICAL FIX: Check savedUser OR current userProfile state
     const savedUser = localStorage.getItem("sat7a_user");
     const sessionActive = localStorage.getItem("sat7a_session_active");
 
-    if (savedUser && sessionActive === "true") { 
-      const parsed = JSON.parse(savedUser);
-      setUserProfile(parsed); 
-      setIsLoggedIn(true); 
-      if (parsed.phone && parsed.password) refreshUserData(parsed.phone, parsed.password);
+    // If there's a saved user OR we're already logged in, attempt recovery
+    if (savedUser || userProfile.phone) { 
+      let phoneToCheck = userProfile.phone;
+      
+      // If no phone in state but savedUser exists, parse it
+      if (!phoneToCheck && savedUser) {
+        try {
+          const parsed = JSON.parse(savedUser);
+          phoneToCheck = parsed.phone;
+          
+          // Update state if not already set
+          if (!userProfile.phone) {
+            setUserProfile(parsed); 
+            setIsLoggedIn(true); 
+          }
+          
+          // Refresh user data if we have credentials
+          if (parsed.phone && parsed.password) {
+            refreshUserData(parsed.phone, parsed.password);
+          }
+        } catch (e) {
+          console.error("❌ [CUSTOMER RECOVERY] Failed to parse saved user:", e);
+        }
+      }
 
-      // CRITICAL: Fetch active order from API FIRST (before rendering)
-      if (parsed.phone) {
-        console.log("📡 [CUSTOMER RECOVERY] Calling API to fetch active order");
-        fetchActiveOrderFromAPI(parsed.phone);
+      // MANDATORY: Always check for active order if we have a phone
+      if (phoneToCheck) {
+        console.log("📡 [CUSTOMER RECOVERY] Checking for active orders for phone:", phoneToCheck);
+        fetchActiveOrderFromAPI(phoneToCheck);
       } else {
-        console.log("⚠️ [CUSTOMER RECOVERY] No phone number, aborting recovery");
-        setIsCheckingRecovery(false); // CRITICAL: End loading state
+        console.log("⚠️ [CUSTOMER RECOVERY] No phone number available, aborting recovery");
+        setIsCheckingRecovery(false);
       }
     } else {
-      console.log("⚠️ [CUSTOMER RECOVERY] No saved user or session, aborting recovery");
-      setIsCheckingRecovery(false); // CRITICAL: End loading state - no user logged in
+      console.log("⚠️ [CUSTOMER RECOVERY] No user data found, ending recovery check");
+      setIsCheckingRecovery(false);
     }
   }, []); // Empty deps - runs ONCE on mount only
   
@@ -400,21 +420,41 @@ export default function RequestFlow() {
       }));
       console.log("✅ [CUSTOMER RECOVERY] Map data restored");
       
-      // Rejoin socket room
+      // Rejoin socket room for live updates
       console.log("🔄 [CUSTOMER RECOVERY] Step 6: Rejoining socket room");
       socket.emit("join_order", activeOrder.id);
-      console.log("✅ [CUSTOMER RECOVERY] Socket room joined");
+      console.log("✅ [CUSTOMER RECOVERY] Socket room joined - will receive live updates");
+      
+      // Store order ID in localStorage for persistence
+      try {
+        localStorage.setItem("sat7a_active_order_id", String(activeOrder.id));
+        console.log("✅ [CUSTOMER RECOVERY] Order ID saved to localStorage");
+      } catch (e) {
+        console.warn("[localStorage] Quota exceeded for active order ID");
+      }
       
       console.log("🎉 [CUSTOMER RECOVERY] Recovery complete successfully!");
-      
-      // CRITICAL: End loading state - order restored successfully
-      setIsCheckingRecovery(false);
-      
-      toast({
-        title: "✅ تم استرجاع الطلب",
-        description: "تم استعادة طلبك النشط بنجاح",
-        className: "bg-green-600 text-white font-black rounded-[24px]"
+      console.log("📊 [CUSTOMER RECOVERY] Final state:", {
+        viewState: activeOrder.status === "pending" ? "success" : "tracking",
+        orderId: activeOrder.id,
+        status: activeOrder.status,
+        hasDriver: !!activeOrder.driverId,
+        driverLocation: driverLocation
       });
+      
+      // CRITICAL: Use setTimeout to ensure ALL state updates are flushed before ending loading
+      // This prevents any flash of the booking view
+      setTimeout(() => {
+        setIsCheckingRecovery(false);
+        console.log("✅ [CUSTOMER RECOVERY] Loading state ended - UI should now show recovered view");
+        
+        toast({
+          title: "✅ تم استرجاع الطلب",
+          description: "تم استعادة طلبك النشط بنجاح",
+          className: "bg-green-600 text-white font-black rounded-[24px]"
+        });
+      }, 100); // Small delay to ensure state is committed
+      
     } catch (error) {
       console.error("❌ [CUSTOMER RECOVERY] Error fetching active order:", error);
       setIsCheckingRecovery(false); // CRITICAL: End loading state even on error
