@@ -275,6 +275,55 @@ export default function RequestFlow() {
     }
   }, []); // Empty deps - runs ONCE on mount only
   
+  // CRITICAL: Fetch latest balance whenever wallet is opened
+  useEffect(() => {
+    if (isWalletOpen && userProfile.phone) {
+      console.log("💰 [WALLET] Wallet opened - fetching latest balance from API");
+      
+      const fetchLatestBalance = async () => {
+        try {
+          const response = await fetch(`/api/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              phone: userProfile.phone,
+              password: userProfile.password
+            })
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            const latestBalance = data.walletBalance?.toString() || "0";
+            
+            console.log(`💰 [WALLET] Latest balance fetched: ${latestBalance} IQD`);
+            
+            // Update state
+            setUserProfile(prev => {
+              const updated = { ...prev, wallet: latestBalance };
+              
+              // Update localStorage
+              try {
+                localStorage.setItem("sat7a_user", JSON.stringify(updated));
+              } catch (e) {
+                console.warn("[localStorage] Failed to update wallet in localStorage");
+              }
+              
+              return updated;
+            });
+            
+            console.log("✅ [WALLET] Balance synced successfully");
+          } else {
+            console.warn("⚠️ [WALLET] Failed to fetch latest balance");
+          }
+        } catch (error) {
+          console.error("❌ [WALLET] Error fetching balance:", error);
+        }
+      };
+      
+      fetchLatestBalance();
+    }
+  }, [isWalletOpen]); // Runs whenever wallet is opened
+  
   // CRITICAL: Customer-side order recovery from API
   const fetchActiveOrderFromAPI = async (customerPhone: string) => {
     try {
@@ -641,6 +690,46 @@ export default function RequestFlow() {
           }
       });
 
+      // CRITICAL: Handle real-time wallet updates from admin
+      if (userProfile.id) {
+        socket.on(`customer_wallet_updated_${userProfile.id}`, (data: any) => {
+          console.log("💰 [WALLET UPDATE] Received real-time balance update from admin:", data);
+          console.log(`💰 [WALLET UPDATE] New Balance: ${data.newBalance} IQD`);
+          
+          // IMMEDIATE state update
+          setUserProfile(prev => {
+            const updated = {
+              ...prev,
+              wallet: data.newBalance
+            };
+            
+            // Update localStorage
+            try {
+              const savedUser = localStorage.getItem("sat7a_user");
+              if (savedUser) {
+                const parsed = JSON.parse(savedUser);
+                localStorage.setItem("sat7a_user", JSON.stringify({...parsed, wallet: data.newBalance}));
+              }
+            } catch (e) {
+              console.warn("[localStorage] Failed to update wallet in localStorage");
+            }
+            
+            return updated;
+          });
+          
+          // Show success notification
+          toast({
+            title: data.type === "credit" ? "💰 تم إضافة رصيد" : "💸 تم خصم رصيد",
+            description: data.message || `الرصيد الجديد: ${data.newBalance} د.ع`,
+            className: "bg-green-600 text-white font-black rounded-[24px] shadow-2xl"
+          });
+          
+          console.log("✅ [WALLET UPDATE] Balance updated successfully in UI");
+        });
+        
+        console.log(`🔌 [SOCKET] Listening for wallet updates on: customer_wallet_updated_${userProfile.id}`);
+      }
+      
       // CRITICAL FIX: Handle order deletion by admin
       socket.on("order_deleted_by_admin", (data: any) => {
         console.log("🚀 [ADMIN DELETE] Order deleted by admin, immediate cleanup");

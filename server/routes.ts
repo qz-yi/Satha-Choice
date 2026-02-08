@@ -813,11 +813,48 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   // --- مسارات الإدارة ---
   app.post("/api/admin/customers/adjust-wallet", async (req, res) => {
     try {
-      const { customerPhone, amount } = req.body;
-      const updated = await storage.updateCustomerWallet(customerPhone, Number(amount));
-      res.json(updated);
+      const { customerPhone, amount, adminId } = req.body;
+      const amountNum = Number(amount);
+      
+      console.log(`💰 [ADMIN WALLET] Admin ${adminId || 'Unknown'} initiating wallet adjustment for customer ${customerPhone}`);
+      console.log(`💰 [ADMIN WALLET] Amount: ${amountNum} IQD`);
+      
+      // CRITICAL: Update customer balance in database
+      const updated = await storage.updateCustomerWallet(customerPhone, amountNum);
+      
+      console.log(`✅ [ADMIN WALLET] Database updated successfully`);
+      console.log(`✅ [ADMIN WALLET] Customer ${customerPhone} - Old Balance: ${(parseFloat(updated.walletBalance) - amountNum).toFixed(2)} → New Balance: ${updated.walletBalance} IQD`);
+      
+      // CRITICAL: Create transaction record for audit trail
+      await storage.createTransaction({
+        userId: updated.id,
+        amount: amountNum.toString(),
+        type: amountNum > 0 ? "admin_credit" : "admin_debit",
+        status: "completed",
+        referenceId: `ADMIN_ADJUST_${Date.now()}`
+      });
+      
+      console.log(`✅ [ADMIN WALLET] Transaction record created in database`);
+      
+      // CRITICAL: Emit real-time socket event to customer
+      io.emit(`customer_wallet_updated_${updated.id}`, { 
+        newBalance: updated.walletBalance,
+        amount: amountNum,
+        type: amountNum > 0 ? "credit" : "debit",
+        message: amountNum > 0 ? "تم إضافة رصيد من الإدارة" : "تم خصم رصيد من الإدارة"
+      });
+      
+      console.log(`✅ [ADMIN WALLET] Socket event emitted to customer (customer_wallet_updated_${updated.id})`);
+      console.log(`🎉 [ADMIN WALLET] Admin ${adminId || 'Unknown'} successfully adjusted Customer ${updated.id} wallet. Final Balance: ${updated.walletBalance} IQD`);
+      
+      res.json({ 
+        success: true,
+        user: updated,
+        message: "تم تحديث المحفظة بنجاح"
+      });
     } catch (err: any) {
-      res.status(500).json({ message: "فشل في تحديث محفظة الزبون" });
+      console.error("❌ [ADMIN WALLET ERROR]:", err);
+      res.status(500).json({ message: "فشل في تحديث محفظة الزبون: " + err.message });
     }
   });
 
