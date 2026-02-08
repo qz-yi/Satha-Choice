@@ -136,6 +136,9 @@ export default function RequestFlow() {
   const [walletPaymentMethod, setWalletPaymentMethod] = useState<'zain' | 'card' | null>(null);
   const [depositAmount, setDepositAmount] = useState<string>("25000");
   const [showCancelModal, setShowCancelModal] = useState(false); 
+  
+  // Bottom Sheet Snap Points State
+  const [sheetPosition, setSheetPosition] = useState(0); // 0 = default, will animate to proper position
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -674,6 +677,21 @@ export default function RequestFlow() {
       socket.off("new_message", handleNewMessage);
     };
   }, [isChatOpen, activeOrderId]);
+  
+  // Reset sheet position when driver is found (status changes from pending to accepted)
+  useEffect(() => {
+    if (requestStatus !== "pending" && driverInfo) {
+      // Driver found - reset to standard view (45%)
+      const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+      setSheetPosition(-screenHeight * 0.45);
+      console.log("📐 [BOTTOM SHEET] Driver found - setting position to 45% (Standard view)");
+    } else if (requestStatus === "pending") {
+      // Searching - ensure at 25%
+      const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+      setSheetPosition(-screenHeight * 0.25);
+      console.log("📐 [BOTTOM SHEET] Searching mode - setting position to 25%");
+    }
+  }, [requestStatus, driverInfo]);
 
   const handleSendMessage = () => {
     if (!chatMessage.trim() || !activeOrderId) return;
@@ -1240,20 +1258,88 @@ export default function RequestFlow() {
           )}
         </AnimatePresence>
 
-        {/* PROFESSIONAL DRAGGABLE BOTTOM SHEET - SATHA STYLE */}
+        {/* PROFESSIONAL DRAGGABLE BOTTOM SHEET - SATHA STYLE WITH SNAP POINTS */}
         <motion.div 
           drag="y"
-          dragConstraints={{ top: -200, bottom: 0 }}
-          dragElastic={0.1}
-          initial={{ y: 0 }}
+          dragConstraints={(() => {
+            const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+            
+            // SNAP POINTS BASED ON STATE
+            if (requestStatus === "pending" || !driverInfo) {
+              // SEARCHING STATE: Fixed at 25% of screen
+              return { top: -screenHeight * 0.25, bottom: 0 };
+            } else {
+              // DRIVER FOUND STATE: Full range with snap points
+              // Bottom: 15% (Minimized) | Middle: 45% (Standard) | Top: 60% (Max)
+              return { top: -screenHeight * 0.60, bottom: 0 };
+            }
+          })()}
+          dragElastic={0.05}
+          dragMomentum={false}
+          animate={{ 
+            y: (() => {
+              const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+              
+              // Auto-position based on state
+              if (requestStatus === "pending" || !driverInfo) {
+                // Searching: Show at 25% height
+                return -screenHeight * 0.25;
+              } else {
+                // Driver found: Default to standard view (45%)
+                return sheetPosition === 0 ? -screenHeight * 0.45 : sheetPosition;
+              }
+            })()
+          }}
+          onDragEnd={(event, info) => {
+            const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+            const currentY = info.point.y;
+            const velocity = info.velocity.y;
+            
+            // Calculate snap points in pixels from bottom
+            const minimized = -screenHeight * 0.15;  // 15% - Show only name/car
+            const standard = -screenHeight * 0.45;    // 45% - Default view
+            const expanded = -screenHeight * 0.60;    // 60% - Full details
+            
+            // Snap to nearest point based on drag distance and velocity
+            if (velocity > 500) {
+              // Fast swipe down - minimize
+              setSheetPosition(minimized);
+            } else if (velocity < -500) {
+              // Fast swipe up - expand
+              setSheetPosition(expanded);
+            } else {
+              // Snap to nearest point
+              const distToMin = Math.abs(info.offset.y - minimized);
+              const distToStd = Math.abs(info.offset.y - standard);
+              const distToExp = Math.abs(info.offset.y - expanded);
+              
+              if (distToMin < distToStd && distToMin < distToExp) {
+                setSheetPosition(minimized);
+              } else if (distToExp < distToStd && distToExp < distToMin) {
+                setSheetPosition(expanded);
+              } else {
+                setSheetPosition(standard);
+              }
+            }
+          }}
+          transition={{ 
+            type: "spring", 
+            damping: 30, 
+            stiffness: 300,
+            mass: 0.5
+          }}
           className="absolute inset-x-0 bottom-0 z-[2000] pointer-events-auto"
-          style={{ touchAction: 'none' }}
         >
           <div className="bg-white rounded-t-[40px] shadow-[0_-10px_60px_rgba(0,0,0,0.2)] pointer-events-auto">
-            {/* DRAG HANDLE */}
-            <div className="w-full flex flex-col items-center pt-4 pb-2 cursor-grab active:cursor-grabbing">
+            {/* DRAG HANDLE - Enhanced for touch */}
+            <div 
+              className="w-full flex flex-col items-center pt-4 pb-2 cursor-grab active:cursor-grabbing"
+              style={{ touchAction: 'none' }}
+            >
               <GripHorizontal className="w-8 h-8 text-gray-300 mb-1" />
-              <p className="text-[10px] text-gray-400 font-bold">اسحب للعرض الكامل</p>
+              <p className="text-[10px] text-gray-400 font-bold">
+                {requestStatus === "pending" ? "جاري البحث عن سائق" : "اسحب للأعلى أو الأسفل"}
+              </p>
             </div>
 
             <div className="px-6 pb-8 space-y-5">
