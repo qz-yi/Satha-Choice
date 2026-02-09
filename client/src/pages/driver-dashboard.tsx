@@ -461,9 +461,28 @@ export default function DriverDashboard() {
       const res = await apiRequest("POST", `/api/drivers/${driverInfo?.id}/accept/${req.id}`);
       
       if (res.ok) {
-        // تفعيل الطلب محلياً
-        setActiveOrder(req);
+        console.log("✅ [ACCEPT] Order accepted, fetching full order details with customer image");
+        
+        // CRITICAL: Fetch FULL order object including customer image from database
+        const fullOrderRes = await fetch(`/api/requests/${req.id}`);
+        let fullOrder = req; // Fallback to basic req if fetch fails
+        
+        if (fullOrderRes.ok) {
+          fullOrder = await fullOrderRes.json();
+          console.log("✅ [ACCEPT] Full order fetched with customer data");
+          console.log("✅ [ACCEPT] Customer Image:", fullOrder.user?.image || fullOrder.customerImage);
+        } else {
+          console.warn("⚠️ [ACCEPT] Failed to fetch full order, using basic data");
+        }
+        
+        // تفعيل الطلب محلياً with FULL data including customer image
+        setActiveOrder({
+          ...fullOrder,
+          customerImage: fullOrder.user?.image || fullOrder.customerImage || null
+        });
         setOrderStage("heading_to_pickup");
+        
+        console.log("✅ [ACCEPT] Active order set with customer image");
         
         // الانضمام لغرفة الدردشة الخاصة بالطلب
         socket.emit("join_order", req.id);
@@ -815,9 +834,37 @@ export default function DriverDashboard() {
         }
       });
       
-      // استقبال معلومات الزبون عند القبول
+      // CRITICAL: Receive and merge customer info (including profile image) when order is accepted
       socket.on("customer_info", (customerData: any) => {
-        console.log("تم استقبال معلومات الزبون:", customerData);
+        console.log("👤 [CUSTOMER INFO] Received customer data from server:", customerData);
+        console.log("👤 [CUSTOMER INFO] Customer Image URL:", customerData.image);
+        
+        // CRITICAL: Merge customer data into activeOrder state
+        setActiveOrder((prevOrder: any) => {
+          if (!prevOrder) {
+            console.log("⚠️ [CUSTOMER INFO] No active order to update");
+            return prevOrder;
+          }
+          
+          const updated = {
+            ...prevOrder,
+            customerName: customerData.name || prevOrder.customerName,
+            customerPhone: customerData.phone || prevOrder.customerPhone,
+            customerImage: customerData.image || null, // ← CRITICAL: Add customer image to activeOrder
+            pickupLat: customerData.pickupLat || prevOrder.pickupLat,
+            pickupLng: customerData.pickupLng || prevOrder.pickupLng,
+            destLat: customerData.dropoffLat || prevOrder.destLat,
+            destLng: customerData.dropoffLng || prevOrder.destLng,
+            pickupAddress: customerData.pickupAddress || prevOrder.pickupAddress,
+            destination: customerData.dropoffAddress || prevOrder.destination
+          };
+          
+          console.log("✅ [CUSTOMER INFO] Active order updated with customer image");
+          console.log("✅ [CUSTOMER INFO] Customer Name:", updated.customerName);
+          console.log("✅ [CUSTOMER INFO] Customer Image:", updated.customerImage);
+          
+          return updated;
+        });
       });
 
       return () => { 

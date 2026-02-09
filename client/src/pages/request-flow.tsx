@@ -394,17 +394,59 @@ export default function RequestFlow() {
       setRequestStatus(activeOrder.status);
       console.log("✅ [CUSTOMER RECOVERY] Set order ID:", activeOrder.id, "Status:", activeOrder.status);
       
-      // CRITICAL: Only transition to tracking if driver is assigned (not just pending)
+      // CRITICAL: Transition to correct view based on status
       if (activeOrder.status === "pending") {
         setViewState("success"); // Show "Searching for driver" state
         console.log("🔄 [CUSTOMER RECOVERY] Order is pending - showing 'Searching' state");
       } else {
-        setViewState("tracking"); // Show tracking state with driver
+        setViewState("tracking"); // Show tracking state with driver (accepted, arrived, picked_up, etc.)
         console.log("🔄 [CUSTOMER RECOVERY] Order accepted/active - showing 'Tracking' state");
       }
       
-      // CRITICAL FIX: Hydrate driver data directly from API response (no separate fetch)
-      if (activeOrder.driverId && activeOrder.driver) {
+      // CRITICAL FIX: Hydrate driver data for ALL non-pending statuses (especially 'accepted')
+      if (activeOrder.driverId) {
+        console.log("🔄 [CUSTOMER RECOVERY] Step 4: Driver assigned - hydrating driver data");
+        console.log("🔄 [CUSTOMER RECOVERY] Driver ID:", activeOrder.driverId);
+        
+        if (activeOrder.driver) {
+          // BEST CASE: API response includes full driver object
+          console.log("✅ [CUSTOMER RECOVERY] Full driver object received from API");
+          console.log("✅ [CUSTOMER RECOVERY] Driver data:", activeOrder.driver);
+          console.log("✅ [CUSTOMER RECOVERY] Driver coordinates:", {
+            lat: activeOrder.driver.lat,
+            lng: activeOrder.driver.lng,
+            lastLat: activeOrder.driver.lastLat,
+            lastLng: activeOrder.driver.lastLng
+          });
+          
+          // IMMEDIATE STATE HYDRATION - Set ALL driver state from API response
+          setDriverInfo({
+            id: activeOrder.driver.id,
+            name: activeOrder.driver.name,
+            phone: activeOrder.driver.phone,
+            avatarUrl: activeOrder.driver.avatarUrl || "",
+            vehicleType: activeOrder.driver.vehicleType || "سطحة",
+            plateNumber: activeOrder.driver.plateNumber || ""
+          });
+          console.log("✅ [CUSTOMER RECOVERY] Driver info hydrated:", activeOrder.driver.name);
+          
+          // CRITICAL: Restore driver's LIVE LOCATION for immediate tracking
+          if (activeOrder.driver.lat && activeOrder.driver.lng) {
+            const driverLat = Number(activeOrder.driver.lat);
+            const driverLng = Number(activeOrder.driver.lng);
+            setDriverLocation([driverLat, driverLng]);
+            console.log("✅ [CUSTOMER RECOVERY] Driver live location hydrated:", {lat: driverLat, lng: driverLng});
+          } else if (activeOrder.driver.lastLat && activeOrder.driver.lastLng) {
+            const driverLat = Number(activeOrder.driver.lastLat);
+            const driverLng = Number(activeOrder.driver.lastLng);
+            setDriverLocation([driverLat, driverLng]);
+            console.log("✅ [CUSTOMER RECOVERY] Driver live location hydrated (from lastLat/lastLng):", {lat: driverLat, lng: driverLng});
+          } else {
+            console.log("⚠️ [CUSTOMER RECOVERY] No live location available in driver object");
+          }
+          
+          console.log("🎉 [CUSTOMER RECOVERY] Complete driver state hydration successful!");
+        } else if (!activeOrder.driver) {
         console.log("🔄 [CUSTOMER RECOVERY] Step 4: Hydrating driver data from API response");
         console.log("✅ [CUSTOMER RECOVERY] Driver object received:", activeOrder.driver);
         console.log("✅ [CUSTOMER RECOVERY] Driver coordinates:", {
@@ -441,33 +483,43 @@ export default function RequestFlow() {
         }
         
         console.log("🎉 [CUSTOMER RECOVERY] Complete driver state hydration successful!");
-      } else if (activeOrder.driverId && !activeOrder.driver) {
-        // Fallback: If driver object is missing from API, fetch separately (backwards compatibility)
-        console.log("⚠️ [CUSTOMER RECOVERY] Driver object missing from API response, fetching separately");
-        const driverResponse = await fetch(`/api/drivers/${activeOrder.driverId}`);
-        if (driverResponse.ok) {
-          const driverData = await driverResponse.json();
-          setDriverInfo({
-            id: driverData.id,
-            name: driverData.name,
-            phone: driverData.phone,
-            avatarUrl: driverData.avatarUrl || "",
-            vehicleType: driverData.vehicleType || "سطحة",
-            plateNumber: driverData.plateNumber || ""
-          });
-          console.log("✅ [CUSTOMER RECOVERY] Driver info restored (fallback fetch):", driverData.name);
+          // MANDATORY FALLBACK: If driver object is missing from API, fetch separately
+          console.warn("⚠️ [CUSTOMER RECOVERY] Driver object missing from API response - initiating fallback fetch");
+          console.log("🔄 [CUSTOMER RECOVERY] Fetching driver", activeOrder.driverId, "separately");
           
-          if (driverData.lat && driverData.lng) {
-            const driverLat = Number(driverData.lat);
-            const driverLng = Number(driverData.lng);
-            setDriverLocation([driverLat, driverLng]);
-            console.log("✅ [CUSTOMER RECOVERY] Driver live location restored (fallback):", {lat: driverLat, lng: driverLng});
+          const driverResponse = await fetch(`/api/drivers/${activeOrder.driverId}`);
+          if (driverResponse.ok) {
+            const driverData = await driverResponse.json();
+            console.log("✅ [CUSTOMER RECOVERY] Driver data fetched via fallback");
+            console.log("✅ [CUSTOMER RECOVERY] Driver:", driverData);
+            
+            setDriverInfo({
+              id: driverData.id,
+              name: driverData.name,
+              phone: driverData.phone,
+              avatarUrl: driverData.avatarUrl || "",
+              vehicleType: driverData.vehicleType || "سطحة",
+              plateNumber: driverData.plateNumber || ""
+            });
+            console.log("✅ [CUSTOMER RECOVERY] Driver info restored (fallback):", driverData.name);
+            
+            if (driverData.lat && driverData.lng) {
+              const driverLat = Number(driverData.lat);
+              const driverLng = Number(driverData.lng);
+              setDriverLocation([driverLat, driverLng]);
+              console.log("✅ [CUSTOMER RECOVERY] Driver live location restored (fallback):", {lat: driverLat, lng: driverLng});
+            } else if (driverData.lastLat && driverData.lastLng) {
+              const driverLat = Number(driverData.lastLat);
+              const driverLng = Number(driverData.lastLng);
+              setDriverLocation([driverLat, driverLng]);
+              console.log("✅ [CUSTOMER RECOVERY] Driver location restored from lastLat/lastLng");
+            }
+          } else {
+            console.error("❌ [CUSTOMER RECOVERY] Fallback fetch failed - driver info unavailable");
           }
-        } else {
-          console.log("⚠️ [CUSTOMER RECOVERY] Fallback fetch failed");
         }
       } else {
-        console.log("ℹ️ [CUSTOMER RECOVERY] No driver assigned yet");
+        console.log("ℹ️ [CUSTOMER RECOVERY] No driver assigned yet (status: pending)");
       }
       
       // Restore form data for map display
