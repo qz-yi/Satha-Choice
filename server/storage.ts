@@ -25,6 +25,7 @@ export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByPhone(phone: string): Promise<User | undefined>;
   updateCustomerWallet(phone: string, amount: number): Promise<User>;
+  updateUser(phone: string, update: Partial<User>): Promise<User>;
 
   // --- طلبات الزبائن ---
   createRequest(request: InsertRequest): Promise<Request>;
@@ -121,6 +122,17 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.phone, phone))
       .returning();
 
+    return updatedUser;
+  }
+  
+  async updateUser(phone: string, update: Partial<User>): Promise<User> {
+    const [updatedUser] = await db
+      .update(users)
+      .set(update)
+      .where(eq(users.phone, phone))
+      .returning();
+    
+    if (!updatedUser) throw new Error("Customer not found");
     return updatedUser;
   }
 

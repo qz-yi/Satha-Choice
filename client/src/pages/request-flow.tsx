@@ -161,6 +161,8 @@ export default function RequestFlow() {
       });
       if (response.ok) {
         const data = await response.json();
+        console.log("🔄 [REFRESH USER DATA] Fetched user data from API:", data);
+        
         const updatedProfile = { 
           ...userProfile, 
           id: data.id,
@@ -168,19 +170,24 @@ export default function RequestFlow() {
           phone: phone,
           password: pass,
           wallet: data.walletBalance?.toString() || "0",
-          trips: data.tripsCount?.toString() || "0"
+          trips: data.tripsCount?.toString() || "0",
+          image: data.image || userProfile.image || "" // CRITICAL: Include image from DB
         };
+        
+        console.log("✅ [REFRESH USER DATA] Profile updated with image:", updatedProfile.image ? "Yes" : "No");
+        
         setUserProfile(updatedProfile);
         try {
           localStorage.setItem("sat7a_user", JSON.stringify(updatedProfile));
+          console.log("✅ [REFRESH USER DATA] Profile saved to localStorage");
         } catch (e) {
-          console.warn("[localStorage] Quota exceeded, clearing old data");
+          console.warn("⚠️ [localStorage] Quota exceeded, clearing old data");
           localStorage.removeItem("sat7a_user");
           localStorage.setItem("sat7a_user", JSON.stringify(updatedProfile));
         }
       }
     } catch (err) {
-      console.error("خطأ في تحديث البيانات", err);
+      console.error("❌ [REFRESH USER DATA] Error:", err);
     }
   }, [userProfile]);
 
@@ -446,43 +453,7 @@ export default function RequestFlow() {
           }
           
           console.log("🎉 [CUSTOMER RECOVERY] Complete driver state hydration successful!");
-        } else if (!activeOrder.driver) {
-        console.log("🔄 [CUSTOMER RECOVERY] Step 4: Hydrating driver data from API response");
-        console.log("✅ [CUSTOMER RECOVERY] Driver object received:", activeOrder.driver);
-        console.log("✅ [CUSTOMER RECOVERY] Driver coordinates:", {
-          lat: activeOrder.driver.lat,
-          lng: activeOrder.driver.lng,
-          lastLat: activeOrder.driver.lastLat,
-          lastLng: activeOrder.driver.lastLng
-        });
-        
-        // IMMEDIATE STATE HYDRATION - Set ALL driver state from API response
-        setDriverInfo({
-          id: activeOrder.driver.id,
-          name: activeOrder.driver.name,
-          phone: activeOrder.driver.phone,
-          avatarUrl: activeOrder.driver.avatarUrl || "",
-          vehicleType: activeOrder.driver.vehicleType || "سطحة",
-          plateNumber: activeOrder.driver.plateNumber || ""
-        });
-        console.log("✅ [CUSTOMER RECOVERY] Driver info hydrated:", activeOrder.driver.name);
-        
-        // CRITICAL: Restore driver's LIVE LOCATION for immediate tracking
-        if (activeOrder.driver.lat && activeOrder.driver.lng) {
-          const driverLat = Number(activeOrder.driver.lat);
-          const driverLng = Number(activeOrder.driver.lng);
-          setDriverLocation([driverLat, driverLng]);
-          console.log("✅ [CUSTOMER RECOVERY] Driver live location hydrated:", {lat: driverLat, lng: driverLng});
-        } else if (activeOrder.driver.lastLat && activeOrder.driver.lastLng) {
-          const driverLat = Number(activeOrder.driver.lastLat);
-          const driverLng = Number(activeOrder.driver.lastLng);
-          setDriverLocation([driverLat, driverLng]);
-          console.log("✅ [CUSTOMER RECOVERY] Driver live location hydrated (from lastLat/lastLng):", {lat: driverLat, lng: driverLng});
         } else {
-          console.log("⚠️ [CUSTOMER RECOVERY] No live location available in driver object");
-        }
-        
-        console.log("🎉 [CUSTOMER RECOVERY] Complete driver state hydration successful!");
           // MANDATORY FALLBACK: If driver object is missing from API, fetch separately
           console.warn("⚠️ [CUSTOMER RECOVERY] Driver object missing from API response - initiating fallback fetch");
           console.log("🔄 [CUSTOMER RECOVERY] Fetching driver", activeOrder.driverId, "separately");
@@ -902,13 +873,25 @@ export default function RequestFlow() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "فشل التسجيل");
 
-      const completeProfile = { ...userProfile, id: data.id, wallet: data.walletBalance?.toString() || "0", address: normalizeCity(formData.city) };
+      console.log("📝 [SIGNUP] User data received from server:", data);
+      
+      const completeProfile = { 
+        ...userProfile, 
+        id: data.id, 
+        wallet: data.walletBalance?.toString() || "0", 
+        address: normalizeCity(formData.city),
+        image: data.image || userProfile.image || "" // CRITICAL: Preserve image during signup
+      };
+      
+      console.log("✅ [SIGNUP] Profile created with image:", completeProfile.image ? "Yes" : "No");
+      
       setUserProfile(completeProfile);
       try {
         localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
         localStorage.setItem("sat7a_session_active", "true");
+        console.log("✅ [SIGNUP] Profile saved to localStorage");
       } catch (e) {
-        console.warn("[localStorage] Quota exceeded during signup");
+        console.warn("⚠️ [localStorage] Quota exceeded during signup");
         localStorage.clear();
         localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
         localStorage.setItem("sat7a_session_active", "true");
@@ -930,19 +913,26 @@ export default function RequestFlow() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "بيانات الدخول غير صحيحة");
 
+      console.log("🔐 [LOGIN] User data received from server:", data);
+
       const completeProfile = { 
         ...userProfile, 
         id: data.id, 
         username: data.username || data.name,
         wallet: data.walletBalance?.toString() || "0",
-        trips: data.tripsCount?.toString() || "0"
+        trips: data.tripsCount?.toString() || "0",
+        image: data.image || "" // CRITICAL: Load image from database
       };
+      
+      console.log("✅ [LOGIN] Profile hydrated with image:", completeProfile.image ? "Yes" : "No");
+      
       setUserProfile(completeProfile);
       try {
         localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
         localStorage.setItem("sat7a_session_active", "true");
+        console.log("✅ [LOGIN] Profile saved to localStorage with image");
       } catch (e) {
-        console.warn("[localStorage] Quota exceeded during login");
+        console.warn("⚠️ [localStorage] Quota exceeded during login");
       }
       setIsLoggedIn(true);
     } catch (err: any) {
@@ -958,25 +948,74 @@ export default function RequestFlow() {
     setActiveOrderId(null);
   };
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (!file) return;
+    
+    console.log("📸 [PROFILE IMAGE] Customer uploading profile image");
+    
+    try {
       const reader = new FileReader();
-      reader.onloadend = () => {
+      reader.onloadend = async () => {
         const base64 = reader.result as string;
-        setUserProfile(prev => {
-           const updated = { ...prev, image: base64 };
-           try {
-             localStorage.setItem("sat7a_user", JSON.stringify(updated));
-           } catch (e) {
-             console.warn("[localStorage] Quota exceeded for image, removing image");
-             const updatedWithoutImage = { ...prev };
-             localStorage.setItem("sat7a_user", JSON.stringify(updatedWithoutImage));
-           }
-           return updated;
-        });
+        
+        console.log("📸 [PROFILE IMAGE] Image converted to base64");
+        
+        // CRITICAL: Save to database immediately for persistence
+        if (userProfile.phone) {
+          console.log("📸 [PROFILE IMAGE] Uploading to database...");
+          
+          const uploadRes = await fetch(`/api/users/${userProfile.phone}/update-image`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image: base64 })
+          });
+          
+          if (uploadRes.ok) {
+            console.log("✅ [PROFILE IMAGE] Image saved to database successfully");
+            
+            // Update state
+            setUserProfile(prev => {
+              const updated = { ...prev, image: base64 };
+              
+              // Update localStorage
+              try {
+                localStorage.setItem("sat7a_user", JSON.stringify(updated));
+                console.log("✅ [PROFILE IMAGE] Image saved to localStorage");
+              } catch (e) {
+                console.warn("⚠️ [PROFILE IMAGE] localStorage quota exceeded");
+              }
+              
+              return updated;
+            });
+            
+            toast({
+              title: "✅ تم تحديث الصورة",
+              description: "تم حفظ صورتك الشخصية بنجاح",
+              className: "bg-green-600 text-white font-black rounded-[24px]"
+            });
+          } else {
+            console.error("❌ [PROFILE IMAGE] Failed to upload to database");
+            toast({
+              variant: "destructive",
+              title: "فشل التحميل",
+              description: "لم نتمكن من حفظ الصورة، يرجى المحاولة مرة أخرى"
+            });
+          }
+        } else {
+          // Fallback: Just save to state and localStorage if not logged in yet
+          console.log("⚠️ [PROFILE IMAGE] User not logged in, saving temporarily");
+          setUserProfile(prev => ({ ...prev, image: base64 }));
+        }
       };
       reader.readAsDataURL(file);
+    } catch (err) {
+      console.error("❌ [PROFILE IMAGE] Error:", err);
+      toast({
+        variant: "destructive",
+        title: "خطأ",
+        description: "حدث خطأ أثناء تحميل الصورة"
+      });
     }
   };
 

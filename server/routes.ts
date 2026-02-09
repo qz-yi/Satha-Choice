@@ -292,6 +292,33 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       res.status(500).json({ message: "حدث خطأ أثناء تسجيل الدخول" });
     }
   });
+  
+  // CRITICAL: Customer profile image update endpoint
+  app.patch("/api/users/:phone/update-image", async (req, res) => {
+    try {
+      const { phone } = req.params;
+      const { image } = req.body;
+      
+      console.log(`📸 [CUSTOMER IMAGE] Updating profile image for customer: ${phone}`);
+      
+      if (!image) {
+        return res.status(400).json({ message: "لم يتم تقديم صورة" });
+      }
+      
+      const updatedUser = await storage.updateUser(phone, { image });
+      
+      console.log(`✅ [CUSTOMER IMAGE] Profile image updated successfully for customer: ${phone}`);
+      
+      res.json({ 
+        success: true, 
+        user: updatedUser,
+        message: "تم تحديث الصورة بنجاح" 
+      });
+    } catch (err: any) {
+      console.error("❌ [CUSTOMER IMAGE ERROR]:", err);
+      res.status(500).json({ message: "فشل في تحديث الصورة: " + err.message });
+    }
+  });
 
   // --- مسارات السائقين ---
 
@@ -495,6 +522,56 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         validatedData = insertRequestSchema.parse(completeData);
       } catch (e) {
         validatedData = completeData; 
+      }
+
+      // CRITICAL: Check wallet payment and deduct balance BEFORE creating order
+      if (bodyData.paymentMethod === "wallet") {
+        console.log("💰 [ORDER CREATE] Wallet payment selected - checking balance");
+        
+        if (!customer) {
+          return res.status(400).json({ message: "لم يتم العثور على حساب الزبون" });
+        }
+        
+        const customerBalance = parseFloat(customer.walletBalance || "0");
+        const orderAmount = parseFloat(bodyData.price || "0");
+        
+        console.log(`💰 [ORDER CREATE] Customer balance: ${customerBalance} IQD`);
+        console.log(`💰 [ORDER CREATE] Order amount: ${orderAmount} IQD`);
+        
+        if (customerBalance < orderAmount) {
+          console.log("❌ [ORDER CREATE] Insufficient balance");
+          return res.status(400).json({ 
+            message: `رصيدك غير كافٍ. الرصيد الحالي: ${customerBalance} د.ع، المبلغ المطلوب: ${orderAmount} د.ع` 
+          });
+        }
+        
+        // CRITICAL: Deduct amount from customer wallet
+        const newBalance = customerBalance - orderAmount;
+        await storage.updateCustomerWallet(customer.phone, -orderAmount); // Negative to deduct
+        
+        console.log(`✅ [ORDER CREATE] Wallet deducted successfully`);
+        console.log(`✅ [ORDER CREATE] Customer ${customer.phone} - Old Balance: ${customerBalance} → New Balance: ${newBalance} IQD`);
+        
+        // Create transaction record for the deduction
+        await storage.createTransaction({
+          userId: customer.id,
+          amount: (-orderAmount).toString(),
+          type: "order_payment",
+          status: "completed",
+          referenceId: `ORDER_PAYMENT_${Date.now()}`
+        });
+        
+        console.log(`✅ [ORDER CREATE] Transaction record created for wallet payment`);
+        
+        // Emit socket event to update customer's wallet in real-time
+        io.emit(`customer_wallet_updated_${customer.id}`, {
+          newBalance: newBalance.toFixed(2),
+          amount: -orderAmount,
+          type: "debit",
+          message: `تم خصم ${orderAmount} د.ع مقابل الطلب`
+        });
+        
+        console.log(`✅ [ORDER CREATE] Socket event emitted to update customer wallet UI`);
       }
 
       const request = await storage.createRequest({
