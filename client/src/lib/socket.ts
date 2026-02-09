@@ -1,23 +1,25 @@
 /**
  * Socket.io Client Configuration
- * Production-ready socket client with singleton pattern
+ * EMERGENCY FIX: Force localhost connection for now
  */
 
 import { io, Socket } from 'socket.io-client';
-import { SOCKET_URL } from './api';
 
 // Singleton socket instance
 let socketInstance: Socket | null = null;
 
 /**
  * Get or create socket instance
- * Ensures only one socket connection exists
+ * EMERGENCY: Using current origin (localhost/Replit) instead of env vars
  */
 export function getSocket(): Socket {
   if (!socketInstance) {
-    console.log('🔌 [SOCKET] Creating new socket connection to:', SOCKET_URL);
+    // CRITICAL FIX: Use current window.location.origin instead of env vars
+    const socketUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000';
     
-    socketInstance = io(SOCKET_URL, {
+    console.log('🔌 [SOCKET EMERGENCY FIX] Connecting to:', socketUrl);
+    
+    socketInstance = io(socketUrl, {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 10,
@@ -25,7 +27,7 @@ export function getSocket(): Socket {
     });
 
     socketInstance.on('connect', () => {
-      console.log('✅ [SOCKET] Connected successfully', socketInstance?.id);
+      console.log('✅ [SOCKET] Connected successfully - ID:', socketInstance?.id);
     });
 
     socketInstance.on('disconnect', (reason) => {
@@ -34,6 +36,7 @@ export function getSocket(): Socket {
 
     socketInstance.on('connect_error', (error) => {
       console.error('❌ [SOCKET] Connection error:', error);
+      console.error('❌ [SOCKET] URL attempted:', socketUrl);
     });
   }
 

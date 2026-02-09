@@ -219,7 +219,7 @@ export default function RequestFlow() {
   // SINGLE-USE recovery flag to prevent continuous loops
   const hasAttemptedRecovery = useRef(false);
   
-  // CRITICAL: Recovery check MUST run ONCE on mount to check for active orders
+  // EMERGENCY: MANDATORY Recovery check MUST run ONCE on mount to check for active orders
   useEffect(() => {
     // SINGLE-USE recovery check - prevent loops
     if (hasAttemptedRecovery.current) {
@@ -227,7 +227,8 @@ export default function RequestFlow() {
       return;
     }
     
-    console.log("🚀 [CUSTOMER RECOVERY] Starting MANDATORY recovery check on mount");
+    console.log("🚀 [CUSTOMER RECOVERY EMERGENCY] Starting MANDATORY recovery check on mount");
+    console.log("🚀 [CUSTOMER RECOVERY EMERGENCY] Current viewState:", viewState);
     hasAttemptedRecovery.current = true;
     
     // CRITICAL FIX: Check savedUser OR current userProfile state
@@ -392,13 +393,17 @@ export default function RequestFlow() {
       setRequestStatus(activeOrder.status);
       console.log("✅ [CUSTOMER RECOVERY] Set order ID:", activeOrder.id, "Status:", activeOrder.status);
       
-      // CRITICAL: Transition to correct view based on status
+      // EMERGENCY FIX: Force correct view based on status
       if (activeOrder.status === "pending") {
+        console.log("🔄 [CUSTOMER RECOVERY EMERGENCY] Order is PENDING - setting to SUCCESS view");
         setViewState("success"); // Show "Searching for driver" state
-        console.log("🔄 [CUSTOMER RECOVERY] Order is pending - showing 'Searching' state");
+      } else if (["accepted", "arrived", "picked_up", "in_progress"].includes(activeOrder.status)) {
+        console.log("🔄 [CUSTOMER RECOVERY EMERGENCY] Order is ACTIVE - FORCING TRACKING VIEW");
+        setViewState("tracking"); // Show tracking state with driver
+        setRequestStatus(activeOrder.status); // CRITICAL: Set correct status
       } else {
-        setViewState("tracking"); // Show tracking state with driver (accepted, arrived, picked_up, etc.)
-        console.log("🔄 [CUSTOMER RECOVERY] Order accepted/active - showing 'Tracking' state");
+        console.log("⚠️ [CUSTOMER RECOVERY EMERGENCY] Unknown status, defaulting to tracking");
+        setViewState("tracking");
       }
       
       // CRITICAL FIX: Hydrate driver data for ALL non-pending statuses (especially 'accepted')
@@ -587,19 +592,25 @@ export default function RequestFlow() {
           setRequestStatus(data.status);
 
           if (data.status === "accepted" || data.driverInfo || data.status === "arrived" || data.status === "picked_up") {
+            console.log("🎉 [STATUS_CHANGE EMERGENCY] Order accepted - forcing tracking view");
             setViewState("tracking");
+            
             const info = data.driverInfo || data;
-            setDriverInfo({
+            const driverData = {
               id: info.driverId || info.id,
               name: info.username || info.name || info.driverName || "كابتن سطحة",
               phone: info.phone || info.driverPhone || "07XXXXXXXXX",
               avatarUrl: info.avatarUrl || info.driverAvatar || "",
               vehicleType: info.vehicleType || "سطحة هيدروليك",
               plateNumber: info.plateNumber || "أربيل - 12345"
-            });
+            };
+            
+            console.log("✅ [STATUS_CHANGE EMERGENCY] Setting driver data:", driverData);
+            setDriverInfo(driverData);
 
             if (info.lat && info.lng) {
               setDriverLocation([Number(info.lat), Number(info.lng)]);
+              console.log("📍 [STATUS_CHANGE EMERGENCY] Driver location set:", [info.lat, info.lng]);
             }
 
             if (data.status === "accepted") {
@@ -694,8 +705,12 @@ export default function RequestFlow() {
         }
       };
 
+      // EMERGENCY: Multiple listeners for order acceptance
       socket.on("status_changed", handleStatusChange);
       socket.on(`order_status_${activeOrderId}`, handleStatusChange);
+      socket.on("order_accepted", handleStatusChange); // CRITICAL: Explicit order_accepted listener
+      
+      console.log("✅ [SOCKET EMERGENCY] All order listeners attached for order:", activeOrderId);
 
       socket.on("driver_location_update", (data: any) => {
           if (Number(data.orderId) === Number(activeOrderId)) {
@@ -789,6 +804,7 @@ export default function RequestFlow() {
       return () => {
         socket.off("status_changed", handleStatusChange);
         socket.off(`order_status_${activeOrderId}`, handleStatusChange);
+        socket.off("order_accepted", handleStatusChange); // CRITICAL: Cleanup order_accepted
         socket.off("driver_location_update");
         socket.off("order_deleted_by_admin");
         socket.off("FINAL_CLEANUP"); // CRITICAL: Clean up FINAL_CLEANUP listener
