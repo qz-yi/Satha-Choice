@@ -16,25 +16,16 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { MapContainer, TileLayer, useMapEvents, Marker, useMap, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { io } from "socket.io-client";
+import { getSocket } from "@/lib/socket";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { RoutingPolyline } from "@/components/RoutingPolyline"; 
 
-// CRITICAL: Single socket instance - prevent spam
+// CRITICAL: Use singleton socket instance
 let socket: any;
 if (typeof window !== 'undefined') {
-  // @ts-ignore
-  if (!window.__customerSocket) {
-    // @ts-ignore
-    window.__customerSocket = io(window.location.origin, {
-      reconnectionAttempts: 10,
-      reconnectionDelay: 2000,
-    });
-    console.log("✅ [Socket] Customer socket initialized");
-  }
-  // @ts-ignore
-  socket = window.__customerSocket;
+  socket = getSocket();
+  console.log("✅ [Socket] Customer socket initialized");
 } 
 
 const getOrangeArrowIcon = (rotation: number) => L.divIcon({

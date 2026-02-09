@@ -27,11 +27,8 @@ const driverIcon = L.icon({
   iconAnchor: [17, 35],
 });
 
-const socket = io({
-  reconnection: true,
-  reconnectionDelay: 1000,
-  reconnectionAttempts: 10
-});
+// PRODUCTION-READY: Use singleton socket instance
+const socket = getSocket();
 
 // Debug socket connection for admin
 socket.on("connect", () => {

@@ -12,9 +12,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { MapContainer, TileLayer, useMap, Marker, Popup } from "react-leaflet"; 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { io } from "socket.io-client";
-import { useQuery } from "@tanstack/react-query";
-import { Driver } from "@shared/schema";
+import { getSocket } from "@/lib/socket";
+import { useQuery } from "@tantml:function_calls>
+<invoke name="Driver } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient"; 
 import { useToast } from "@/hooks/use-toast";
 import { RoutingPolyline } from "@/components/RoutingPolyline";
@@ -32,45 +32,23 @@ const getOrangeArrowIcon = (rotation: number) => L.divIcon({
   iconAnchor: [22.5, 22.5], 
 });
 
-// CRITICAL: Single socket instance - prevent spam
+// CRITICAL: Use singleton socket instance
 let socket: any;
 if (typeof window !== 'undefined') {
-  // @ts-ignore
-  if (!window.__driverSocket) {
-    // @ts-ignore
-    window.__driverSocket = io({
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionAttempts: 10
-    });
+  socket = getSocket();
+  console.log("✅ [Socket] Driver socket initialized");
+  
+  // Setup reconnection handler
+  socket.on("connect", () => {
+    console.log("✅ [Socket] Driver connected with ID:", socket.id);
     
-    // Debug socket connection - only attach once
-    // @ts-ignore
-    window.__driverSocket.on("connect", () => {
-      // @ts-ignore
-      console.log("✅ [Socket] Driver connected with ID:", window.__driverSocket.id);
-      
-      // On reconnection, rejoin rooms automatically
-      const driverId = localStorage.getItem("currentDriverId");
-      if (driverId) {
-        // @ts-ignore
-        window.__driverSocket.emit("join_driver_room", parseInt(driverId));
-        console.log(`[Socket Reconnect] Rejoined driver room: ${driverId}`);
-      }
-    });
-
-    // @ts-ignore
-    window.__driverSocket.on("disconnect", (reason: string) => {
-      console.log("❌ [Socket] Driver disconnected:", reason);
-    });
-
-    // @ts-ignore
-    window.__driverSocket.on("connect_error", (error: any) => {
-      console.error("❌ [Socket] Connection error:", error);
-    });
-  }
-  // @ts-ignore
-  socket = window.__driverSocket;
+    // On reconnection, rejoin rooms automatically
+    const driverId = localStorage.getItem("currentDriverId");
+    if (driverId) {
+      socket.emit("join_driver_room", parseInt(driverId));
+      console.log(`🔄 [Socket Reconnect] Rejoined driver room: ${driverId}`);
+    }
+  });
 }
 
 const MapViewHandler = ({ center, isFollowMode }: { center: [number, number], isFollowMode: boolean }) => {

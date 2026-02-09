@@ -56,8 +56,19 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   const app: Express = arg1.post ? arg1 : arg2;
   const httpServer: Server = arg1.post ? arg2 : arg1;
 
+  // PRODUCTION-READY CORS Configuration
+  const allowedOrigins = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',')
+    : ['http://localhost:5173', 'http://localhost:5000'];
+  
+  console.log('🔒 [CORS] Allowed origins:', allowedOrigins);
+
   const io = new SocketIOServer(httpServer, {
-    cors: { origin: "*" },
+    cors: { 
+      origin: process.env.NODE_ENV === 'production' ? allowedOrigins : "*",
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+      credentials: true
+    },
     pingInterval: 10000,
     pingTimeout: 5000,
   });
