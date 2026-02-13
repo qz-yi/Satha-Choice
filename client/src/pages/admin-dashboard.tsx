@@ -14,6 +14,7 @@ import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { getSocket } from "@/lib/socket";
 import { io } from "socket.io-client";
 
 // تعريفات Types يدوية لضمان عدم حدوث أخطاء TypeScript

@@ -13,9 +13,9 @@ import { MapContainer, TileLayer, useMap, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { getSocket } from "@/lib/socket";
-import { useQuery } from "@tantml:function_calls>
-<invoke name="Driver } from "@shared/schema";
-import { apiRequest, queryClient } from "@/lib/queryClient"; 
+import { useQuery } from "@tanstack/react-query"; 
+import { Driver } from "@shared/schema";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { RoutingPolyline } from "@/components/RoutingPolyline";
 import { ProfessionalNotification } from "@/components/ProfessionalNotification"; 
