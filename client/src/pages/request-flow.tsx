@@ -4,10 +4,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { VEHICLE_OPTIONS } from "@shared/schema";
 import { useCreateRequest } from "@/hooks/use-requests";
+import { calculateDistance, calculatePrice, getPricingBreakdown } from "@/lib/pricing";
 import { 
   MapPin, Check, Search, Loader2, Menu, 
   MessageSquare, History, Wallet, Phone, Truck, ChevronRight,
-  LocateFixed, RotateCcw, X, Star, Navigation, Target, Send, LogOut, Camera, User, Lock, Home, ShieldCheck, CreditCard, QrCode, GripHorizontal
+  LocateFixed, RotateCcw, X, Star, Navigation, Target, Send, LogOut, Camera, User, Lock, Home, ShieldCheck, CreditCard, QrCode, GripHorizontal, DollarSign, AlertCircle
 } from "lucide-react";
 
 import { motion, AnimatePresence } from "framer-motion";
@@ -131,6 +132,11 @@ export default function RequestFlow() {
   // Bottom Sheet Smart Handle State
   const [isSheetExpanded, setIsSheetExpanded] = useState(true); // true = expanded (50%), false = minimized (15%)
 
+  // FEATURE 2: Dynamic Pricing State
+  const [calculatedPrice, setCalculatedPrice] = useState<number>(0);
+  const [distanceKm, setDistanceKm] = useState<number>(0);
+  const [showPriceConfirmation, setShowPriceConfirmation] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [formData, setFormData] = useState({
@@ -231,9 +237,20 @@ export default function RequestFlow() {
     console.log("🚀 [CUSTOMER RECOVERY EMERGENCY] Current viewState:", viewState);
     hasAttemptedRecovery.current = true;
     
-    // CRITICAL FIX: Check savedUser OR current userProfile state
+    // FEATURE 3: Check for existing session and auto-login
     const savedUser = localStorage.getItem("sat7a_user");
     const sessionActive = localStorage.getItem("sat7a_session_active");
+    
+    if (savedUser && sessionActive === "true") {
+      try {
+        const parsed = JSON.parse(savedUser);
+        console.log("🔐 [AUTO-LOGIN] Customer session found - auto-logging in");
+        setUserProfile(parsed);
+        setIsLoggedIn(true);
+      } catch (e) {
+        console.error("❌ [AUTO-LOGIN] Failed to parse saved user");
+      }
+    }
 
     // If there's a saved user OR we're already logged in, attempt recovery
     if (savedUser || userProfile.phone) { 
@@ -1227,16 +1244,46 @@ export default function RequestFlow() {
     }
   };
 
+  // FEATURE 2: Calculate Price When Vehicle Type or Locations Change
+  useEffect(() => {
+    if (formData.vehicleType && formData.pickupLat && formData.pickupLng && formData.destLat && formData.destLng) {
+      // Calculate distance
+      const distance = calculateDistance(
+        formData.pickupLat,
+        formData.pickupLng,
+        formData.destLat,
+        formData.destLng
+      );
+      
+      // Calculate price
+      const price = calculatePrice(distance, formData.vehicleType);
+      
+      console.log(`💰 [PRICING] Distance: ${distance}km, Vehicle: ${formData.vehicleType}, Price: ${price} IQD`);
+      
+      setDistanceKm(distance);
+      setCalculatedPrice(price);
+      setFormData(prev => ({ ...prev, price: price.toString() }));
+    }
+  }, [formData.vehicleType, formData.pickupLat, formData.pickupLng, formData.destLat, formData.destLng]);
+
   const handleFinalOrder = async () => {
     if (!userProfile.id) {
       toast({ title: "تنبيه", description: "يرجى تسجيل الدخول مجدداً لإتمام عملية الطلب." });
       setIsLoggedIn(false); setAuthMode("login"); return;
     }
 
-    const numericPrice = parseFloat(formData.price.replace(/[^\d]/g, '')) || 0;
+    // FEATURE 2: Use calculated price (already set by useEffect)
+    const numericPrice = calculatedPrice || parseFloat(formData.price.replace(/[^\d]/g, '')) || 0;
+    
     if (paymentMethod === "wallet" && parseFloat(userProfile.wallet) < numericPrice) {
       toast({ variant: "destructive", title: "رصيد غير كافٍ", description: "يرجى شحن محفظتك أو اختيار الدفع النقدي." });
       return;
+    }
+
+    // FEATURE 2: Show price confirmation before sending
+    if (!showPriceConfirmation) {
+      setShowPriceConfirmation(true);
+      return; // Don't send yet - wait for confirmation
     }
 
     try {
@@ -1269,8 +1316,10 @@ export default function RequestFlow() {
       socket.emit("new_request_created", { ...orderPayload, id: result.id });
       setActiveOrderId(result.id); 
       setViewState("success");
+      setShowPriceConfirmation(false); // Reset for next time
     } catch (err: any) { 
       toast({ variant: "destructive", title: "خطأ في الطلب", description: err.message });
+      setShowPriceConfirmation(false);
     }
   };
 
@@ -1801,13 +1850,34 @@ export default function RequestFlow() {
                     <span className="text-lg font-black">{opt.price} <span className="text-xs">د.ع</span></span>
                 </div>
               ))}
+              {/* FEATURE 2: Dynamic Pricing Display */}
+              {calculatedPrice > 0 && (
+                <div className="bg-gradient-to-r from-orange-50 to-yellow-50 p-5 rounded-[30px] shadow-sm border-2 border-orange-200 space-y-2 mt-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="bg-orange-500 p-2 rounded-xl">
+                        <DollarSign className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <h4 className="font-black text-gray-800 text-sm">السعر المقدّر</h4>
+                        <p className="text-xs text-gray-500 font-bold">{distanceKm.toFixed(1)} كم</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-3xl font-black text-orange-600">{calculatedPrice.toLocaleString()}</p>
+                      <p className="text-xs font-bold text-gray-500">دينار عراقي</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="bg-white p-5 rounded-[30px] shadow-sm border border-gray-100 space-y-3 mt-4">
                   <h4 className="font-black text-gray-800 text-xs">طريقة الدفع</h4>
                   <div className="flex gap-2">
-                      <button onClick={() => setPaymentMethod("cash")} className={`flex-1 h-12 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 ${paymentMethod === "cash" ? "bg-black text-white shadow-md" : "bg-gray-50 text-gray-400"}`}>
+                      <button type="button" onClick={() => setPaymentMethod("cash")} className={`flex-1 h-12 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 ${paymentMethod === "cash" ? "bg-black text-white shadow-md" : "bg-gray-50 text-gray-400"}`}>
                           <RotateCcw className="w-4 h-4" /> كاش
                       </button>
-                      <button onClick={() => setPaymentMethod("wallet")} className={`flex-1 h-12 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 ${paymentMethod === "wallet" ? "bg-orange-500 text-white shadow-md" : "bg-gray-50 text-gray-400"}`}>
+                      <button type="button" onClick={() => setPaymentMethod("wallet")} className={`flex-1 h-12 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 ${paymentMethod === "wallet" ? "bg-orange-500 text-white shadow-md" : "bg-gray-50 text-gray-400"}`}>
                           <Wallet className="w-4 h-4" /> المحفظة
                       </button>
                   </div>
@@ -1821,10 +1891,18 @@ export default function RequestFlow() {
       <footer className="fixed bottom-0 inset-x-0 bg-white p-8 pb-10 rounded-t-[45px] shadow-[0_-15px_40px_rgba(0,0,0,0.1)] z-[5000] border-t border-gray-100">
           <Button onClick={() => { if (step === "pickup") setStep("dropoff"); else if (step === "dropoff") setStep("vehicle"); else handleFinalOrder(); }}
             disabled={step === "vehicle" && !formData.vehicleType} className={`w-full h-18 rounded-[28px] font-black text-xl transition-all shadow-xl ${step === "vehicle" ? "bg-orange-500 text-white" : "bg-black text-white"}`}>
-            {step === "vehicle" ? "تأكيد الطلب الآن" : "تأكيد الموقع"}
+            {step === "vehicle" ? (showPriceConfirmation ? `تأكيد الطلب - ${calculatedPrice.toLocaleString()} د.ع` : "متابعة") : "تأكيد الموقع"}
           </Button>
           {step !== "pickup" && (
-            <button onClick={() => setStep(step === "dropoff" ? "pickup" : "dropoff")} className="w-full mt-5 text-gray-400 font-black text-xs flex items-center justify-center gap-2 hover:text-orange-500 transition-colors"><RotateCcw className="w-3 h-3" /> رجوع للخطوة السابقة</button>
+            <button onClick={() => {
+              if (showPriceConfirmation) {
+                setShowPriceConfirmation(false);
+              } else {
+                setStep(step === "dropoff" ? "pickup" : "dropoff");
+              }
+            }} className="w-full mt-5 text-gray-400 font-black text-xs flex items-center justify-center gap-2 hover:text-orange-500 transition-colors">
+              <RotateCcw className="w-3 h-3" /> {showPriceConfirmation ? "تعديل الطلب" : "رجوع للخطوة السابقة"}
+            </button>
           )}
       </footer>
 

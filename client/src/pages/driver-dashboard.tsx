@@ -46,9 +46,11 @@ if (typeof window !== 'undefined') {
     const driverId = localStorage.getItem("currentDriverId");
     if (driverId) {
       socket.emit("join_driver_room", parseInt(driverId));
-      console.log(`🔄 [Socket Reconnect] Rejoined driver room: ${driverId}`);
+      console.log(`🔄 [Socket Reconnect] Rejoined driver room: driver_${driverId}`);
     }
   });
+  
+  console.log("🚗 [Driver Dashboard] Component initialized");
 }
 
 const MapViewHandler = ({ center, isFollowMode }: { center: [number, number], isFollowMode: boolean }) => {
@@ -152,6 +154,15 @@ export default function DriverDashboard() {
     queryKey: [currentId ? `/api/driver/me/${currentId}` : "/api/driver/me"],
     refetchInterval: 3000, 
   });
+  
+  // FEATURE 1: Ensure driver joins their private room for targeted notifications
+  useEffect(() => {
+    if (driverInfo?.id && socket) {
+      console.log(`🚗 [VEHICLE FILTER] Driver ${driverInfo.id} joining private room (${driverInfo.vehicleType})`);
+      socket.emit("join_driver_room", driverInfo.id);
+      console.log(`✅ [VEHICLE FILTER] Driver joined room: driver_${driverInfo.id}`);
+    }
+  }, [driverInfo?.id]);
 
   const { data: transactions } = useQuery<any[]>({
     queryKey: [`/api/drivers/${driverInfo?.id}/transactions`],

@@ -590,8 +590,31 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         status: status || "pending"
       });
 
-      io.emit("new_request_available", request);
+      console.log(`🚗 [VEHICLE FILTER] New request created with vehicleType: ${request.vehicleType}`);
+
+      // CRITICAL FEATURE 1: Vehicle Type Filtering
+      // Only emit to drivers with matching vehicle type
+      const requestVehicleType = request.vehicleType || "سطحة صغيرة";
+      
+      // Get all online drivers with matching vehicle type
+      const allDrivers = await storage.getDrivers();
+      const matchingDrivers = allDrivers.filter(driver => 
+        driver.isOnline && 
+        driver.vehicleType === requestVehicleType
+      );
+      
+      console.log(`✅ [VEHICLE FILTER] Found ${matchingDrivers.length} matching drivers for ${requestVehicleType}`);
+      
+      // Emit to each matching driver individually
+      matchingDrivers.forEach(driver => {
+        io.to(`driver_${driver.id}`).emit("new_request_available", request);
+        console.log(`📡 [VEHICLE FILTER] Sent request ${request.id} to driver ${driver.id} (${driver.vehicleType})`);
+      });
+      
+      // Also emit city-based for backward compatibility (will be filtered client-side)
       io.to(`city_${detectedCity}`).emit("new_request_in_city", request);
+      
+      // Global update for admin dashboard
       io.emit("request_updated", { id: request.id, status: "pending", ...request });
 
       res.status(201).json(request);

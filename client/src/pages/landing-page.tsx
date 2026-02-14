@@ -1,12 +1,71 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Truck, User, ArrowLeftRight, ChevronLeft, ShieldCheck, Globe } from "lucide-react";
+import { Truck, User, ArrowLeftRight, ChevronLeft, ShieldCheck, Globe, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function LandingPage() {
   const [, setLocation] = useLocation();
+  const [isChecking, setIsChecking] = useState(true); // FEATURE 3: Check auth on mount
+
+  // FEATURE 3: Persistent Auth & Auto-Redirect
+  useEffect(() => {
+    console.log("🔐 [AUTH CHECK] Checking for existing session...");
+    
+    const checkAuth = () => {
+      try {
+        // Check for customer session
+        const savedUser = localStorage.getItem("sat7a_user");
+        const sessionActive = localStorage.getItem("sat7a_session_active");
+        
+        if (savedUser && sessionActive === "true") {
+          const user = JSON.parse(savedUser);
+          console.log("✅ [AUTH CHECK] Customer session found - redirecting to map");
+          setLocation("/request");
+          return;
+        }
+        
+        // Check for driver session
+        const driverId = localStorage.getItem("currentDriverId");
+        const driverPhone = localStorage.getItem("driverPhone");
+        
+        if (driverId && driverPhone) {
+          console.log("✅ [AUTH CHECK] Driver session found - redirecting to dashboard");
+          setLocation("/driver-dashboard");
+          return;
+        }
+        
+        // Check for admin session
+        const adminToken = localStorage.getItem("adminToken");
+        if (adminToken) {
+          console.log("✅ [AUTH CHECK] Admin session found - redirecting to admin");
+          setLocation("/admin");
+          return;
+        }
+        
+        console.log("ℹ️ [AUTH CHECK] No active session - showing landing page");
+        setIsChecking(false);
+      } catch (error) {
+        console.error("❌ [AUTH CHECK] Error checking session:", error);
+        setIsChecking(false);
+      }
+    };
+    
+    checkAuth();
+  }, [setLocation]);
+
+  // FEATURE 3: Show loading while checking auth
+  if (isChecking) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-500 via-orange-400 to-yellow-400 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-16 h-16 text-white animate-spin mx-auto mb-4" />
+          <p className="text-white font-black text-xl">جاري التحميل...</p>
+        </div>
+      </div>
+    );
+  }
 
   const containerVariants = {
     hidden: { opacity: 0 },
