@@ -9,7 +9,7 @@ import {
   PlusCircle, CreditCard, Info, ShieldCheck, Receipt, DollarSign, ArrowDownCircle
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapContainer, TileLayer, useMap, Marker, Popup } from "react-leaflet"; 
+import { MapContainer, TileLayer, useMap, Marker, Popup, Polyline } from "react-leaflet"; 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { getSocket } from "@/lib/socket";
@@ -947,19 +947,35 @@ export default function DriverDashboard() {
                     <Popup><div className="text-right font-black font-sans">أنت هنا كابتن {driverInfo.name} <br/><span className="text-orange-500 text-[10px]">جاري تتبع موقعك المباشر</span></div></Popup>
                   </Marker>
                 )}
-                {/* خط الملاحة بين السائق والزبون عند وجود طلب نشط - باستخدام الطرق الفعلية */}
-                {activeOrder && currentCoords && (
+                {/* FEATURE 2: Dual-Stage Navigation - Dynamic routing based on order stage */}
+                {activeOrder && currentCoords && orderStage === "heading_to_pickup" && (
                   <RoutingPolyline 
                     start={currentCoords}
-                    end={[activeOrder.pickupLat, activeOrder.pickupLng]} 
+                    end={[parseFloat(activeOrder.pickupLat), parseFloat(activeOrder.pickupLng)]} 
                     color="#f97316" 
-                    weight={4} 
-                    opacity={0.7}
+                    weight={5} 
+                    opacity={0.8}
                   />
                 )}
-                {activeOrder && (
-                  <Marker position={[activeOrder.pickupLat, activeOrder.pickupLng]}>
-                    <Popup><div className="text-right font-black">موقع الزبون: {activeOrder.customerName}</div></Popup>
+                {/* FEATURE 2: Stage 2 - After arrival, show route to destination */}
+                {activeOrder && orderStage === "heading_to_dropoff" && (
+                  <RoutingPolyline 
+                    start={currentCoords || [parseFloat(activeOrder.pickupLat), parseFloat(activeOrder.pickupLng)]}
+                    end={[parseFloat(activeOrder.destLat), parseFloat(activeOrder.destLng)]} 
+                    color="#22c55e" 
+                    weight={5} 
+                    opacity={0.8}
+                  />
+                )}
+                {/* FEATURE 2: Show pickup marker for stage 1, destination marker for stage 2 */}
+                {activeOrder && orderStage === "heading_to_pickup" && (
+                  <Marker position={[parseFloat(activeOrder.pickupLat), parseFloat(activeOrder.pickupLng)]}>
+                    <Popup><div className="text-right font-black">موقع التحميل: {activeOrder.customerName}</div></Popup>
+                  </Marker>
+                )}
+                {activeOrder && orderStage === "heading_to_dropoff" && (
+                  <Marker position={[parseFloat(activeOrder.destLat), parseFloat(activeOrder.destLng)]}>
+                    <Popup><div className="text-right font-black">موقع التوصيل: {activeOrder.destination}</div></Popup>
                   </Marker>
                 )}
                 <MapViewHandler center={currentCoords || [33.3152, 44.3661]} isFollowMode={isFollowMode} />

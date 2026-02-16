@@ -7,6 +7,7 @@ import { sql } from "drizzle-orm";
 export const settings = pgTable("settings", {
   id: serial("id").primaryKey(),
   commissionAmount: integer("commission_amount").notNull().default(1000),
+  surgeMultiplier: decimal("surge_multiplier", { precision: 3, scale: 2 }).default("1.00"), // FEATURE 1: Surge pricing
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -165,9 +166,9 @@ export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 
-// خيارات السيارات
+// FEATURE 1: Vehicle options (cleaned - prices removed, dynamic pricing used)
 export const VEHICLE_OPTIONS = [
-  { id: "small", label: "سطحة صغيرة", price: "25,000 د.ع", priceValue: 25000, description: "Small Flatbed" },
-  { id: "large", label: "سطحة كبيرة (لوري)", price: "50,000 د.ع", priceValue: 50000, description: "Large Flatbed" },
-  { id: "hydraulic", label: "سطحة هيدروليك", price: "40,000 د.ع", priceValue: 40000, description: "Hydraulic Flatbed" },
+  { id: "سطحة", label: "سطحة", description: "Flatbed Tow Truck", icon: "🚛" },
+  { id: "سحب", label: "سحب", description: "Towing Service", icon: "🚗" },
+  { id: "هيدروليك", label: "هيدروليك", description: "Hydraulic Tow Truck", icon: "🏗️" },
 ] as const;

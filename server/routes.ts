@@ -10,6 +10,40 @@ import express from "express";
 import { Server as SocketIOServer } from "socket.io";
 import jwt from "jsonwebtoken"; 
 import NodeGeocoder from 'node-geocoder';
+import { calculateDynamicFare, calculateSimpleFare, getSurgeMultiplier, getVehicleConfig } from './services/PricingService';
+import axios from 'axios';
+
+// FEATURE 2: Google Polyline decoder
+function decodeGooglePolyline(encoded: string): [number, number][] {
+  const points: [number, number][] = [];
+  let index = 0, len = encoded.length;
+  let lat = 0, lng = 0;
+
+  while (index < len) {
+    let b, shift = 0, result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lng += dlng;
+
+    points.push([lat / 1e5, lng / 1e5]);
+  }
+
+  return points;
+}
 
 const geocoder = NodeGeocoder({
   provider: 'openstreetmap' 
@@ -265,6 +299,147 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       res.json(messages);
     } catch (err) {
       res.status(500).json({ message: "فشل في جلب سجل المحادثة" });
+    }
+  });
+  
+  // FEATURE 1: Google Maps Distance Matrix API Proxy
+  app.post("/api/distance-matrix", async (req, res) => {
+    try {
+      const { origin, destination } = req.body;
+      
+      console.log('🗺️ [DISTANCE MATRIX] Request received');
+      console.log(`📍 Origin: ${origin}, Destination: ${destination}`);
+      
+      const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+      
+      if (!apiKey) {
+        console.log('⚠️ [DISTANCE MATRIX] No API key configured - using fallback');
+        return res.status(200).json({ status: 'FALLBACK', message: 'Using Haversine calculation' });
+      }
+      
+      const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${destination}&mode=driving&departure_time=now&traffic_model=best_guess&key=${apiKey}`;
+      
+      const response = await axios.get(url);
+      
+      console.log('✅ [DISTANCE MATRIX] Google API responded');
+      
+      res.json(response.data);
+    } catch (error: any) {
+      console.error('❌ [DISTANCE MATRIX] Error:', error.message);
+      res.status(500).json({ status: 'ERROR', message: error.message });
+    }
+  });
+  
+  // FEATURE 1: Calculate fare endpoint (for pre-request price preview)
+  app.post("/api/calculate-fare", async (req, res) => {
+    try {
+      const { distanceKm, durationMinutes, vehicleType } = req.body;
+      
+      console.log('💰 [CALCULATE FARE] Request:', { distanceKm, durationMinutes, vehicleType });
+      
+      if (!distanceKm || !vehicleType) {
+        return res.status(400).json({ message: 'Missing required parameters' });
+      }
+      
+      // Get current surge multiplier from settings
+      const surgeMultiplier = await getSurgeMultiplier(storage);
+      
+      // Get vehicle configuration (with fallback to defaults)
+      const vehicleConfig = await getVehicleConfig(storage, vehicleType);
+      
+      // Calculate fare
+      const pricingResult = calculateDynamicFare(
+        parseFloat(distanceKm),
+        parseFloat(durationMinutes || 0),
+        vehicleType,
+        surgeMultiplier,
+        vehicleConfig
+      );
+      
+      console.log('✅ [CALCULATE FARE] Result:', pricingResult);
+      
+      res.json(pricingResult);
+    } catch (error: any) {
+      console.error('❌ [CALCULATE FARE] Error:', error);
+      res.status(500).json({ message: 'فشل في حساب السعر: ' + error.message });
+    }
+  });
+  
+  // FEATURE 2: Get route points for navigation polyline
+  app.post("/api/route", async (req, res) => {
+    try {
+      const { origin, destination } = req.body;
+      
+      console.log('🗺️ [ROUTE] Request:', origin, '->', destination);
+      
+      if (!origin?.lat || !origin?.lng || !destination?.lat || !destination?.lng) {
+        return res.status(400).json({ message: 'Missing coordinates' });
+      }
+      
+      // Try OSRM first (free, open-source routing)
+      try {
+        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson`;
+        
+        console.log('🌐 [ROUTE] Calling OSRM...');
+        
+        const response = await axios.get(osrmUrl);
+        
+        if (response.data?.code === 'Ok' && response.data?.routes?.[0]?.geometry?.coordinates) {
+          const coordinates = response.data.routes[0].geometry.coordinates;
+          // OSRM returns [lng, lat], we need [lat, lng] for Leaflet
+          const points = coordinates.map((coord: number[]) => [coord[1], coord[0]]);
+          
+          console.log(`✅ [ROUTE] OSRM returned ${points.length} points`);
+          
+          return res.json({ 
+            points, 
+            source: 'OSRM',
+            distance: response.data.routes[0].distance,
+            duration: response.data.routes[0].duration
+          });
+        }
+      } catch (osrmError) {
+        console.warn('⚠️ [ROUTE] OSRM failed, trying fallback');
+      }
+      
+      // Fallback: Google Directions API (if key is configured)
+      const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+      
+      if (apiKey) {
+        try {
+          const googleUrl = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&key=${apiKey}`;
+          
+          console.log('🌐 [ROUTE] Calling Google Directions...');
+          
+          const response = await axios.get(googleUrl);
+          
+          if (response.data?.status === 'OK' && response.data?.routes?.[0]?.overview_polyline?.points) {
+            // Decode Google polyline
+            const points = decodeGooglePolyline(response.data.routes[0].overview_polyline.points);
+            
+            console.log(`✅ [ROUTE] Google Directions returned ${points.length} points`);
+            
+            return res.json({ 
+              points, 
+              source: 'Google',
+              distance: response.data.routes[0].legs[0].distance.value,
+              duration: response.data.routes[0].legs[0].duration.value
+            });
+          }
+        } catch (googleError) {
+          console.warn('⚠️ [ROUTE] Google Directions failed');
+        }
+      }
+      
+      // Last resort: straight line
+      console.log('⚠️ [ROUTE] Using straight line fallback');
+      res.json({ 
+        points: [[origin.lat, origin.lng], [destination.lat, destination.lng]], 
+        source: 'straight-line' 
+      });
+    } catch (error: any) {
+      console.error('❌ [ROUTE] Error:', error);
+      res.status(500).json({ message: 'فشل في حساب المسار' });
     }
   });
 

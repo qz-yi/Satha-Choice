@@ -21,12 +21,32 @@ import { io } from "socket.io-client";
 type Driver = any;
 type Request = any;
 
-// أيقونة السائق على الخريطة
-const driverIcon = L.icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/854/854878.png',
-  iconSize: [35, 35],
-  iconAnchor: [17, 35],
-});
+// FEATURE 3: Professional driver icons based on vehicle type
+const getDriverIcon = (vehicleType: string, isOnline: boolean) => {
+  const colors: Record<string, string> = {
+    "سطحة": "#f97316", // Orange for flatbed
+    "سحب": "#3b82f6",  // Blue for towing
+    "هيدروليك": "#8b5cf6" // Purple for hydraulic
+  };
+  
+  const color = colors[vehicleType] || "#f97316";
+  const opacity = isOnline ? '1' : '0.4';
+  
+  return L.divIcon({
+    html: `
+      <div style="position: relative; filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.3));">
+        <svg width="40" height="40" viewBox="0 0 100 100" fill="none">
+          <circle cx="50" cy="50" r="48" fill="${color}" opacity="${opacity}" stroke="white" stroke-width="4"/>
+          <text x="50" y="62" font-size="40" text-anchor="middle" fill="white" font-weight="bold">🚛</text>
+        </svg>
+        ${isOnline ? '<div style="position: absolute; top: 0; right: 0; width: 12px; height: 12px; background: #22c55e; border: 2px solid white; border-radius: 50%;"></div>' : ''}
+      </div>
+    `,
+    className: "",
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+  });
+};
 
 // PRODUCTION-READY: Use singleton socket instance
 const socket = getSocket();
@@ -569,18 +589,54 @@ export default function AdminDashboard() {
                               const currentJob = allRequests.find(r => r.driverId === driver.id && r.status !== 'completed');
                               
                               return (
-                                <Marker key={driver.id} position={[lat, lng]} icon={driverIcon}>
-                                  <Popup>
-                                    <div className="text-right font-black">
-                                      <p className="text-lg">{driver.name}</p>
-                                      <p className="text-xs text-gray-600">رقم: {driver.phone}</p>
-                                      {currentJob && (
-                                        <div className="mt-2 p-2 bg-orange-50 rounded-lg">
-                                          <p className="text-xs text-orange-600 font-bold">
-                                            📦 في مهمة: {currentJob.location}
-                                          </p>
+                                <Marker 
+                                  key={driver.id} 
+                                  position={[lat, lng]} 
+                                  icon={getDriverIcon(driver.vehicleType, driver.isOnline)}
+                                >
+                                  <Popup className="custom-popup" minWidth={200}>
+                                    <div className="text-right p-3 space-y-3">
+                                      {/* Driver Name & Vehicle */}
+                                      <div className="border-b pb-2">
+                                        <h3 className="font-black text-lg text-gray-800">{driver.name}</h3>
+                                        <p className="text-sm text-orange-600 font-bold">{driver.vehicleType}</p>
+                                        <p className="text-xs text-gray-500 font-bold">{driver.plateNumber}</p>
+                                      </div>
+                                      
+                                      {/* Status & Stats */}
+                                      <div className="space-y-1 text-xs">
+                                        <div className="flex justify-between">
+                                          <span className="text-gray-500">الحالة:</span>
+                                          <span className={`font-bold ${driver.isOnline ? 'text-green-600' : 'text-gray-400'}`}>
+                                            {driver.isOnline ? 'متصل' : 'غير متصل'}
+                                          </span>
                                         </div>
-                                      )}
+                                        <div className="flex justify-between">
+                                          <span className="text-gray-500">الرصيد:</span>
+                                          <span className="font-black text-orange-600">{Number(driver.walletBalance).toLocaleString()} د.ع</span>
+                                        </div>
+                                        {currentJob && (
+                                          <div className="flex justify-between">
+                                            <span className="text-gray-500">الطلب:</span>
+                                            <span className="font-bold text-orange-600">#{currentJob.id}</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                      
+                                      {/* Action: Call Driver */}
+                                      <a 
+                                        href={`tel:${driver.phone}`} 
+                                        className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-4 rounded-xl transition-all active:scale-95 shadow-md w-full text-sm"
+                                      >
+                                        <Phone className="w-4 h-4" />
+                                        <span>اتصال بالسائق</span>
+                                      </a>
+                                      
+                                      {/* Location Info */}
+                                      <div className="text-xs text-gray-400 flex items-center gap-1 justify-center border-t pt-2">
+                                        <MapPin className="w-3 h-3" />
+                                        <span>آخر تحديث: الآن</span>
+                                      </div>
                                     </div>
                                   </Popup>
                                 </Marker>

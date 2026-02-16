@@ -1244,25 +1244,94 @@ export default function RequestFlow() {
     }
   };
 
-  // FEATURE 2: Calculate Price When Vehicle Type or Locations Change
+  // FEATURE 1: Professional Dynamic Pricing - Calculate when locations/vehicle changes
   useEffect(() => {
     if (formData.vehicleType && formData.pickupLat && formData.pickupLng && formData.destLat && formData.destLng) {
-      // Calculate distance
-      const distance = calculateDistance(
-        formData.pickupLat,
-        formData.pickupLng,
-        formData.destLat,
-        formData.destLng
-      );
+      console.log('💰 [PRICING] Triggering fare calculation');
       
-      // Calculate price
-      const price = calculatePrice(distance, formData.vehicleType);
+      const calculateFare = async () => {
+        try {
+          // Call backend to get traffic-aware pricing
+          const response = await fetch('/api/distance-matrix', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              origin: `${formData.pickupLat},${formData.pickupLng}`,
+              destination: `${formData.destLat},${formData.destLng}`
+            })
+          });
+          
+          let distanceKm, durationMinutes;
+          
+          if (response.ok) {
+            const data = await response.json();
+            
+            if (data.status === 'OK' && data.rows?.[0]?.elements?.[0]?.status === 'OK') {
+              const element = data.rows[0].elements[0];
+              distanceKm = element.distance.value / 1000;
+              durationMinutes = (element.duration_in_traffic?.value || element.duration.value) / 60;
+              console.log(`✅ [PRICING] Google Maps data: ${distanceKm}km, ${durationMinutes}min`);
+            } else {
+              throw new Error('Google API returned non-OK status');
+            }
+          } else {
+            throw new Error('Distance Matrix API unavailable');
+          }
+          
+          // Calculate fare using backend pricing engine
+          const fareResponse = await fetch('/api/calculate-fare', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              distanceKm,
+              durationMinutes,
+              vehicleType: formData.vehicleType
+            })
+          });
+          
+          if (fareResponse.ok) {
+            const fareData = await fareResponse.json();
+            console.log(`✅ [PRICING] Calculated fare:`, fareData);
+            
+            setDistanceKm(fareData.distanceKm);
+            setCalculatedPrice(fareData.finalPrice);
+            setFormData(prev => ({ ...prev, price: fareData.finalPrice.toString() }));
+          }
+        } catch (error) {
+          console.warn('⚠️ [PRICING] Falling back to simple calculation:', error);
+          
+          // Fallback: Haversine distance + estimated duration
+          const { calculateHaversineDistance } = await import('@/services/MapService');
+          const distance = calculateHaversineDistance(
+            formData.pickupLat,
+            formData.pickupLng,
+            formData.destLat,
+            formData.destLng
+          );
+          
+          const estimatedDuration = (distance / 40) * 60; // 40 km/h avg speed
+          
+          // Call backend for pricing
+          const fareResponse = await fetch('/api/calculate-fare', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              distanceKm: distance,
+              durationMinutes: estimatedDuration,
+              vehicleType: formData.vehicleType
+            })
+          });
+          
+          if (fareResponse.ok) {
+            const fareData = await fareResponse.json();
+            setDistanceKm(fareData.distanceKm);
+            setCalculatedPrice(fareData.finalPrice);
+            setFormData(prev => ({ ...prev, price: fareData.finalPrice.toString() }));
+          }
+        }
+      };
       
-      console.log(`💰 [PRICING] Distance: ${distance}km, Vehicle: ${formData.vehicleType}, Price: ${price} IQD`);
-      
-      setDistanceKm(distance);
-      setCalculatedPrice(price);
-      setFormData(prev => ({ ...prev, price: price.toString() }));
+      calculateFare();
     }
   }, [formData.vehicleType, formData.pickupLat, formData.pickupLng, formData.destLat, formData.destLng]);
 
@@ -1841,32 +1910,48 @@ export default function RequestFlow() {
             <h3 className="font-black text-gray-800 text-lg pr-2 mb-4">اختر السطحة المناسبة</h3>
             <div className="space-y-4">
               {VEHICLE_OPTIONS.map((opt) => (
-                <div key={opt.id} onClick={() => setFormData(p => ({...p, vehicleType: opt.id, price: opt.price.toString()}))}
-                     className={`p-4 rounded-[28px] border-2 transition-all flex justify-between items-center ${formData.vehicleType === opt.id ? 'bg-orange-500 border-orange-500 text-white shadow-lg scale-[1.01]' : 'bg-white border-transparent shadow-sm hover:border-orange-100'}`}>
-                    <div className="flex items-center gap-3">
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${formData.vehicleType === opt.id ? 'bg-white/20' : 'bg-orange-50 text-orange-500'}`}><Truck className="w-6 h-6" /></div>
-                        <div><h4 className="font-black text-base">{opt.label}</h4><p className="text-[10px] opacity-80">تصل خلال 10 دقائق</p></div>
+                <div key={opt.id} onClick={() => setFormData(p => ({...p, vehicleType: opt.id}))}
+                     className={`p-4 rounded-[28px] border-2 transition-all flex items-center gap-4 ${formData.vehicleType === opt.id ? 'bg-orange-500 border-orange-500 text-white shadow-lg scale-[1.01]' : 'bg-white border-transparent shadow-sm hover:border-orange-100'}`}>
+                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl ${formData.vehicleType === opt.id ? 'bg-white/20' : 'bg-orange-50'}`}>
+                      {opt.icon}
                     </div>
-                    <span className="text-lg font-black">{opt.price} <span className="text-xs">د.ع</span></span>
+                    <div className="flex-1">
+                      <h4 className="font-black text-lg">{opt.label}</h4>
+                      <p className="text-xs opacity-70">{opt.description}</p>
+                    </div>
+                    {formData.vehicleType === opt.id && (
+                      <Check className="w-6 h-6" />
+                    )}
                 </div>
               ))}
-              {/* FEATURE 2: Dynamic Pricing Display */}
-              {calculatedPrice > 0 && (
-                <div className="bg-gradient-to-r from-orange-50 to-yellow-50 p-5 rounded-[30px] shadow-sm border-2 border-orange-200 space-y-2 mt-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="bg-orange-500 p-2 rounded-xl">
-                        <DollarSign className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <h4 className="font-black text-gray-800 text-sm">السعر المقدّر</h4>
-                        <p className="text-xs text-gray-500 font-bold">{distanceKm.toFixed(1)} كم</p>
+              {/* FEATURE 1: Professional Dynamic Pricing Display */}
+              {calculatedPrice > 0 && distanceKm > 0 && (
+                <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-6 rounded-[30px] shadow-xl border-2 border-orange-400 space-y-3 mt-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
+                      <DollarSign className="w-5 h-5 text-white" />
+                    </div>
+                    <h4 className="font-black text-white text-base">السعر النهائي المقدّر</h4>
+                  </div>
+                  
+                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-white/80 text-sm font-bold">المسافة</span>
+                      <span className="text-white font-black text-lg">{distanceKm.toFixed(1)} كم</span>
+                    </div>
+                    <div className="h-px bg-white/20"></div>
+                    <div className="flex justify-between items-center pt-2">
+                      <span className="text-white/80 text-sm font-bold">السعر الإجمالي</span>
+                      <div className="text-right">
+                        <p className="text-4xl font-black text-white leading-none">{calculatedPrice.toLocaleString()}</p>
+                        <p className="text-xs font-bold text-white/60 mt-1">دينار عراقي</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-3xl font-black text-orange-600">{calculatedPrice.toLocaleString()}</p>
-                      <p className="text-xs font-bold text-gray-500">دينار عراقي</p>
-                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 text-white/70 text-xs">
+                    <AlertCircle className="w-4 h-4" />
+                    <span className="font-bold">السعر شامل جميع الرسوم</span>
                   </div>
                 </div>
               )}
