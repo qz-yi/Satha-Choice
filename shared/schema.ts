@@ -166,9 +166,9 @@ export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 
-// FEATURE 1: Vehicle options (cleaned - prices removed, dynamic pricing used)
+// CRITICAL FIX #2 & #5: Clean vehicle options - NO icons, NO prices, text-only
 export const VEHICLE_OPTIONS = [
-  { id: "سطحة", label: "سطحة", description: "Flatbed Tow Truck", icon: "🚛" },
-  { id: "سحب", label: "سحب", description: "Towing Service", icon: "🚗" },
-  { id: "هيدروليك", label: "هيدروليك", description: "Hydraulic Tow Truck", icon: "🏗️" },
+  { id: "سطحة", label: "سطحة", description: "Flatbed Tow Truck" },
+  { id: "سحب", label: "سحب", description: "Towing Service" },
+  { id: "هيدروليك", label: "هيدروليك", description: "Hydraulic Tow Truck" },
 ] as const;

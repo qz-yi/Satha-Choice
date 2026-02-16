@@ -14,6 +14,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { MapContainer, TileLayer, useMapEvents, Marker, useMap, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -136,6 +137,7 @@ export default function RequestFlow() {
   const [calculatedPrice, setCalculatedPrice] = useState<number>(0);
   const [distanceKm, setDistanceKm] = useState<number>(0);
   const [showPriceConfirmation, setShowPriceConfirmation] = useState(false);
+  const [isPriceCalculating, setIsPriceCalculating] = useState(false); // CRITICAL FIX #2: Loading state for price
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -1244,12 +1246,15 @@ export default function RequestFlow() {
     }
   };
 
-  // FEATURE 1: Professional Dynamic Pricing - Calculate when locations/vehicle changes
+  // CRITICAL FIX #2: Professional Dynamic Pricing with Loading State
   useEffect(() => {
     if (formData.vehicleType && formData.pickupLat && formData.pickupLng && formData.destLat && formData.destLng) {
       console.log('💰 [PRICING] Triggering fare calculation');
       
       const calculateFare = async () => {
+        setIsPriceCalculating(true); // CRITICAL: Show loading
+        setCalculatedPrice(0); // Reset price while calculating
+        
         try {
           // Call backend to get traffic-aware pricing
           const response = await fetch('/api/distance-matrix', {
@@ -1296,9 +1301,13 @@ export default function RequestFlow() {
             setDistanceKm(fareData.distanceKm);
             setCalculatedPrice(fareData.finalPrice);
             setFormData(prev => ({ ...prev, price: fareData.finalPrice.toString() }));
+            setIsPriceCalculating(false); // CRITICAL: Calculation complete
+          } else {
+            setIsPriceCalculating(false);
           }
         } catch (error) {
           console.warn('⚠️ [PRICING] Falling back to simple calculation:', error);
+          setIsPriceCalculating(false);
           
           // Fallback: Haversine distance + estimated duration
           const { calculateHaversineDistance } = await import('@/services/MapService');
@@ -1327,11 +1336,18 @@ export default function RequestFlow() {
             setDistanceKm(fareData.distanceKm);
             setCalculatedPrice(fareData.finalPrice);
             setFormData(prev => ({ ...prev, price: fareData.finalPrice.toString() }));
+            setIsPriceCalculating(false); // CRITICAL: Done
+          } else {
+            setIsPriceCalculating(false);
           }
         }
       };
       
       calculateFare();
+    } else {
+      // Reset if incomplete data
+      setCalculatedPrice(0);
+      setIsPriceCalculating(false);
     }
   }, [formData.vehicleType, formData.pickupLat, formData.pickupLng, formData.destLat, formData.destLng]);
 
@@ -1910,22 +1926,35 @@ export default function RequestFlow() {
             <h3 className="font-black text-gray-800 text-lg pr-2 mb-4">اختر السطحة المناسبة</h3>
             <div className="space-y-4">
               {VEHICLE_OPTIONS.map((opt) => (
-                <div key={opt.id} onClick={() => setFormData(p => ({...p, vehicleType: opt.id}))}
-                     className={`p-4 rounded-[28px] border-2 transition-all flex items-center gap-4 ${formData.vehicleType === opt.id ? 'bg-orange-500 border-orange-500 text-white shadow-lg scale-[1.01]' : 'bg-white border-transparent shadow-sm hover:border-orange-100'}`}>
-                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl ${formData.vehicleType === opt.id ? 'bg-white/20' : 'bg-orange-50'}`}>
-                      {opt.icon}
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-black text-lg">{opt.label}</h4>
-                      <p className="text-xs opacity-70">{opt.description}</p>
-                    </div>
-                    {formData.vehicleType === opt.id && (
+                <div 
+                  key={opt.id} 
+                  onClick={() => setFormData(p => ({...p, vehicleType: opt.id}))}
+                  className={`p-5 rounded-[28px] border-2 transition-all flex items-center justify-between ${formData.vehicleType === opt.id ? 'bg-orange-500 border-orange-500 text-white shadow-lg scale-[1.01]' : 'bg-white border-gray-100 shadow-sm hover:border-orange-200'}`}
+                >
+                  {/* CRITICAL FIX #2: Clean text-only design, NO ICONS */}
+                  <div className="flex-1">
+                    <h4 className="font-black text-xl">{opt.label}</h4>
+                    <p className="text-sm font-bold opacity-70 mt-1">{opt.description}</p>
+                  </div>
+                  {formData.vehicleType === opt.id && (
+                    <div className="bg-white/20 p-2 rounded-xl">
                       <Check className="w-6 h-6" />
-                    )}
+                    </div>
+                  )}
                 </div>
               ))}
-              {/* FEATURE 1: Professional Dynamic Pricing Display */}
-              {calculatedPrice > 0 && distanceKm > 0 && (
+              {/* CRITICAL FIX #2: Dynamic Pricing with Loading State */}
+              {isPriceCalculating && (
+                <div className="bg-gradient-to-br from-gray-100 to-gray-200 p-6 rounded-[30px] shadow-lg border-2 border-gray-300 space-y-3 mt-4 animate-pulse">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
+                    <h4 className="font-black text-gray-700 text-base">جاري حساب السعر...</h4>
+                  </div>
+                  <div className="bg-white/50 rounded-2xl p-4 h-20"></div>
+                </div>
+              )}
+              
+              {!isPriceCalculating && calculatedPrice > 0 && distanceKm > 0 && (
                 <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-6 rounded-[30px] shadow-xl border-2 border-orange-400 space-y-3 mt-4">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
@@ -2165,6 +2194,69 @@ export default function RequestFlow() {
             </motion.div>
           )}
       </AnimatePresence>
+      
+      {/* CRITICAL FIX #2: Professional Price Confirmation Modal */}
+      <Dialog open={showPriceConfirmation} onOpenChange={setShowPriceConfirmation}>
+        <DialogContent className="max-w-md mx-auto bg-white rounded-[30px] p-0 border-none shadow-2xl">
+          <div className="p-8 text-center space-y-6">
+            {/* Header */}
+            <div className="flex justify-center">
+              <div className="bg-orange-100 p-4 rounded-full">
+                <DollarSign className="w-12 h-12 text-orange-600" />
+              </div>
+            </div>
+            
+            {/* Title */}
+            <div>
+              <h3 className="text-2xl font-black text-gray-800 mb-2">تأكيد الطلب</h3>
+              <p className="text-sm text-gray-500 font-bold">يرجى مراجعة التفاصيل قبل التأكيد</p>
+            </div>
+            
+            {/* Price Details */}
+            <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-6 rounded-[25px] space-y-3">
+              <div className="flex justify-between items-center pb-3 border-b border-orange-200">
+                <span className="text-gray-600 font-bold">نوع السيارة:</span>
+                <span className="text-gray-800 font-black">{formData.vehicleType}</span>
+              </div>
+              <div className="flex justify-between items-center pb-3 border-b border-orange-200">
+                <span className="text-gray-600 font-bold">المسافة:</span>
+                <span className="text-gray-800 font-black">{distanceKm.toFixed(1)} كم</span>
+              </div>
+              <div className="flex justify-between items-center pb-3 border-b border-orange-200">
+                <span className="text-gray-600 font-bold">طريقة الدفع:</span>
+                <span className="text-gray-800 font-black">{paymentMethod === "wallet" ? "محفظة" : "نقدي"}</span>
+              </div>
+              <div className="flex justify-between items-center pt-3">
+                <span className="text-orange-600 font-black text-lg">السعر الإجمالي:</span>
+                <div className="text-right">
+                  <span className="text-4xl font-black text-orange-600">{calculatedPrice.toLocaleString()}</span>
+                  <span className="text-sm text-orange-500 font-bold mr-1">د.ع</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Actions */}
+            <div className="flex gap-3 pt-4">
+              <Button
+                onClick={() => setShowPriceConfirmation(false)}
+                variant="outline"
+                className="flex-1 h-14 rounded-[20px] font-black text-gray-700 border-2 hover:bg-gray-50"
+              >
+                إلغاء
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowPriceConfirmation(false);
+                  handleFinalOrder();
+                }}
+                className="flex-1 h-14 rounded-[20px] font-black bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg"
+              >
+                تأكيد الطلب
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

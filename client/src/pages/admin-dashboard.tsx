@@ -3,8 +3,9 @@ import {
   Users, Truck, Map as MapIcon, ShieldCheck,
   CheckCircle2, XCircle, Menu, Activity,
   Search, Trash2, ChevronLeft,
-  UserPlus, AlertCircle, Phone, MapPin, Wallet, TrendingUp, Coins, Plus, Minus, ExternalLink, Loader2, Clock // <--- تمت إضافة Clock هنا
+  UserPlus, AlertCircle, Phone, MapPin, Wallet, TrendingUp, Coins, Plus, Minus, ExternalLink, Loader2, Clock, DollarSign
 } from "lucide-react";
+import AdminPricingPanel from "./admin-pricing-panel";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -536,6 +537,9 @@ export default function AdminDashboard() {
           <button onClick={() => { setActiveTab("map"); setIsSidebarOpen(false); }} className={`w-full flex items-center p-4 rounded-[20px] font-black transition-all ${activeTab === "map" ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-slate-400 hover:bg-slate-900'}`}>
             <MapIcon className="w-5 h-5 ml-4" /> الخريطة الحية
           </button>
+          <button onClick={() => { setActiveTab("pricing"); setIsSidebarOpen(false); }} className={`w-full flex items-center p-4 rounded-[20px] font-black transition-all ${activeTab === "pricing" ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-slate-400 hover:bg-slate-900'}`}>
+            <DollarSign className="w-5 h-5 ml-4" /> إعدادات التسعير
+          </button>
           <button onClick={() => { setActiveTab("requests"); setIsSidebarOpen(false); }} className={`w-full flex items-center justify-between p-4 rounded-[20px] font-black transition-all ${activeTab === "requests" ? 'bg-orange-500 text-white' : 'text-slate-400 hover:bg-slate-900'}`}>
             <div className="flex items-center gap-4"><UserPlus className="w-5 h-5" /> طلبات الانضمام</div>
             {pendingDrivers.length > 0 && <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full">{pendingDrivers.length}</span>}
@@ -573,6 +577,13 @@ export default function AdminDashboard() {
         </div>
 
           <AnimatePresence mode="wait">
+            {/* CRITICAL FIX #3: Pricing Control Panel Tab */}
+            {activeTab === "pricing" && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} key="pricing-view">
+                <AdminPricingPanel />
+              </motion.div>
+            )}
+            
             {activeTab === "map" && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} key="map-view" className="h-[600px]">
                     <div className="w-full h-full bg-white rounded-[45px] shadow-2xl overflow-hidden border-[12px] border-white relative">

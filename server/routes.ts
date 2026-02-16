@@ -12,6 +12,7 @@ import jwt from "jsonwebtoken";
 import NodeGeocoder from 'node-geocoder';
 import { calculateDynamicFare, calculateSimpleFare, getSurgeMultiplier, getVehicleConfig } from './services/PricingService';
 import axios from 'axios';
+import * as PricingConfig from './services/PricingConfig';
 
 // FEATURE 2: Google Polyline decoder
 function decodeGooglePolyline(encoded: string): [number, number][] {
@@ -330,7 +331,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
   
-  // FEATURE 1: Calculate fare endpoint (for pre-request price preview)
+  // CRITICAL FIX #3: Calculate fare endpoint (with admin-configured pricing)
   app.post("/api/calculate-fare", async (req, res) => {
     try {
       const { distanceKm, durationMinutes, vehicleType } = req.body;
@@ -341,11 +342,13 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         return res.status(400).json({ message: 'Missing required parameters' });
       }
       
-      // Get current surge multiplier from settings
-      const surgeMultiplier = await getSurgeMultiplier(storage);
+      // CRITICAL FIX #3: Get admin-configured surge multiplier
+      const surgeMultiplier = await PricingConfig.getSurgeMultiplier();
+      console.log(`📊 [CALCULATE FARE] Current surge multiplier: ${surgeMultiplier}x`);
       
-      // Get vehicle configuration (with fallback to defaults)
-      const vehicleConfig = await getVehicleConfig(storage, vehicleType);
+      // CRITICAL FIX #3: Get admin-configured vehicle pricing
+      const vehicleConfig = PricingConfig.getVehiclePricing(vehicleType);
+      console.log(`📊 [CALCULATE FARE] Vehicle config for ${vehicleType}:`, vehicleConfig);
       
       // Calculate fare
       const pricingResult = calculateDynamicFare(
@@ -362,6 +365,70 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     } catch (error: any) {
       console.error('❌ [CALCULATE FARE] Error:', error);
       res.status(500).json({ message: 'فشل في حساب السعر: ' + error.message });
+    }
+  });
+  
+  // CRITICAL FIX #3: Admin Pricing Management Endpoints
+  
+  // Get current surge multiplier
+  app.get("/api/admin/pricing/surge", async (req, res) => {
+    try {
+      const surge = await PricingConfig.getSurgeMultiplier();
+      res.json({ surgeMultiplier: surge });
+    } catch (error: any) {
+      res.status(500).json({ message: 'Failed to fetch surge multiplier' });
+    }
+  });
+  
+  // Update surge multiplier (Peak Hour Mode toggle)
+  app.post("/api/admin/pricing/surge", async (req, res) => {
+    try {
+      const { surgeMultiplier } = req.body;
+      
+      if (typeof surgeMultiplier !== 'number' || surgeMultiplier < 1 || surgeMultiplier > 3) {
+        return res.status(400).json({ message: 'Surge multiplier must be between 1.0 and 3.0' });
+      }
+      
+      await PricingConfig.updateSurgeMultiplier(surgeMultiplier);
+      
+      // Broadcast to all clients that pricing has changed
+      io.emit('pricing_updated', { surgeMultiplier });
+      
+      res.json({ success: true, surgeMultiplier });
+    } catch (error: any) {
+      res.status(500).json({ message: 'Failed to update surge multiplier' });
+    }
+  });
+  
+  // Get all vehicle pricing configurations
+  app.get("/api/admin/pricing/vehicles", async (req, res) => {
+    try {
+      const allPricing = PricingConfig.getAllVehiclePricing();
+      res.json(allPricing);
+    } catch (error: any) {
+      res.status(500).json({ message: 'Failed to fetch vehicle pricing' });
+    }
+  });
+  
+  // Update vehicle pricing configuration
+  app.put("/api/admin/pricing/vehicles/:vehicleType", async (req, res) => {
+    try {
+      const { vehicleType } = req.params;
+      const { baseFare, kmRate, minuteRate, minimumFare } = req.body;
+      
+      const updated = PricingConfig.updateVehiclePricing(vehicleType, {
+        baseFare: baseFare !== undefined ? parseFloat(baseFare) : undefined,
+        kmRate: kmRate !== undefined ? parseFloat(kmRate) : undefined,
+        minuteRate: minuteRate !== undefined ? parseFloat(minuteRate) : undefined,
+        minimumFare: minimumFare !== undefined ? parseFloat(minimumFare) : undefined
+      });
+      
+      // Broadcast to all clients that pricing has changed
+      io.emit('pricing_updated', { vehicleType, config: updated });
+      
+      res.json({ success: true, config: updated });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || 'Failed to update pricing' });
     }
   });
   
@@ -765,32 +832,57 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         status: status || "pending"
       });
 
-      console.log(`🚗 [VEHICLE FILTER] New request created with vehicleType: ${request.vehicleType}`);
-
-      // CRITICAL FEATURE 1: Vehicle Type Filtering
-      // Only emit to drivers with matching vehicle type
-      const requestVehicleType = request.vehicleType || "سطحة صغيرة";
+      // CRITICAL FIX #1: STRICT Vehicle Type Filtering - 100% Isolation
+      console.log(`\n╔════════════════════════════════════════════════════════╗`);
+      console.log(`║  🚗 VEHICLE TYPE FILTER - Request #${request.id}`)
+      console.log(`║  Type Requested: "${request.vehicleType}"`);
+      console.log(`╚════════════════════════════════════════════════════════╝\n`);
       
-      // Get all online drivers with matching vehicle type
+      const requestVehicleType = request.vehicleType || "سطحة";
+      
+      // STEP 1: Get ALL drivers
       const allDrivers = await storage.getDrivers();
-      const matchingDrivers = allDrivers.filter(driver => 
-        driver.isOnline && 
-        driver.vehicleType === requestVehicleType
-      );
+      console.log(`📊 [FILTER] Total drivers in DB: ${allDrivers.length}`);
       
-      console.log(`✅ [VEHICLE FILTER] Found ${matchingDrivers.length} matching drivers for ${requestVehicleType}`);
+      // STEP 2: Filter by ONLINE status
+      const onlineDrivers = allDrivers.filter(d => d.isOnline);
+      console.log(`📊 [FILTER] Online drivers: ${onlineDrivers.length}`);
       
-      // Emit to each matching driver individually
-      matchingDrivers.forEach(driver => {
-        io.to(`driver_${driver.id}`).emit("new_request_available", request);
-        console.log(`📡 [VEHICLE FILTER] Sent request ${request.id} to driver ${driver.id} (${driver.vehicleType})`);
+      // STEP 3: STRICT vehicle type matching
+      const matchingDrivers = onlineDrivers.filter(driver => {
+        const match = driver.vehicleType === requestVehicleType;
+        console.log(`  ${match ? '✅' : '❌'} Driver #${driver.id} (${driver.name}): "${driver.vehicleType}" ${match ? '==' : '!='} "${requestVehicleType}"`);
+        return match;
       });
       
-      // Also emit city-based for backward compatibility (will be filtered client-side)
-      io.to(`city_${detectedCity}`).emit("new_request_in_city", request);
+      console.log(`\n✅ [FILTER] RESULT: ${matchingDrivers.length} matching drivers\n`);
       
-      // Global update for admin dashboard
-      io.emit("request_updated", { id: request.id, status: "pending", ...request });
+      if (matchingDrivers.length === 0) {
+        console.warn(`⚠️  [FILTER] NO MATCHING DRIVERS for "${requestVehicleType}"`);
+        console.warn(`⚠️  Request #${request.id} will wait for matching driver to come online\n`);
+      }
+      
+      // STEP 4: Emit to ONLY matching drivers (targeted rooms)
+      matchingDrivers.forEach(driver => {
+        io.to(`driver_${driver.id}`).emit("new_request_available", request);
+        console.log(`📤 [EMIT] Sent to driver_${driver.id} (${driver.name})`);
+      });
+      
+      // STEP 5: City broadcast (admin tracking only)
+      io.to(`city_${detectedCity}`).emit("new_request_in_city", {
+        ...request,
+        matchingDriversCount: matchingDrivers.length
+      });
+      
+      // STEP 6: Admin dashboard update
+      io.emit("request_updated", { 
+        id: request.id, 
+        status: "pending", 
+        matchingDriversCount: matchingDrivers.length,
+        ...request 
+      });
+      
+      console.log(`✅ [BROADCAST] Complete for Request #${request.id}\n`);
 
       res.status(201).json(request);
     } catch (err: any) {
