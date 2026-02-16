@@ -4,7 +4,7 @@
  */
 
 import { db } from '../db';
-import { settings } from '@shared/schema';
+import { settings, vehiclePricingConfig } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 
 export interface VehiclePricingRow {
@@ -15,28 +15,29 @@ export interface VehiclePricingRow {
   minimumFare: number;
 }
 
-// CRITICAL: Default pricing if database is empty
+// CRITICAL FIX #3: Corrected pricing with 7KM rule (NOT 10KM!)
+// Base Fare now covers first 7 KM ONLY
 export const DEFAULT_PRICING: Record<string, VehiclePricingRow> = {
   "سطحة": {
     vehicleType: "سطحة",
-    baseFare: 25000,
-    kmRate: 1250,
+    baseFare: 25000,      // Covers first 7km
+    kmRate: 1250,         // Per km after 7km
     minuteRate: 500,
-    minimumFare: 35000
+    minimumFare: 35000    // Minimum total
   },
   "سحب": {
     vehicleType: "سحب",
-    baseFare: 20000,
-    kmRate: 1000,
+    baseFare: 20000,      // Covers first 7km
+    kmRate: 1000,         // Per km after 7km
     minuteRate: 400,
-    minimumFare: 30000
+    minimumFare: 30000    // Minimum total
   },
   "هيدروليك": {
     vehicleType: "هيدروليك",
-    baseFare: 50000,
-    kmRate: 2000,
-    minuteRate: 800,
-    minimumFare: 70000
+    baseFare: 50000,      // Covers first 7km
+    kmRate: 2500,         // Per km after 7km (increased to meet 70k minimum)
+    minuteRate: 1000,     // Per minute (increased)
+    minimumFare: 70000    // STRICT minimum (cannot go below)
   }
 };
 
@@ -82,37 +83,120 @@ export async function updateSurgeMultiplier(multiplier: number): Promise<void> {
 }
 
 /**
- * Get vehicle pricing configuration
- * Returns from DEFAULT_PRICING for now (future: database storage)
+ * CRITICAL FIX #4: Get vehicle pricing from DATABASE (admin-configurable)
+ * Falls back to DEFAULT_PRICING if not in database
  */
-export function getVehiclePricing(vehicleType: string): VehiclePricingRow {
-  return DEFAULT_PRICING[vehicleType] || DEFAULT_PRICING["سطحة"];
-}
-
-/**
- * Get all vehicle pricing configurations
- */
-export function getAllVehiclePricing(): VehiclePricingRow[] {
-  return Object.values(DEFAULT_PRICING);
-}
-
-/**
- * Update vehicle pricing (future: save to database)
- * For now, this updates the in-memory configuration
- */
-export function updateVehiclePricing(vehicleType: string, config: Partial<VehiclePricingRow>): VehiclePricingRow {
-  console.log(`📊 [PRICING CONFIG] Updating ${vehicleType}:`, config);
-  
-  if (!DEFAULT_PRICING[vehicleType]) {
-    throw new Error(`Vehicle type ${vehicleType} not found`);
+export async function getVehiclePricing(vehicleType: string): Promise<VehiclePricingRow> {
+  try {
+    const result = await db.select()
+      .from(vehiclePricingConfig)
+      .where(eq(vehiclePricingConfig.vehicleType, vehicleType))
+      .limit(1);
+    
+    if (result.length > 0) {
+      console.log(`✅ [PRICING CONFIG] Loaded ${vehicleType} from database`);
+      return {
+        vehicleType: result[0].vehicleType,
+        baseFare: result[0].baseFare,
+        kmRate: result[0].kmRate,
+        minuteRate: result[0].minuteRate,
+        minimumFare: result[0].minimumFare
+      };
+    }
+    
+    console.log(`⚠️ [PRICING CONFIG] ${vehicleType} not in DB, using default`);
+    return DEFAULT_PRICING[vehicleType] || DEFAULT_PRICING["سطحة"];
+  } catch (error) {
+    console.warn(`⚠️ [PRICING CONFIG] Database error, using default for ${vehicleType}`);
+    return DEFAULT_PRICING[vehicleType] || DEFAULT_PRICING["سطحة"];
   }
-  
-  DEFAULT_PRICING[vehicleType] = {
-    ...DEFAULT_PRICING[vehicleType],
-    ...config
-  };
-  
-  console.log(`✅ [PRICING CONFIG] ${vehicleType} updated:`, DEFAULT_PRICING[vehicleType]);
-  
-  return DEFAULT_PRICING[vehicleType];
+}
+
+/**
+ * CRITICAL FIX #4: Get all vehicle pricing from DATABASE
+ */
+export async function getAllVehiclePricing(): Promise<VehiclePricingRow[]> {
+  try {
+    const result = await db.select().from(vehiclePricingConfig);
+    
+    if (result.length > 0) {
+      console.log(`✅ [PRICING CONFIG] Loaded ${result.length} vehicle configs from database`);
+      return result.map(r => ({
+        vehicleType: r.vehicleType,
+        baseFare: r.baseFare,
+        kmRate: r.kmRate,
+        minuteRate: r.minuteRate,
+        minimumFare: r.minimumFare
+      }));
+    }
+    
+    console.log(`⚠️ [PRICING CONFIG] No pricing in DB, using defaults`);
+    return Object.values(DEFAULT_PRICING);
+  } catch (error) {
+    console.warn(`⚠️ [PRICING CONFIG] Database error, using defaults`);
+    return Object.values(DEFAULT_PRICING);
+  }
+}
+
+/**
+ * CRITICAL FIX #4: Update vehicle pricing in DATABASE
+ * Admin can modify pricing in real-time
+ */
+export async function updateVehiclePricing(vehicleType: string, config: Partial<VehiclePricingRow>): Promise<VehiclePricingRow> {
+  try {
+    console.log(`📊 [PRICING CONFIG] Updating ${vehicleType} in database:`, config);
+    
+    // Check if exists
+    const existing = await db.select()
+      .from(vehiclePricingConfig)
+      .where(eq(vehiclePricingConfig.vehicleType, vehicleType))
+      .limit(1);
+    
+    if (existing.length > 0) {
+      // Update existing
+      const updated = await db.update(vehiclePricingConfig)
+        .set({
+          baseFare: config.baseFare,
+          kmRate: config.kmRate,
+          minuteRate: config.minuteRate,
+          minimumFare: config.minimumFare,
+          updatedAt: new Date()
+        })
+        .where(eq(vehiclePricingConfig.vehicleType, vehicleType))
+        .returning();
+      
+      console.log(`✅ [PRICING CONFIG] ${vehicleType} updated in database`);
+      
+      return {
+        vehicleType: updated[0].vehicleType,
+        baseFare: updated[0].baseFare,
+        kmRate: updated[0].kmRate,
+        minuteRate: updated[0].minuteRate,
+        minimumFare: updated[0].minimumFare
+      };
+    } else {
+      // Insert new
+      const defaults = DEFAULT_PRICING[vehicleType] || DEFAULT_PRICING["سطحة"];
+      const inserted = await db.insert(vehiclePricingConfig).values({
+        vehicleType,
+        baseFare: config.baseFare ?? defaults.baseFare,
+        kmRate: config.kmRate ?? defaults.kmRate,
+        minuteRate: config.minuteRate ?? defaults.minuteRate,
+        minimumFare: config.minimumFare ?? defaults.minimumFare
+      }).returning();
+      
+      console.log(`✅ [PRICING CONFIG] ${vehicleType} inserted into database`);
+      
+      return {
+        vehicleType: inserted[0].vehicleType,
+        baseFare: inserted[0].baseFare,
+        kmRate: inserted[0].kmRate,
+        minuteRate: inserted[0].minuteRate,
+        minimumFare: inserted[0].minimumFare
+      };
+    }
+  } catch (error) {
+    console.error(`❌ [PRICING CONFIG] Error updating ${vehicleType}:`, error);
+    throw error;
+  }
 }

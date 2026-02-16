@@ -1943,45 +1943,20 @@ export default function RequestFlow() {
                   )}
                 </div>
               ))}
-              {/* CRITICAL FIX #2: Dynamic Pricing with Loading State */}
+              {/* CRITICAL FIX #2: REMOVED OLD ORANGE CARD - Using Modal Only */}
+              {/* Loading indicator for price calculation */}
               {isPriceCalculating && (
-                <div className="bg-gradient-to-br from-gray-100 to-gray-200 p-6 rounded-[30px] shadow-lg border-2 border-gray-300 space-y-3 mt-4 animate-pulse">
-                  <div className="flex items-center gap-3">
-                    <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
-                    <h4 className="font-black text-gray-700 text-base">جاري حساب السعر...</h4>
-                  </div>
-                  <div className="bg-white/50 rounded-2xl p-4 h-20"></div>
+                <div className="flex items-center justify-center gap-3 p-4 mt-4">
+                  <Loader2 className="w-5 h-5 text-orange-500 animate-spin" />
+                  <span className="text-sm font-bold text-gray-600">جاري حساب السعر...</span>
                 </div>
               )}
               
-              {!isPriceCalculating && calculatedPrice > 0 && distanceKm > 0 && (
-                <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-6 rounded-[30px] shadow-xl border-2 border-orange-400 space-y-3 mt-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
-                      <DollarSign className="w-5 h-5 text-white" />
-                    </div>
-                    <h4 className="font-black text-white text-base">السعر النهائي المقدّر</h4>
-                  </div>
-                  
-                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/80 text-sm font-bold">المسافة</span>
-                      <span className="text-white font-black text-lg">{distanceKm.toFixed(1)} كم</span>
-                    </div>
-                    <div className="h-px bg-white/20"></div>
-                    <div className="flex justify-between items-center pt-2">
-                      <span className="text-white/80 text-sm font-bold">السعر الإجمالي</span>
-                      <div className="text-right">
-                        <p className="text-4xl font-black text-white leading-none">{calculatedPrice.toLocaleString()}</p>
-                        <p className="text-xs font-bold text-white/60 mt-1">دينار عراقي</p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-2 text-white/70 text-xs">
-                    <AlertCircle className="w-4 h-4" />
-                    <span className="font-bold">السعر شامل جميع الرسوم</span>
-                  </div>
+              {/* Simple price display (non-intrusive) */}
+              {!isPriceCalculating && calculatedPrice > 0 && (
+                <div className="flex items-center justify-between px-4 py-3 mt-4 bg-orange-50 rounded-[20px] border border-orange-200">
+                  <span className="text-sm font-bold text-gray-700">السعر المقدّر:</span>
+                  <span className="text-2xl font-black text-orange-600">{calculatedPrice.toLocaleString()} <span className="text-sm">د.ع</span></span>
                 </div>
               )}
 

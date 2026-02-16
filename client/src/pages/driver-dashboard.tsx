@@ -446,22 +446,28 @@ export default function DriverDashboard() {
     }
 
     try {
-      // إرسال طلب API للخادم لتسجيل القبول
+      // CRITICAL FIX #1: Send accept request with detailed logging
+      console.log(`🔄 [DRIVER ACCEPT] Sending API request...`);
+      console.log(`   API: POST /api/drivers/${driverInfo?.id}/accept/${req.id}`);
+      
       const res = await apiRequest("POST", `/api/drivers/${driverInfo?.id}/accept/${req.id}`);
       
+      console.log(`📥 [DRIVER ACCEPT] Response status: ${res.status}`);
+      
       if (res.ok) {
-        console.log("✅ [ACCEPT] Order accepted, fetching full order details with customer image");
+        console.log("✅ [DRIVER ACCEPT] Order accepted successfully!");
         
         // CRITICAL: Fetch FULL order object including customer image from database
+        console.log(`🔄 [DRIVER ACCEPT] Fetching full order details...`);
         const fullOrderRes = await fetch(`/api/requests/${req.id}`);
         let fullOrder = req; // Fallback to basic req if fetch fails
         
         if (fullOrderRes.ok) {
           fullOrder = await fullOrderRes.json();
-          console.log("✅ [ACCEPT] Full order fetched with customer data");
-          console.log("✅ [ACCEPT] Customer Image:", fullOrder.user?.image || fullOrder.customerImage);
+          console.log("✅ [DRIVER ACCEPT] Full order fetched");
+          console.log("   Customer Image:", fullOrder.user?.image || fullOrder.customerImage);
         } else {
-          console.warn("⚠️ [ACCEPT] Failed to fetch full order, using basic data");
+          console.warn("⚠️ [DRIVER ACCEPT] Failed to fetch full order, using basic data");
         }
         
         // تفعيل الطلب محلياً with FULL data including customer image
@@ -470,11 +476,35 @@ export default function DriverDashboard() {
           customerImage: fullOrder.user?.image || fullOrder.customerImage || null
         });
         setOrderStage("heading_to_pickup");
+        setActiveTab("map"); // CRITICAL FIX #1: Force switch to map
         
-        console.log("✅ [ACCEPT] Active order set with customer image");
+        console.log("✅ [DRIVER ACCEPT] Active order set, UI updated");
         
         // الانضمام لغرفة الدردشة الخاصة بالطلب
         socket.emit("join_order", req.id);
+        console.log(`📤 [DRIVER ACCEPT] Joined socket room: order_${req.id}`);
+        
+        // FEATURE 2: Calculate route to pickup immediately
+        console.log('🗺️ [DRIVER ACCEPT] Fetching route to pickup location');
+        try {
+          const routeRes = await fetch('/api/route', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              origin: { lat: driverInfo?.lastLat || 0, lng: driverInfo?.lastLng || 0 },
+              destination: { lat: parseFloat(req.pickupLat), lng: parseFloat(req.pickupLng) }
+            })
+          });
+          
+          if (routeRes.ok) {
+            const data = await routeRes.json();
+            setRoutePoints(data.points || []);
+            console.log(`✅ [DRIVER ACCEPT] Route loaded: ${data.points?.length} points`);
+          }
+        } catch (error) {
+          console.warn('⚠️ [DRIVER ACCEPT] Route fetch failed, using straight line');
+          setRoutePoints([[driverInfo?.lastLat || 0, driverInfo?.lastLng || 0], [parseFloat(req.pickupLat), parseFloat(req.pickupLng)]]);
+        }
         
         // إزالة الطلب من القائمة المتاحة فوراً
         setAvailableRequests(prev => prev.filter(r => r.id !== req.id));
@@ -485,15 +515,20 @@ export default function DriverDashboard() {
         setTimeout(() => {
           setNotification(n => ({ ...n, show: false }));
         }, 3000);
+        
+        console.log(`✅ [DRIVER ACCEPT] Complete!\n`);
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({ message: "خطأ غير معروف" }));
+        console.error(`❌ [DRIVER ACCEPT] Failed: ${data.message}`);
         toast({ 
           variant: "destructive", 
           title: "خطأ", 
           description: data.message || "فشل في قبول الطلب" 
         });
       }
-    } catch (err) {
+    } catch (err: any) {
+      console.error(`❌ [DRIVER ACCEPT] FATAL ERROR:`, err);
+      console.error(`❌ [DRIVER ACCEPT] Stack:`, err.stack);
       toast({ 
         variant: "destructive", 
         title: "خطأ", 

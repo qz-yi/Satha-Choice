@@ -69,13 +69,15 @@ export function calculateDynamicFare(
   
   console.log(`⚙️ [PRICING ENGINE] Config:`, config);
   
-  // Calculate base fare
+  // CRITICAL FIX #3: Calculate base fare
   const baseFare = config.baseFare;
   
-  // Calculate distance fare (over 10km)
-  const baseDistanceCoverage = 10; // First 10km included in base
+  // CRITICAL FIX #3: Calculate distance fare (THE 7KM RULE - NOT 10KM!)
+  const baseDistanceCoverage = 7; // CORRECTED: First 7km included in base fare
   const additionalKm = Math.max(0, distanceKm - baseDistanceCoverage);
   const distanceFare = additionalKm * config.kmRate;
+  
+  console.log(`📊 [PRICING ENGINE] Base covers first ${baseDistanceCoverage}km | Additional: ${additionalKm.toFixed(2)}km`);
   
   // Calculate time fare
   const timeFare = durationMinutes * config.minuteRate;
@@ -140,12 +142,14 @@ export function calculateSimpleFare(
 }
 
 /**
- * Get current surge multiplier from database (admin-configurable)
+ * CRITICAL FIX #4: Get current surge multiplier from DATABASE (admin-configurable)
  */
 export async function getSurgeMultiplier(storage: any): Promise<number> {
   try {
-    const settings = await storage.getSettings();
-    return settings?.surgeMultiplier || 1.0;
+    const PricingConfig = await import('./PricingConfig');
+    const surge = await PricingConfig.getSurgeMultiplier();
+    console.log(`✅ [PRICING ENGINE] Surge multiplier: ${surge}x`);
+    return surge;
   } catch (error) {
     console.warn("⚠️ [PRICING ENGINE] Could not fetch surge multiplier, using 1.0");
     return 1.0;
@@ -153,18 +157,29 @@ export async function getSurgeMultiplier(storage: any): Promise<number> {
 }
 
 /**
- * Get vehicle configuration from database (admin-configurable)
+ * CRITICAL FIX #4: Get vehicle configuration from DATABASE (admin-configurable)
+ * This function is a bridge for the pricing engine
  */
 export async function getVehicleConfig(
   storage: any,
   vehicleType: string
 ): Promise<VehiclePricingConfig> {
   try {
-    // Try to fetch from database first
-    // If not found, use default
-    return DEFAULT_VEHICLE_CONFIGS[vehicleType] || DEFAULT_VEHICLE_CONFIGS["سطحة"];
+    // Import the database-backed config
+    const PricingConfig = await import('./PricingConfig');
+    const dbConfig = await PricingConfig.getVehiclePricing(vehicleType);
+    
+    console.log(`✅ [PRICING ENGINE] Loaded ${vehicleType} config from database`);
+    
+    return {
+      vehicleType: dbConfig.vehicleType,
+      baseFare: dbConfig.baseFare,
+      kmRate: dbConfig.kmRate,
+      minuteRate: dbConfig.minuteRate,
+      minimumFare: dbConfig.minimumFare
+    };
   } catch (error) {
-    console.warn(`⚠️ [PRICING ENGINE] Could not fetch config for ${vehicleType}, using default`);
+    console.warn(`⚠️ [PRICING ENGINE] Could not fetch config for ${vehicleType} from DB, using default`);
     return DEFAULT_VEHICLE_CONFIGS[vehicleType] || DEFAULT_VEHICLE_CONFIGS["سطحة"];
   }
 }

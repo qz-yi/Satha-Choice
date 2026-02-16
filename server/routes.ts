@@ -892,24 +892,55 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
   app.post("/api/drivers/:id/accept/:requestId", async (req, res) => {
     try {
+      console.log(`\n🚨 [ACCEPT ORDER] ========================================`);
+      console.log(`🚨 [ACCEPT ORDER] Driver ID: ${req.params.id}`);
+      console.log(`🚨 [ACCEPT ORDER] Request ID: ${req.params.requestId}`);
+      console.log(`🚨 [ACCEPT ORDER] ========================================\n`);
+      
       const driverId = Number(req.params.id);
       const requestId = Number(req.params.requestId);
+      
+      if (isNaN(driverId) || isNaN(requestId)) {
+        console.error(`❌ [ACCEPT ORDER] Invalid IDs - Driver: ${req.params.id}, Request: ${req.params.requestId}`);
+        return res.status(400).json({ message: "معرّفات غير صالحة" });
+      }
 
-      // [تصليح]: فحص حالة الطلب في قاعدة البيانات أولاً لمنع القبول المزدوج
+      // CRITICAL FIX #1: Verify request exists and is pending
+      console.log(`🔍 [ACCEPT ORDER] Checking request status...`);
       const currentRequest = await storage.getRequest(requestId);
-      if (!currentRequest) return res.status(404).json({ message: "الطلب لم يعد متاحاً" });
+      
+      if (!currentRequest) {
+        console.error(`❌ [ACCEPT ORDER] Request ${requestId} not found`);
+        return res.status(404).json({ message: "الطلب لم يعد متاحاً" });
+      }
+      
       if (currentRequest.status !== "pending") {
+        console.warn(`⚠️ [ACCEPT ORDER] Request ${requestId} already ${currentRequest.status}`);
         return res.status(400).json({ message: "عذراً، هذا الطلب تم قبوله بالفعل من قبل سائق آخر" });
       }
+      
+      console.log(`✅ [ACCEPT ORDER] Request ${requestId} is available (status: pending)`);
 
-      // [تصليح]: فحص إذا كان السائق مشغولاً
+      // CRITICAL FIX #1: Check if driver is busy
+      console.log(`🔍 [ACCEPT ORDER] Checking if driver is busy...`);
       const driverRequests = await storage.getDriverRequests(driverId);
       const isBusy = driverRequests.some(r => ACTIVE_STATUSES.includes(r.status));
+      
       if (isBusy) {
+        console.warn(`⚠️ [ACCEPT ORDER] Driver ${driverId} is already busy`);
         return res.status(400).json({ message: "لديك رحلة نشطة حالياً، أكملها أولاً" });
       }
+      
+      console.log(`✅ [ACCEPT ORDER] Driver ${driverId} is available`);
 
       const driver = await storage.getDriver(driverId);
+      if (!driver) {
+        console.error(`❌ [ACCEPT ORDER] Driver ${driverId} not found`);
+        return res.status(404).json({ message: "السائق غير موجود" });
+      }
+      
+      console.log(`✅ [ACCEPT ORDER] Driver found: ${driver.name}`);
+      
       const systemSettings = await storage.getSettings();
       const currentCommission = Number(systemSettings?.commissionAmount || 1000);
 
@@ -919,7 +950,10 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         });
       }
 
+      // CRITICAL FIX #1: Accept the request
+      console.log(`🔄 [ACCEPT ORDER] Calling storage.acceptRequest...`);
       const result = await storage.acceptRequest(driverId, requestId);
+      console.log(`✅ [ACCEPT ORDER] Database updated successfully`);
       
       // جلب معلومات الطلب لإرسالها للسائق
       const request = await storage.getRequest(requestId);
@@ -950,19 +984,31 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         }
       };
 
+      // CRITICAL FIX #1: Emit socket events with comprehensive logging
+      console.log(`📤 [ACCEPT ORDER] Emitting socket events...`);
+      
       // إشعار الزبون بمعلومات السائق الكاملة
       io.to(`order_${requestId}`).emit("status_changed", payload);
+      console.log(`  ✅ Emitted to order_${requestId}: status_changed`);
+      
       io.emit(`order_status_${requestId}`, payload);
+      console.log(`  ✅ Emitted global: order_status_${requestId}`);
       
       // إشعار السائق بمعلومات الزبون الكاملة
       io.to(`driver_${driverId}`).emit("customer_info", payload.customerInfo);
+      console.log(`  ✅ Emitted to driver_${driverId}: customer_info`);
 
       // [تصحيح] إشعار لوحة تحكم المدير فوراً لتحديث القائمة دون Refresh
       io.emit("request_updated", { id: requestId, ...payload });
+      console.log(`  ✅ Emitted global: request_updated`);
+      
+      console.log(`✅ [ACCEPT ORDER] All events emitted successfully\n`);
 
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ message: err.message });
+      console.error(`❌ [ACCEPT ORDER] FATAL ERROR:`, err);
+      console.error(`❌ [ACCEPT ORDER] Stack:`, err.stack);
+      res.status(500).json({ message: err.message || "حدث خطأ أثناء قبول الطلب" });
     }
   });
 

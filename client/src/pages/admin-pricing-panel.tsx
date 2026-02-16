@@ -29,26 +29,30 @@ export default function AdminPricingPanel() {
   const [vehiclePricing, setVehiclePricing] = useState<VehiclePricing[]>([]);
   const [editedPricing, setEditedPricing] = useState<Record<string, Partial<VehiclePricing>>>({});
 
-  // Load current pricing configuration
+  // CRITICAL FIX #4: Load current pricing from DATABASE
   useEffect(() => {
     const loadPricing = async () => {
       try {
         setIsLoading(true);
+        console.log('🔄 [ADMIN PRICING] Loading configuration from database...');
         
         // Fetch surge multiplier
         const surgeRes = await fetch('/api/admin/pricing/surge');
         if (surgeRes.ok) {
           const data = await surgeRes.json();
           setSurgeMultiplier(data.surgeMultiplier);
+          console.log(`✅ [ADMIN PRICING] Surge: ${data.surgeMultiplier}x`);
         }
         
-        // Fetch vehicle pricing
+        // Fetch vehicle pricing from database
         const vehicleRes = await fetch('/api/admin/pricing/vehicles');
         if (vehicleRes.ok) {
           const data = await vehicleRes.json();
           setVehiclePricing(data);
+          console.log(`✅ [ADMIN PRICING] Loaded ${data.length} vehicle configs`);
         }
       } catch (error) {
+        console.error('❌ [ADMIN PRICING] Load error:', error);
         toast({
           variant: "destructive",
           title: "خطأ",
@@ -312,18 +316,26 @@ export default function AdminPricingPanel() {
         })}
       </div>
 
-      {/* Formula Explanation */}
-      <div className="bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-200 rounded-[30px] p-8">
+      {/* CRITICAL FIX #3: Formula Explanation with 7KM Rule */}
+      <div className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 rounded-[30px] p-8">
         <h3 className="text-xl font-black text-gray-800 mb-4 flex items-center gap-2">
-          <Settings className="w-6 h-6" />
-          معادلة الحساب
+          <Settings className="w-6 h-6 text-blue-600" />
+          قاعدة الـ 7 كيلومتر (THE 7KM RULE)
         </h3>
-        <div className="bg-white rounded-[20px] p-6 font-mono text-sm text-gray-700 font-bold">
-          السعر النهائي = (السعر الأساسي + (المسافة × معدل الكيلومتر) + (الوقت × معدل الدقيقة)) × معامل الذروة
+        <div className="bg-white rounded-[20px] p-6 space-y-3">
+          <div className="font-mono text-sm text-gray-700 font-bold">
+            السعر النهائي = (السعر الأساسي + (المسافة الإضافية × معدل الكم) + (الوقت × معدل الدقيقة)) × معامل الذروة
+          </div>
+          <div className="bg-blue-50 p-4 rounded-xl text-sm font-bold text-blue-900 space-y-2">
+            <p>🔵 السعر الأساسي يغطي أول <span className="font-black text-xl">7 كيلومتر</span> فقط</p>
+            <p>🔵 أي مسافة بعد 7 كم تُحسب كـ"مسافة إضافية" وتُضرب في معدل الكيلومتر</p>
+            <p>🔵 مثال: رحلة 10 كم = السعر الأساسي + (3 كم × معدل الكم)</p>
+          </div>
         </div>
         <div className="mt-4 text-sm text-gray-600 font-bold space-y-1">
           <p>✅ يتم تطبيق <span className="font-black">الحد الأدنى للسعر</span> تلقائياً إذا كان الناتج أقل منه</p>
           <p>✅ الحد الأقصى المطلق: <span className="font-black">100,000 د.ع</span> (لا يمكن تجاوزه)</p>
+          <p>✅ <span className="font-black text-orange-600">هيدروليك:</span> الحد الأدنى 70,000 د.ع (لا يمكن النزول عنه)</p>
         </div>
       </div>
     </div>

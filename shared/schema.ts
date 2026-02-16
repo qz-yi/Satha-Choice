@@ -11,6 +11,17 @@ export const settings = pgTable("settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// CRITICAL FIX #4: Vehicle Pricing Configuration Table (Admin-Editable)
+export const vehiclePricingConfig = pgTable("vehicle_pricing_config", {
+  id: serial("id").primaryKey(),
+  vehicleType: text("vehicle_type").notNull().unique(), // سطحة, سحب, هيدروليك
+  baseFare: integer("base_fare").notNull().default(25000), // Covers first 7 KM
+  kmRate: integer("km_rate").notNull().default(1250), // Per km after 7 KM
+  minuteRate: integer("minute_rate").notNull().default(500), // Per minute
+  minimumFare: integer("minimum_fare").notNull().default(35000), // Absolute minimum
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // === 2. جدول المستخدمين (Users) ===
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
