@@ -42,20 +42,29 @@ export const DEFAULT_PRICING: Record<string, VehiclePricingRow> = {
 };
 
 /**
- * Get surge multiplier from database settings
+ * EMERGENCY FIX: Get surge multiplier from database settings
+ * Handles missing column gracefully
  */
 export async function getSurgeMultiplier(): Promise<number> {
   try {
     const result = await db.select().from(settings).limit(1);
     return result[0]?.surgeMultiplier ? parseFloat(result[0].surgeMultiplier) : 1.0;
-  } catch (error) {
-    console.warn('⚠️ [PRICING CONFIG] Could not fetch surge multiplier, using 1.0');
+  } catch (error: any) {
+    // EMERGENCY FIX: If column doesn't exist, log warning and use default
+    if (error.message && error.message.includes('surge_multiplier')) {
+      console.warn('⚠️⚠️⚠️ [PRICING CONFIG] surge_multiplier column MISSING!');
+      console.warn('⚠️ [PRICING CONFIG] Using default 1.0x (no surge)');
+      console.warn('⚠️ [PRICING CONFIG] FIX: Run SQL from EMERGENCY_FIX_DB.sql');
+      return 1.0;
+    }
+    console.warn('⚠️ [PRICING CONFIG] Could not fetch surge multiplier:', error.message);
     return 1.0;
   }
 }
 
 /**
- * Update surge multiplier (for Peak Hour Mode toggle)
+ * EMERGENCY FIX: Update surge multiplier (for Peak Hour Mode toggle)
+ * Handles missing column with clear error message
  */
 export async function updateSurgeMultiplier(multiplier: number): Promise<void> {
   try {
@@ -76,15 +85,23 @@ export async function updateSurgeMultiplier(multiplier: number): Promise<void> {
     }
     
     console.log(`✅ [PRICING CONFIG] Surge multiplier updated to ${multiplier}x`);
-  } catch (error) {
+  } catch (error: any) {
+    // EMERGENCY FIX: If column doesn't exist, throw clear error
+    if (error.message && error.message.includes('surge_multiplier')) {
+      console.error('❌❌❌ [PRICING CONFIG] CRITICAL: surge_multiplier column MISSING!');
+      console.error('❌ [PRICING CONFIG] Run this SQL to fix:');
+      console.error('   ALTER TABLE settings ADD COLUMN surge_multiplier DECIMAL(3,2) DEFAULT 1.00;');
+      console.error('❌ [PRICING CONFIG] OR: Execute EMERGENCY_FIX_DB.sql');
+      throw new Error('Database schema missing surge_multiplier column. See EMERGENCY_FIX_DB.sql');
+    }
     console.error('❌ [PRICING CONFIG] Error updating surge multiplier:', error);
     throw error;
   }
 }
 
 /**
- * CRITICAL FIX #4: Get vehicle pricing from DATABASE (admin-configurable)
- * Falls back to DEFAULT_PRICING if not in database
+ * EMERGENCY FIX: Get vehicle pricing from DATABASE (admin-configurable)
+ * Falls back to DEFAULT_PRICING if table doesn't exist or error occurs
  */
 export async function getVehiclePricing(vehicleType: string): Promise<VehiclePricingRow> {
   try {
@@ -106,8 +123,14 @@ export async function getVehiclePricing(vehicleType: string): Promise<VehiclePri
     
     console.log(`⚠️ [PRICING CONFIG] ${vehicleType} not in DB, using default`);
     return DEFAULT_PRICING[vehicleType] || DEFAULT_PRICING["سطحة"];
-  } catch (error) {
-    console.warn(`⚠️ [PRICING CONFIG] Database error, using default for ${vehicleType}`);
+  } catch (error: any) {
+    // EMERGENCY FIX: If table doesn't exist, use defaults
+    if (error.message && error.message.includes('vehicle_pricing_config')) {
+      console.warn(`⚠️ [PRICING CONFIG] vehicle_pricing_config table missing - using defaults`);
+      console.warn(`⚠️ [PRICING CONFIG] Run 'npm run db:push' or execute EMERGENCY_FIX_DB.sql`);
+    } else {
+      console.warn(`⚠️ [PRICING CONFIG] Database error for ${vehicleType}:`, error.message);
+    }
     return DEFAULT_PRICING[vehicleType] || DEFAULT_PRICING["سطحة"];
   }
 }
