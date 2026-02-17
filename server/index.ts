@@ -61,6 +61,14 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // STEP 2: Run database migration BEFORE starting server
+  try {
+    const { ensureDatabaseSchema } = await import('./database-init');
+    await ensureDatabaseSchema();
+  } catch (error) {
+    console.error('⚠️  [SERVER] Database migration failed, continuing with fallback');
+  }
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

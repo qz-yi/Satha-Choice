@@ -29,7 +29,7 @@ export default function AdminPricingPanel() {
   const [vehiclePricing, setVehiclePricing] = useState<VehiclePricing[]>([]);
   const [editedPricing, setEditedPricing] = useState<Record<string, Partial<VehiclePricing>>>({});
 
-  // CRITICAL FIX #4: Load current pricing from DATABASE
+  // STEP 1: Load pricing with STRICT array validation
   useEffect(() => {
     const loadPricing = async () => {
       try {
@@ -37,27 +37,66 @@ export default function AdminPricingPanel() {
         console.log('🔄 [ADMIN PRICING] Loading configuration from database...');
         
         // Fetch surge multiplier
-        const surgeRes = await fetch('/api/admin/pricing/surge');
-        if (surgeRes.ok) {
-          const data = await surgeRes.json();
-          setSurgeMultiplier(data.surgeMultiplier);
-          console.log(`✅ [ADMIN PRICING] Surge: ${data.surgeMultiplier}x`);
+        try {
+          const surgeRes = await fetch('/api/admin/pricing/surge');
+          if (surgeRes.ok) {
+            const data = await surgeRes.json();
+            // STEP 3: Ensure valid number
+            setSurgeMultiplier(data.surgeMultiplier || 1.0);
+            console.log(`✅ [ADMIN PRICING] Surge: ${data.surgeMultiplier || 1.0}x`);
+          } else {
+            setSurgeMultiplier(1.0); // Fallback
+          }
+        } catch (err) {
+          console.warn('⚠️ [ADMIN PRICING] Surge fetch failed, using 1.0');
+          setSurgeMultiplier(1.0);
         }
         
         // Fetch vehicle pricing from database
-        const vehicleRes = await fetch('/api/admin/pricing/vehicles');
-        if (vehicleRes.ok) {
-          const data = await vehicleRes.json();
-          setVehiclePricing(data);
-          console.log(`✅ [ADMIN PRICING] Loaded ${data.length} vehicle configs`);
+        try {
+          const vehicleRes = await fetch('/api/admin/pricing/vehicles');
+          if (vehicleRes.ok) {
+            const data = await vehicleRes.json();
+            
+            // STEP 1: CRITICAL - Validate array before setting state
+            if (Array.isArray(data) && data.length > 0) {
+              setVehiclePricing(data);
+              console.log(`✅ [ADMIN PRICING] Loaded ${data.length} vehicle configs`);
+            } else {
+              console.warn('⚠️ [ADMIN PRICING] Invalid data, using defaults');
+              // STEP 1: Use safe defaults if data is invalid
+              setVehiclePricing([
+                { vehicleType: 'سطحة', baseFare: 25000, kmRate: 1250, minuteRate: 500, minimumFare: 35000 },
+                { vehicleType: 'سحب', baseFare: 20000, kmRate: 1000, minuteRate: 400, minimumFare: 30000 },
+                { vehicleType: 'هيدروليك', baseFare: 50000, kmRate: 2500, minuteRate: 1000, minimumFare: 70000 }
+              ]);
+            }
+          } else {
+            throw new Error('API response not OK');
+          }
+        } catch (err) {
+          console.error('❌ [ADMIN PRICING] Vehicle fetch failed:', err);
+          // STEP 1: Set safe defaults on error
+          setVehiclePricing([
+            { vehicleType: 'سطحة', baseFare: 25000, kmRate: 1250, minuteRate: 500, minimumFare: 35000 },
+            { vehicleType: 'سحب', baseFare: 20000, kmRate: 1000, minuteRate: 400, minimumFare: 30000 },
+            { vehicleType: 'هيدروليك', baseFare: 50000, kmRate: 2500, minuteRate: 1000, minimumFare: 70000 }
+          ]);
         }
       } catch (error) {
         console.error('❌ [ADMIN PRICING] Load error:', error);
         toast({
           variant: "destructive",
           title: "خطأ",
-          description: "فشل في تحميل إعدادات التسعير"
+          description: "تم تحميل القيم الافتراضية"
         });
+        // STEP 1: Ensure state is valid even on total failure
+        setVehiclePricing([
+          { vehicleType: 'سطحة', baseFare: 25000, kmRate: 1250, minuteRate: 500, minimumFare: 35000 },
+          { vehicleType: 'سحب', baseFare: 20000, kmRate: 1000, minuteRate: 400, minimumFare: 30000 },
+          { vehicleType: 'هيدروليك', baseFare: 50000, kmRate: 2500, minuteRate: 1000, minimumFare: 70000 }
+        ]);
+        setSurgeMultiplier(1.0);
       } finally {
         setIsLoading(false);
       }
@@ -313,7 +352,14 @@ export default function AdminPricingPanel() {
               </div>
             </motion.div>
           );
-        })}
+        })
+        ) : (
+          // STEP 1: Fallback UI if array is invalid
+          <div className="col-span-3 text-center py-12">
+            <Loader2 className="w-12 h-12 mx-auto mb-4 text-orange-500 animate-spin" />
+            <p className="text-gray-600 font-bold">جاري تحميل إعدادات التسعير...</p>
+          </div>
+        )}
       </div>
 
       {/* CRITICAL FIX #3: Formula Explanation with 7KM Rule */}

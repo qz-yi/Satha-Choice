@@ -42,23 +42,30 @@ export const DEFAULT_PRICING: Record<string, VehiclePricingRow> = {
 };
 
 /**
- * EMERGENCY FIX: Get surge multiplier from database settings
- * Handles missing column gracefully
+ * STEP 3: Get surge multiplier with HARD-CODED FALLBACK
+ * ALWAYS returns a valid number (never undefined/null)
  */
 export async function getSurgeMultiplier(): Promise<number> {
   try {
     const result = await db.select().from(settings).limit(1);
-    return result[0]?.surgeMultiplier ? parseFloat(result[0].surgeMultiplier) : 1.0;
-  } catch (error: any) {
-    // EMERGENCY FIX: If column doesn't exist, log warning and use default
-    if (error.message && error.message.includes('surge_multiplier')) {
-      console.warn('⚠️⚠️⚠️ [PRICING CONFIG] surge_multiplier column MISSING!');
-      console.warn('⚠️ [PRICING CONFIG] Using default 1.0x (no surge)');
-      console.warn('⚠️ [PRICING CONFIG] FIX: Run SQL from EMERGENCY_FIX_DB.sql');
-      return 1.0;
+    
+    // STEP 3: Multiple fallback layers
+    if (result[0]?.surgeMultiplier) {
+      const parsed = parseFloat(result[0].surgeMultiplier);
+      return isNaN(parsed) ? 1.0 : parsed;
     }
-    console.warn('⚠️ [PRICING CONFIG] Could not fetch surge multiplier:', error.message);
+    
+    console.warn('⚠️ [PRICING CONFIG] No surge multiplier in DB, using default 1.0');
     return 1.0;
+    
+  } catch (error: any) {
+    // STEP 3: If ANY error, return safe default
+    if (error.message && error.message.includes('surge_multiplier')) {
+      console.warn('⚠️ [PRICING CONFIG] surge_multiplier column missing - using default 1.0');
+    } else {
+      console.warn('⚠️ [PRICING CONFIG] Error fetching surge:', error.message);
+    }
+    return 1.0; // HARD-CODED FALLBACK
   }
 }
 

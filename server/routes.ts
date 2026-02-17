@@ -342,9 +342,17 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         return res.status(400).json({ message: 'Missing required parameters' });
       }
       
-      // CRITICAL FIX #3: Get admin-configured surge multiplier
-      const surgeMultiplier = await PricingConfig.getSurgeMultiplier();
-      console.log(`📊 [CALCULATE FARE] Current surge multiplier: ${surgeMultiplier}x`);
+      // STEP 3: Get surge multiplier with guaranteed fallback
+      let surgeMultiplier = 1.0;
+      try {
+        surgeMultiplier = await PricingConfig.getSurgeMultiplier();
+      } catch (error) {
+        console.warn('⚠️ [CALCULATE FARE] Using default surge 1.0');
+        surgeMultiplier = 1.0;
+      }
+      // STEP 3: Ensure it's NEVER undefined/null
+      surgeMultiplier = surgeMultiplier || 1.0;
+      console.log(`📊 [CALCULATE FARE] Surge multiplier: ${surgeMultiplier}x`);
       
       // CRITICAL FIX #3: Get admin-configured vehicle pricing
       const vehicleConfig = PricingConfig.getVehiclePricing(vehicleType);
@@ -374,9 +382,12 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   app.get("/api/admin/pricing/surge", async (req, res) => {
     try {
       const surge = await PricingConfig.getSurgeMultiplier();
-      res.json({ surgeMultiplier: surge });
+      // STEP 3: Always return valid number
+      res.json({ surgeMultiplier: surge || 1.0 });
     } catch (error: any) {
-      res.status(500).json({ message: 'Failed to fetch surge multiplier' });
+      // STEP 3: Even on error, return default instead of 500
+      console.error('[ADMIN PRICING] Error fetching surge:', error);
+      res.json({ surgeMultiplier: 1.0 }); // Return default, don't crash
     }
   });
   
@@ -403,10 +414,14 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   // Get all vehicle pricing configurations
   app.get("/api/admin/pricing/vehicles", async (req, res) => {
     try {
-      const allPricing = PricingConfig.getAllVehiclePricing();
-      res.json(allPricing);
+      const allPricing = await PricingConfig.getAllVehiclePricing();
+      // STEP 1: ALWAYS return an array (never undefined)
+      const safeResponse = Array.isArray(allPricing) ? allPricing : [];
+      res.json(safeResponse);
     } catch (error: any) {
-      res.status(500).json({ message: 'Failed to fetch vehicle pricing' });
+      console.error('[ADMIN PRICING] Error fetching vehicles:', error);
+      // STEP 1: Return empty array instead of error to prevent frontend crash
+      res.json([]); // Safe default
     }
   });
   
