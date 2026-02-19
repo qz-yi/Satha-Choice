@@ -29,6 +29,12 @@ export default function AdminPricingPanel() {
   const [vehiclePricing, setVehiclePricing] = useState<VehiclePricing[]>([]);
   const [editedPricing, setEditedPricing] = useState<Record<string, Partial<VehiclePricing>>>({});
 
+  const handleStepperChange = (vehicleType: string, field: keyof VehiclePricing, delta: number) => {
+    const current = getCurrentValue(vehicleType, field);
+    const newValue = Math.max(0, current + delta);
+    handlePricingChange(vehicleType, field, newValue);
+  };
+
   // STEP 1: Load pricing with STRICT array validation
   useEffect(() => {
     const loadPricing = async () => {
@@ -281,65 +287,110 @@ export default function AdminPricingPanel() {
               </div>
 
               {/* Pricing Fields */}
-              <div className="space-y-4">
+              <div className="space-y-6">
                 {/* Base Fare */}
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-gray-600 flex items-center gap-2">
-                    <MapPin className="w-4 h-4" />
-                    السعر الأساسي (أول 10 كم)
+                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 space-y-3">
+                  <label className="text-sm font-black text-gray-600 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-orange-500" />
+                      السعر الأساسي (أول 7 كم)
+                    </span>
+                    <span className="text-orange-600 bg-orange-50 px-2 py-0.5 rounded-lg text-xs">د.ع</span>
                   </label>
-                  <input
-                    type="number"
-                    value={getCurrentValue(vehicle.vehicleType, 'baseFare')}
-                    onChange={(e) => handlePricingChange(vehicle.vehicleType, 'baseFare', parseFloat(e.target.value))}
-                    className="w-full h-12 px-4 rounded-[15px] border-2 border-gray-200 font-black text-gray-800 text-lg focus:border-orange-500 outline-none transition-all"
-                    placeholder="25000"
-                  />
+                  <div className="flex items-center gap-3">
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="rounded-xl h-10 w-10 border-2 active:scale-95"
+                      onClick={() => handleStepperChange(vehicle.vehicleType, 'baseFare', -500)}
+                    >
+                      <span className="text-xl font-black">-</span>
+                    </Button>
+                    <input
+                      type="number"
+                      value={getCurrentValue(vehicle.vehicleType, 'baseFare')}
+                      onChange={(e) => handlePricingChange(vehicle.vehicleType, 'baseFare', parseFloat(e.target.value) || 0)}
+                      className="flex-1 h-10 text-center bg-transparent font-black text-gray-800 text-lg outline-none"
+                    />
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="rounded-xl h-10 w-10 border-2 active:scale-95"
+                      onClick={() => handleStepperChange(vehicle.vehicleType, 'baseFare', 500)}
+                    >
+                      <span className="text-xl font-black">+</span>
+                    </Button>
+                  </div>
                 </div>
 
                 {/* KM Rate */}
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-gray-600 flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4" />
-                    السعر لكل كيلومتر إضافي
+                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 space-y-3">
+                  <label className="text-sm font-black text-gray-600 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-blue-500" />
+                      السعر لكل كم إضافي
+                    </span>
+                    <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg text-xs">د.ع</span>
                   </label>
-                  <input
-                    type="number"
-                    value={getCurrentValue(vehicle.vehicleType, 'kmRate')}
-                    onChange={(e) => handlePricingChange(vehicle.vehicleType, 'kmRate', parseFloat(e.target.value))}
-                    className="w-full h-12 px-4 rounded-[15px] border-2 border-gray-200 font-black text-gray-800 text-lg focus:border-orange-500 outline-none transition-all"
-                    placeholder="1250"
-                  />
-                </div>
-
-                {/* Minute Rate */}
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-gray-600 flex items-center gap-2">
-                    <Clock className="w-4 h-4" />
-                    السعر لكل دقيقة
-                  </label>
-                  <input
-                    type="number"
-                    value={getCurrentValue(vehicle.vehicleType, 'minuteRate')}
-                    onChange={(e) => handlePricingChange(vehicle.vehicleType, 'minuteRate', parseFloat(e.target.value))}
-                    className="w-full h-12 px-4 rounded-[15px] border-2 border-gray-200 font-black text-gray-800 text-lg focus:border-orange-500 outline-none transition-all"
-                    placeholder="500"
-                  />
+                  <div className="flex items-center gap-3">
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="rounded-xl h-10 w-10 border-2 active:scale-95"
+                      onClick={() => handleStepperChange(vehicle.vehicleType, 'kmRate', -250)}
+                    >
+                      <span className="text-xl font-black">-</span>
+                    </Button>
+                    <input
+                      type="number"
+                      value={getCurrentValue(vehicle.vehicleType, 'kmRate')}
+                      onChange={(e) => handlePricingChange(vehicle.vehicleType, 'kmRate', parseFloat(e.target.value) || 0)}
+                      className="flex-1 h-10 text-center bg-transparent font-black text-gray-800 text-lg outline-none"
+                    />
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="rounded-xl h-10 w-10 border-2 active:scale-95"
+                      onClick={() => handleStepperChange(vehicle.vehicleType, 'kmRate', 250)}
+                    >
+                      <span className="text-xl font-black">+</span>
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Minimum Fare */}
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-gray-600 flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4" />
-                    الحد الأدنى للسعر
+                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 space-y-3">
+                  <label className="text-sm font-black text-gray-600 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-500" />
+                      الحد الأدنى للسعر
+                    </span>
+                    <span className="text-red-600 bg-red-50 px-2 py-0.5 rounded-lg text-xs">د.ع</span>
                   </label>
-                  <input
-                    type="number"
-                    value={getCurrentValue(vehicle.vehicleType, 'minimumFare')}
-                    onChange={(e) => handlePricingChange(vehicle.vehicleType, 'minimumFare', parseFloat(e.target.value))}
-                    className="w-full h-12 px-4 rounded-[15px] border-2 border-gray-200 font-black text-gray-800 text-lg focus:border-orange-500 outline-none transition-all"
-                    placeholder="35000"
-                  />
+                  <div className="flex items-center gap-3">
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="rounded-xl h-10 w-10 border-2 active:scale-95"
+                      onClick={() => handleStepperChange(vehicle.vehicleType, 'minimumFare', -1000)}
+                    >
+                      <span className="text-xl font-black">-</span>
+                    </Button>
+                    <input
+                      type="number"
+                      value={getCurrentValue(vehicle.vehicleType, 'minimumFare')}
+                      onChange={(e) => handlePricingChange(vehicle.vehicleType, 'minimumFare', parseFloat(e.target.value) || 0)}
+                      className="flex-1 h-10 text-center bg-transparent font-black text-gray-800 text-lg outline-none"
+                    />
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="rounded-xl h-10 w-10 border-2 active:scale-95"
+                      onClick={() => handleStepperChange(vehicle.vehicleType, 'minimumFare', 1000)}
+                    >
+                      <span className="text-xl font-black">+</span>
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Change indicator */}

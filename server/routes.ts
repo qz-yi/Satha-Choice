@@ -968,6 +968,13 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       // CRITICAL FIX #1: Accept the request
       console.log(`🔄 [ACCEPT ORDER] Calling storage.acceptRequest...`);
       const result = await storage.acceptRequest(driverId, requestId);
+      
+      // Verification check: ensure DB actually updated
+      const verifyRequest = await storage.getRequest(requestId);
+      if (!verifyRequest || verifyRequest.driverId !== driverId) {
+         throw new Error("Failed to verify driver assignment in database");
+      }
+      
       console.log(`✅ [ACCEPT ORDER] Database updated successfully`);
       
       // جلب معلومات الطلب لإرسالها للسائق

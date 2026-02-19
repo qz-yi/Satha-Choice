@@ -450,12 +450,19 @@ export default function DriverDashboard() {
       console.log(`🔄 [DRIVER ACCEPT] Sending API request...`);
       console.log(`   API: POST /api/drivers/${driverInfo?.id}/accept/${req.id}`);
       
-      const res = await apiRequest("POST", `/api/drivers/${driverInfo?.id}/accept/${req.id}`);
+      const res = await fetch(`/api/drivers/${driverInfo?.id}/accept/${req.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
       
       console.log(`📥 [DRIVER ACCEPT] Response status: ${res.status}`);
       
       if (res.ok) {
-        console.log("✅ [DRIVER ACCEPT] Order accepted successfully!");
+        const acceptData = await res.json();
+        console.log("✅ [DRIVER ACCEPT] Order accepted successfully!", acceptData);
+        
+        // IMMEDIATE SUCCESS UI Update
+        setNotification({ show: true, message: "تم قبول الطلب بنجاح", type: "success" });
         
         // CRITICAL: Fetch FULL order object including customer image from database
         console.log(`🔄 [DRIVER ACCEPT] Fetching full order details...`);

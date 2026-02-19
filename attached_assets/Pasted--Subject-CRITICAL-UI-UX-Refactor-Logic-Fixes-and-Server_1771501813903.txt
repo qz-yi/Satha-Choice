@@ -1,0 +1,18 @@
+​Subject: CRITICAL: UI/UX Refactor, Logic Fixes, and Server Communication Error
+​Instructions for the Agent:
+​Please resolve the following issues immediately. Note that the application is running on Replit, and we must avoid any runtime crashes by using defensive programming.
+​1. Admin Dashboard: Pricing UI Refactor
+​Problem: Cluttered pricing settings and unprofessional button designs.
+​Fix: Redesign the Pricing Settings using a clean, modern card-based layout. Use professional Toggle Switches and Numeric Steppers (+/-). Ensure every UI element is correctly linked to the backend API for real-time updates.
+​2. Customer Interface: Fare Calculation & Driver Sync
+​Problem: Fare shows as "0" even after location selection.
+​Fix: Fix calculateFare in request-flow.tsx. It must fetch actual DB rates. Ensure the calculated price is correctly passed to the Driver's request card so they see the fare before accepting.
+​3. Map Interaction: Reverse Geocoding
+​Problem: Map pins don't update address names, causing "0" fare results.
+​Fix: Implement Dynamic Reverse Geocoding. The address name must update automatically when the marker is moved. Only trigger fare calculation once valid address strings are resolved.
+​4. NEW CRITICAL ISSUE: "Server Connection Error" on Order Acceptance
+​Problem: When a driver accepts a request, a red "تعذر الاتصال بالخادم" (Failed to connect to server) error appears, even though the acceptance process actually succeeds in the background.
+​Required Fix: * Investigate the acceptOrder function/API call. This is likely a Timeout issue or an Incorrect Response Status being sent back from the server (e.g., the server performs the action but fails to send a proper 200 OK JSON response). 
+​Ensure the frontend handles the success state correctly without triggering the error toast if the database update was successful.
+​Check for any "Unhandled Promise Rejections" in the driver-side acceptance logic.
+​Defensive Coding Rule: Use Optional Chaining (?.) for all properties like toString(), toLocaleString(), and replace() to prevent the "Black Screen of Death" encountered earlier

@@ -4,91 +4,159 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { VEHICLE_OPTIONS } from "@shared/schema";
 import { useCreateRequest } from "@/hooks/use-requests";
-import { calculateDistance, calculatePrice, getPricingBreakdown } from "@/lib/pricing";
-import { 
-  MapPin, Check, Search, Loader2, Menu, 
-  MessageSquare, History, Wallet, Phone, Truck, ChevronRight,
-  LocateFixed, RotateCcw, X, Star, Navigation, Target, Send, LogOut, Camera, User, Lock, Home, ShieldCheck, CreditCard, QrCode, GripHorizontal, DollarSign, AlertCircle
+import {
+  calculateDistance,
+  calculatePrice,
+  getPricingBreakdown,
+} from "@/lib/pricing";
+import {
+  MapPin,
+  Check,
+  Search,
+  Loader2,
+  Menu,
+  MessageSquare,
+  History,
+  Wallet,
+  Phone,
+  Truck,
+  ChevronRight,
+  LocateFixed,
+  RotateCcw,
+  X,
+  Star,
+  Navigation,
+  Target,
+  Send,
+  LogOut,
+  Camera,
+  User,
+  Lock,
+  Home,
+  ShieldCheck,
+  CreditCard,
+  QrCode,
+  GripHorizontal,
+  DollarSign,
+  AlertCircle,
 } from "lucide-react";
 
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { MapContainer, TileLayer, useMapEvents, Marker, useMap, Popup } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  useMapEvents,
+  Marker,
+  useMap,
+  Popup,
+} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { getSocket } from "@/lib/socket";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
-import { RoutingPolyline } from "@/components/RoutingPolyline"; 
+import { RoutingPolyline } from "@/components/RoutingPolyline";
 
 // CRITICAL: Use singleton socket instance
 let socket: any;
-if (typeof window !== 'undefined') {
+if (typeof window !== "undefined") {
   socket = getSocket();
   console.log("✅ [Socket] Customer socket initialized");
-} 
+}
 
-const getOrangeArrowIcon = (rotation: number) => L.divIcon({
-  html: `
+const getOrangeArrowIcon = (rotation: number) =>
+  L.divIcon({
+    html: `
     <div style="transform: rotate(${rotation}deg); transition: transform 0.4s; filter: drop-shadow(0px 3px 5px rgba(0,0,0,0.3));">
       <svg width="45" height="45" viewBox="0 0 100 100" fill="none">
         <path d="M50 5L92 90L50 72L8 90L50 5Z" fill="#f97316" stroke="white" stroke-width="2" stroke-linejoin="round"/>
       </svg>
     </div>`,
-  className: "", iconSize: [45, 45], iconAnchor: [22.5, 22.5], 
-});
+    className: "",
+    iconSize: [45, 45],
+    iconAnchor: [22.5, 22.5],
+  });
 
 const normalizeCity = (city: string): string => {
   if (!city) return "بابل";
   const c = city.toLowerCase();
-  if (c.includes("babil") || c.includes("بابل") || c.includes("hilla") || c.includes("حلة")) return "بابل";
+  if (
+    c.includes("babil") ||
+    c.includes("بابل") ||
+    c.includes("hilla") ||
+    c.includes("حلة")
+  )
+    return "بابل";
   if (c.includes("baghdad") || c.includes("بغداد")) return "بغداد";
   if (c.includes("karbala") || c.includes("كربلاء")) return "كربلاء";
   if (c.includes("najaf") || c.includes("نجف")) return "النجف";
   if (c.includes("basra") || c.includes("بصرة")) return "البصرة";
-  return city; 
+  return city;
 };
 
-function FlyToMarker({ center, shouldFly }: { center: [number, number], shouldFly: boolean }) {
+function FlyToMarker({
+  center,
+  shouldFly,
+}: {
+  center: [number, number];
+  shouldFly: boolean;
+}) {
   const map = useMap();
-  useEffect(() => { 
+  useEffect(() => {
     if (shouldFly && center && center[0] && center[1]) {
-      map.flyTo(center, 16, { duration: 1.5 }); 
+      map.flyTo(center, 16, { duration: 1.5 });
     }
   }, [center, map, shouldFly]);
   return null;
 }
 
-const SidebarLink = memo(({ icon, label, extra, onClick, color = "text-orange-600", extraColor = "bg-gray-100 text-gray-500" }: any) => (
-  <button 
-    onClick={onClick} 
-    className="w-full flex items-center justify-between p-4 bg-gray-50/50 hover:bg-orange-50 active:scale-[0.97] transition-all rounded-2xl text-right group mb-3 border border-transparent hover:border-orange-100"
-  >
-    <div className="flex items-center gap-4">
-      <div className={`${color} p-2.5 rounded-xl bg-white shadow-sm group-hover:scale-110 transition-transform`}>
-        {icon}
+const SidebarLink = memo(
+  ({
+    icon,
+    label,
+    extra,
+    onClick,
+    color = "text-orange-600",
+    extraColor = "bg-gray-100 text-gray-500",
+  }: any) => (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center justify-between p-4 bg-gray-50/50 hover:bg-orange-50 active:scale-[0.97] transition-all rounded-2xl text-right group mb-3 border border-transparent hover:border-orange-100"
+    >
+      <div className="flex items-center gap-4">
+        <div
+          className={`${color} p-2.5 rounded-xl bg-white shadow-sm group-hover:scale-110 transition-transform`}
+        >
+          {icon}
+        </div>
+        <span className="text-[15px] font-black text-gray-700">{label}</span>
       </div>
-      <span className="text-[15px] font-black text-gray-700">{label}</span>
-    </div>
-    {extra && (
-      <span className={`text-[11px] font-black px-3 py-1.5 rounded-xl shadow-sm ${extraColor}`}>
-        {extra}
-      </span>
-    )}
-  </button>
-));
+      {extra && (
+        <span
+          className={`text-[11px] font-black px-3 py-1.5 rounded-xl shadow-sm ${extraColor}`}
+        >
+          {extra}
+        </span>
+      )}
+    </button>
+  ),
+);
 
 const StepIndicator = ({ step }: { step: string }) => {
-    const steps = [{ id: 'pickup' }, { id: 'dropoff' }, { id: 'vehicle' }];
-    return (
-        <div className="flex items-center justify-center gap-2 mb-2">
-            {steps.map((s) => (
-                <div key={s.id} className={`h-1.5 rounded-full transition-all duration-500 ${step === s.id ? 'w-8 bg-orange-500' : 'w-4 bg-gray-200'}`} />
-            ))}
-        </div>
-    );
+  const steps = [{ id: "pickup" }, { id: "dropoff" }, { id: "vehicle" }];
+  return (
+    <div className="flex items-center justify-center gap-2 mb-2">
+      {steps.map((s) => (
+        <div
+          key={s.id}
+          className={`h-1.5 rounded-full transition-all duration-500 ${step === s.id ? "w-8 bg-orange-500" : "w-4 bg-gray-200"}`}
+        />
+      ))}
+    </div>
+  );
 };
 
 export default function RequestFlow() {
@@ -96,24 +164,37 @@ export default function RequestFlow() {
   const { toast } = useToast();
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [authMode, setAuthMode] = useState<"choice" | "login" | "signup">("choice");
+  const [authMode, setAuthMode] = useState<"choice" | "login" | "signup">(
+    "choice",
+  );
   const [userProfile, setUserProfile] = useState({
-    id: null as number | null, username: "", phone: "", password: "", address: "قيد التحديد", image: null as string | null, wallet: "0", trips: "0"
+    id: null as number | null,
+    username: "",
+    phone: "",
+    password: "",
+    address: "قيد التحديد",
+    image: null as string | null,
+    wallet: "0",
+    trips: "0",
   });
 
   const [step, setStep] = useState<"pickup" | "dropoff" | "vehicle">("pickup");
-  const [viewState, setViewState] = useState<"booking" | "success" | "tracking">("booking");
+  const [viewState, setViewState] = useState<
+    "booking" | "success" | "tracking"
+  >("booking");
   const [isCheckingRecovery, setIsCheckingRecovery] = useState(true); // CRITICAL: Loading state during recovery
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [isCharging, setIsCharging] = useState(false); 
-  const [shouldFly, setShouldFly] = useState(false); 
+  const [isCharging, setIsCharging] = useState(false);
+  const [shouldFly, setShouldFly] = useState(false);
   const [requestStatus, setRequestStatus] = useState("pending");
-  const [driverLocation, setDriverLocation] = useState<[number, number] | null>(null);
+  const [driverLocation, setDriverLocation] = useState<[number, number] | null>(
+    null,
+  );
   const [driverHeading, setDriverHeading] = useState(0);
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
-  const [driverInfo, setDriverInfo] = useState<any>(null); 
+  const [driverInfo, setDriverInfo] = useState<any>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatMessage, setChatMessage] = useState("");
@@ -123,13 +204,15 @@ export default function RequestFlow() {
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "wallet">("cash");
   const [tripsHistory, setTripsHistory] = useState<any[]>([]);
   const [chargeAmount, setChargeAmount] = useState("");
-  
+
   // Professional Wallet States (replicated from Driver)
   const [isDepositing, setIsDepositing] = useState(false);
-  const [walletPaymentMethod, setWalletPaymentMethod] = useState<'zain' | 'card' | null>(null);
+  const [walletPaymentMethod, setWalletPaymentMethod] = useState<
+    "zain" | "card" | null
+  >(null);
   const [depositAmount, setDepositAmount] = useState<string>("25000");
-  const [showCancelModal, setShowCancelModal] = useState(false); 
-  
+  const [showCancelModal, setShowCancelModal] = useState(false);
+
   // Bottom Sheet Smart Handle State
   const [isSheetExpanded, setIsSheetExpanded] = useState(true); // true = expanded (50%), false = minimized (15%)
 
@@ -142,64 +225,97 @@ export default function RequestFlow() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [formData, setFormData] = useState({
-    location: "", destination: "", pickupLat: 32.4846, pickupLng: 44.4209, 
-    destLat: 32.4846, destLng: 44.4209, vehicleType: "", price: "", timeMode: "now" as "now" | "later",
-    city: "بابل" 
+    location: "",
+    destination: "",
+    pickupLat: 32.4846,
+    pickupLng: 44.4209,
+    destLat: 32.4846,
+    destLng: 44.4209,
+    vehicleType: "",
+    price: "",
+    timeMode: "now" as "now" | "later",
+    city: "بابل",
   });
+
+  const handleMarkerDragEnd = async (e: any, type: 'pickup' | 'destination') => {
+    const { lat, lng } = e.target.getLatLng();
+    setFormData(prev => ({
+      ...prev,
+      [type === 'pickup' ? 'pickupLat' : 'destLat']: lat,
+      [type === 'pickup' ? 'pickupLng' : 'destLng']: lng
+    }));
+    
+    // Auto reverse geocode
+    await reverseGeocode(lat, lng, type);
+    
+    // Only calculate fare if both are set and we are in vehicle step
+    if (formData.pickupLat && formData.destLat && formData.vehicleType) {
+      calculateFare();
+    }
+  };
 
   const scrollChatToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const refreshUserData = useCallback(async (phone: string, pass: string) => {
-    try {
-      const response = await fetch(`/api/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: phone, password: pass }),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        console.log("🔄 [REFRESH USER DATA] Fetched user data from API:", data);
-        
-        const updatedProfile = { 
-          ...userProfile, 
-          id: data.id,
-          username: data.username || data.name,
-          phone: phone,
-          password: pass,
-          wallet: data.walletBalance?.toString() || "0",
-          trips: data.tripsCount?.toString() || "0",
-          image: data.image || userProfile.image || "" // CRITICAL: Include image from DB
-        };
-        
-        console.log("✅ [REFRESH USER DATA] Profile updated with image:", updatedProfile.image ? "Yes" : "No");
-        
-        setUserProfile(updatedProfile);
-        try {
-          localStorage.setItem("sat7a_user", JSON.stringify(updatedProfile));
-          console.log("✅ [REFRESH USER DATA] Profile saved to localStorage");
-        } catch (e) {
-          console.warn("⚠️ [localStorage] Quota exceeded, clearing old data");
-          localStorage.removeItem("sat7a_user");
-          localStorage.setItem("sat7a_user", JSON.stringify(updatedProfile));
+  const refreshUserData = useCallback(
+    async (phone: string, pass: string) => {
+      try {
+        const response = await fetch(`/api/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: phone, password: pass }),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          console.log(
+            "🔄 [REFRESH USER DATA] Fetched user data from API:",
+            data,
+          );
+
+          const updatedProfile = {
+            ...userProfile,
+            id: data.id,
+            username: data.username || data.name,
+            phone: phone,
+            password: pass,
+            wallet: data.walletBalance?.toString() || "0",
+            trips: data.tripsCount?.toString() || "0",
+            image: data.image || userProfile.image || "", // CRITICAL: Include image from DB
+          };
+
+          console.log(
+            "✅ [REFRESH USER DATA] Profile updated with image:",
+            updatedProfile.image ? "Yes" : "No",
+          );
+
+          setUserProfile(updatedProfile);
+          try {
+            localStorage.setItem("sat7a_user", JSON.stringify(updatedProfile));
+            console.log("✅ [REFRESH USER DATA] Profile saved to localStorage");
+          } catch (e) {
+            console.warn("⚠️ [localStorage] Quota exceeded, clearing old data");
+            localStorage.removeItem("sat7a_user");
+            localStorage.setItem("sat7a_user", JSON.stringify(updatedProfile));
+          }
         }
+      } catch (err) {
+        console.error("❌ [REFRESH USER DATA] Error:", err);
       }
-    } catch (err) {
-      console.error("❌ [REFRESH USER DATA] Error:", err);
-    }
-  }, [userProfile]);
+    },
+    [userProfile],
+  );
 
   // جلب الرسائل القديمة عند فتح الدردشة
   useEffect(() => {
     if (isChatOpen && activeOrderId) {
       fetch(`/api/requests/${activeOrderId}/messages`)
-        .then(res => res.json())
-        .then(data => {
+        .then((res) => res.json())
+        .then((data) => {
           setMessages(data);
           setTimeout(scrollChatToBottom, 100);
         })
-        .catch(err => console.error("Error fetching messages:", err));
+        .catch((err) => console.error("Error fetching messages:", err));
     }
   }, [isChatOpen, activeOrderId]);
 
@@ -207,18 +323,20 @@ export default function RequestFlow() {
   useEffect(() => {
     if (isHistoryOpen && userProfile.phone) {
       fetch(`/api/users/${userProfile.phone}/requests`)
-        .then(res => res.json())
-        .then(data => {
+        .then((res) => res.json())
+        .then((data) => {
           // فلترة الرحلات المكتملة فقط
-          const completedTrips = data.filter((trip: any) => trip.status === 'completed');
+          const completedTrips = data.filter(
+            (trip: any) => trip.status === "completed",
+          );
           setTripsHistory(completedTrips);
         })
-        .catch(err => {
+        .catch((err) => {
           console.error("Error fetching trip history:", err);
           toast({
             variant: "destructive",
             title: "فشل تحميل سجل الرحلات",
-            description: "يرجى المحاولة مرة أخرى"
+            description: "يرجى المحاولة مرة أخرى",
           });
         });
     }
@@ -226,7 +344,7 @@ export default function RequestFlow() {
 
   // SINGLE-USE recovery flag to prevent continuous loops
   const hasAttemptedRecovery = useRef(false);
-  
+
   // EMERGENCY: MANDATORY Recovery check MUST run ONCE on mount to check for active orders
   useEffect(() => {
     // SINGLE-USE recovery check - prevent loops
@@ -234,15 +352,20 @@ export default function RequestFlow() {
       console.log("⏭️ [CUSTOMER RECOVERY] Already attempted, skipping");
       return;
     }
-    
-    console.log("🚀 [CUSTOMER RECOVERY EMERGENCY] Starting MANDATORY recovery check on mount");
-    console.log("🚀 [CUSTOMER RECOVERY EMERGENCY] Current viewState:", viewState);
+
+    console.log(
+      "🚀 [CUSTOMER RECOVERY EMERGENCY] Starting MANDATORY recovery check on mount",
+    );
+    console.log(
+      "🚀 [CUSTOMER RECOVERY EMERGENCY] Current viewState:",
+      viewState,
+    );
     hasAttemptedRecovery.current = true;
-    
+
     // FEATURE 3: Check for existing session and auto-login
     const savedUser = localStorage.getItem("sat7a_user");
     const sessionActive = localStorage.getItem("sat7a_session_active");
-    
+
     if (savedUser && sessionActive === "true") {
       try {
         const parsed = JSON.parse(savedUser);
@@ -255,49 +378,61 @@ export default function RequestFlow() {
     }
 
     // If there's a saved user OR we're already logged in, attempt recovery
-    if (savedUser || userProfile.phone) { 
+    if (savedUser || userProfile.phone) {
       let phoneToCheck = userProfile.phone;
-      
+
       // If no phone in state but savedUser exists, parse it
       if (!phoneToCheck && savedUser) {
         try {
           const parsed = JSON.parse(savedUser);
           phoneToCheck = parsed.phone;
-          
+
           // Update state if not already set
           if (!userProfile.phone) {
-            setUserProfile(parsed); 
-            setIsLoggedIn(true); 
+            setUserProfile(parsed);
+            setIsLoggedIn(true);
           }
-          
+
           // Refresh user data if we have credentials
           if (parsed.phone && parsed.password) {
             refreshUserData(parsed.phone, parsed.password);
           }
         } catch (e) {
-          console.error("❌ [CUSTOMER RECOVERY] Failed to parse saved user:", e);
+          console.error(
+            "❌ [CUSTOMER RECOVERY] Failed to parse saved user:",
+            e,
+          );
         }
       }
 
       // MANDATORY: Always check for active order if we have a phone
       if (phoneToCheck) {
-        console.log("📡 [CUSTOMER RECOVERY] Checking for active orders for phone:", phoneToCheck);
+        console.log(
+          "📡 [CUSTOMER RECOVERY] Checking for active orders for phone:",
+          phoneToCheck,
+        );
         fetchActiveOrderFromAPI(phoneToCheck);
       } else {
-        console.log("⚠️ [CUSTOMER RECOVERY] No phone number available, aborting recovery");
+        console.log(
+          "⚠️ [CUSTOMER RECOVERY] No phone number available, aborting recovery",
+        );
         setIsCheckingRecovery(false);
       }
     } else {
-      console.log("⚠️ [CUSTOMER RECOVERY] No user data found, ending recovery check");
+      console.log(
+        "⚠️ [CUSTOMER RECOVERY] No user data found, ending recovery check",
+      );
       setIsCheckingRecovery(false);
     }
   }, []); // Empty deps - runs ONCE on mount only
-  
+
   // CRITICAL: Fetch latest balance whenever wallet is opened
   useEffect(() => {
     if (isWalletOpen && userProfile.phone) {
-      console.log("💰 [WALLET] Wallet opened - fetching latest balance from API");
-      
+      console.log(
+        "💰 [WALLET] Wallet opened - fetching latest balance from API",
+      );
+
       const fetchLatestBalance = async () => {
         try {
           const response = await fetch(`/api/login`, {
@@ -305,30 +440,34 @@ export default function RequestFlow() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               phone: userProfile.phone,
-              password: userProfile.password
-            })
+              password: userProfile.password,
+            }),
           });
-          
+
           if (response.ok) {
             const data = await response.json();
             const latestBalance = data.walletBalance?.toString() || "0";
-            
-            console.log(`💰 [WALLET] Latest balance fetched: ${latestBalance} IQD`);
-            
+
+            console.log(
+              `💰 [WALLET] Latest balance fetched: ${latestBalance} IQD`,
+            );
+
             // Update state
-            setUserProfile(prev => {
+            setUserProfile((prev) => {
               const updated = { ...prev, wallet: latestBalance };
-              
+
               // Update localStorage
               try {
                 localStorage.setItem("sat7a_user", JSON.stringify(updated));
               } catch (e) {
-                console.warn("[localStorage] Failed to update wallet in localStorage");
+                console.warn(
+                  "[localStorage] Failed to update wallet in localStorage",
+                );
               }
-              
+
               return updated;
             });
-            
+
             console.log("✅ [WALLET] Balance synced successfully");
           } else {
             console.warn("⚠️ [WALLET] Failed to fetch latest balance");
@@ -337,110 +476,180 @@ export default function RequestFlow() {
           console.error("❌ [WALLET] Error fetching balance:", error);
         }
       };
-      
+
       fetchLatestBalance();
     }
   }, [isWalletOpen]); // Runs whenever wallet is opened
-  
+
   // CRITICAL: Customer-side order recovery from API
   const fetchActiveOrderFromAPI = async (customerPhone: string) => {
     try {
-      console.log("📡 [CUSTOMER RECOVERY] Attempting recovery for phone:", customerPhone);
+      console.log(
+        "📡 [CUSTOMER RECOVERY] Attempting recovery for phone:",
+        customerPhone,
+      );
       console.log("📡 [CUSTOMER RECOVERY] Step 1: Fetching orders from API...");
-      
+
       // Use correct endpoint: /api/users/:phone/requests
       const response = await fetch(`/api/users/${customerPhone}/requests`);
-      
+
       if (!response.ok) {
-        console.log("❌ [CUSTOMER RECOVERY] API request failed with status:", response.status);
+        console.log(
+          "❌ [CUSTOMER RECOVERY] API request failed with status:",
+          response.status,
+        );
         console.log("🔄 [CUSTOMER RECOVERY] Recovery aborted: API error");
         setIsCheckingRecovery(false); // CRITICAL: End loading state
         return;
       }
-      
+
       const orders = await response.json();
-      console.log("✅ [CUSTOMER RECOVERY] Step 2: Fetched", orders.length, "orders from API");
-      console.log("📊 [CUSTOMER RECOVERY] Order statuses:", orders.map((o: any) => ({ id: o.id, status: o.status })));
-      
+      console.log(
+        "✅ [CUSTOMER RECOVERY] Step 2: Fetched",
+        orders.length,
+        "orders from API",
+      );
+      console.log(
+        "📊 [CUSTOMER RECOVERY] Order statuses:",
+        orders.map((o: any) => ({ id: o.id, status: o.status })),
+      );
+
       // MANDATORY FIX: STRICT FILTERING with explicit completed/delivered/cancelled check
       const activeOrder = orders.find((order: any) => {
         // CRITICAL: Exclude completed, delivered, cancelled
-        if (order.status === 'delivered' || order.status === 'completed' || order.status === 'cancelled') {
-          console.log("🚫 [CUSTOMER RECOVERY] Skipping order", order.id, "- Status:", order.status, "(completed/delivered/cancelled)");
+        if (
+          order.status === "delivered" ||
+          order.status === "completed" ||
+          order.status === "cancelled"
+        ) {
+          console.log(
+            "🚫 [CUSTOMER RECOVERY] Skipping order",
+            order.id,
+            "- Status:",
+            order.status,
+            "(completed/delivered/cancelled)",
+          );
           return false;
         }
-        
+
         // ONLY restore these statuses
-        const validStatuses = ["pending", "accepted", "arrived", "picked_up", "in_progress"];
+        const validStatuses = [
+          "pending",
+          "accepted",
+          "arrived",
+          "picked_up",
+          "in_progress",
+        ];
         const isValid = validStatuses.includes(order.status);
-        
+
         if (!isValid) {
-          console.log("🚫 [CUSTOMER RECOVERY] Skipping order", order.id, "- Status:", order.status, "(invalid)");
+          console.log(
+            "🚫 [CUSTOMER RECOVERY] Skipping order",
+            order.id,
+            "- Status:",
+            order.status,
+            "(invalid)",
+          );
         }
-        
+
         return isValid;
       });
-      
+
       if (!activeOrder) {
         console.log("🔄 [CUSTOMER RECOVERY] No active orders found");
         console.log("🧹 [CUSTOMER RECOVERY] Cleaning up stale localStorage");
         localStorage.removeItem("sat7a_active_order_id");
-        console.log("✅ [CUSTOMER RECOVERY] Recovery complete: No active order");
+        console.log(
+          "✅ [CUSTOMER RECOVERY] Recovery complete: No active order",
+        );
         setIsCheckingRecovery(false); // CRITICAL: End loading state - safe to show booking view
         return;
       }
-      
+
       console.log("✅ [CUSTOMER RECOVERY] Active order found:", {
         id: activeOrder.id,
         status: activeOrder.status,
-        driverId: activeOrder.driverId
+        driverId: activeOrder.driverId,
       });
-      
+
       // DOUBLE-CHECK: Verify status is truly active (redundant safety check)
-      if (activeOrder.status === 'delivered' || activeOrder.status === 'completed' || activeOrder.status === 'cancelled') {
-        console.log("🚫 [CUSTOMER RECOVERY] Recovery aborted: Order is", activeOrder.status);
-        console.log("🧹 [CUSTOMER RECOVERY] Clearing ALL LocalStorage for this order");
+      if (
+        activeOrder.status === "delivered" ||
+        activeOrder.status === "completed" ||
+        activeOrder.status === "cancelled"
+      ) {
+        console.log(
+          "🚫 [CUSTOMER RECOVERY] Recovery aborted: Order is",
+          activeOrder.status,
+        );
+        console.log(
+          "🧹 [CUSTOMER RECOVERY] Clearing ALL LocalStorage for this order",
+        );
         localStorage.removeItem("sat7a_active_order_id");
         setIsCheckingRecovery(false); // CRITICAL: End loading state
         return; // ABORT restoration
       }
-      
+
       console.log("🔄 [CUSTOMER RECOVERY] Step 3: Starting state restoration");
-      console.log(`📋 Restoring Customer State: Order ID ${activeOrder.id} - Status ${activeOrder.status}`);
-      
+      console.log(
+        `📋 Restoring Customer State: Order ID ${activeOrder.id} - Status ${activeOrder.status}`,
+      );
+
       setActiveOrderId(activeOrder.id);
       setRequestStatus(activeOrder.status);
-      console.log("✅ [CUSTOMER RECOVERY] Set order ID:", activeOrder.id, "Status:", activeOrder.status);
-      
+      console.log(
+        "✅ [CUSTOMER RECOVERY] Set order ID:",
+        activeOrder.id,
+        "Status:",
+        activeOrder.status,
+      );
+
       // EMERGENCY FIX: Force correct view based on status
       if (activeOrder.status === "pending") {
-        console.log("🔄 [CUSTOMER RECOVERY EMERGENCY] Order is PENDING - setting to SUCCESS view");
+        console.log(
+          "🔄 [CUSTOMER RECOVERY EMERGENCY] Order is PENDING - setting to SUCCESS view",
+        );
         setViewState("success"); // Show "Searching for driver" state
-      } else if (["accepted", "arrived", "picked_up", "in_progress"].includes(activeOrder.status)) {
-        console.log("🔄 [CUSTOMER RECOVERY EMERGENCY] Order is ACTIVE - FORCING TRACKING VIEW");
+      } else if (
+        ["accepted", "arrived", "picked_up", "in_progress"].includes(
+          activeOrder.status,
+        )
+      ) {
+        console.log(
+          "🔄 [CUSTOMER RECOVERY EMERGENCY] Order is ACTIVE - FORCING TRACKING VIEW",
+        );
         setViewState("tracking"); // Show tracking state with driver
         setRequestStatus(activeOrder.status); // CRITICAL: Set correct status
       } else {
-        console.log("⚠️ [CUSTOMER RECOVERY EMERGENCY] Unknown status, defaulting to tracking");
+        console.log(
+          "⚠️ [CUSTOMER RECOVERY EMERGENCY] Unknown status, defaulting to tracking",
+        );
         setViewState("tracking");
       }
-      
+
       // CRITICAL FIX: Hydrate driver data for ALL non-pending statuses (especially 'accepted')
       if (activeOrder.driverId) {
-        console.log("🔄 [CUSTOMER RECOVERY] Step 4: Driver assigned - hydrating driver data");
+        console.log(
+          "🔄 [CUSTOMER RECOVERY] Step 4: Driver assigned - hydrating driver data",
+        );
         console.log("🔄 [CUSTOMER RECOVERY] Driver ID:", activeOrder.driverId);
-        
+
         if (activeOrder.driver) {
           // BEST CASE: API response includes full driver object
-          console.log("✅ [CUSTOMER RECOVERY] Full driver object received from API");
-          console.log("✅ [CUSTOMER RECOVERY] Driver data:", activeOrder.driver);
+          console.log(
+            "✅ [CUSTOMER RECOVERY] Full driver object received from API",
+          );
+          console.log(
+            "✅ [CUSTOMER RECOVERY] Driver data:",
+            activeOrder.driver,
+          );
           console.log("✅ [CUSTOMER RECOVERY] Driver coordinates:", {
             lat: activeOrder.driver.lat,
             lng: activeOrder.driver.lng,
             lastLat: activeOrder.driver.lastLat,
-            lastLng: activeOrder.driver.lastLng
+            lastLng: activeOrder.driver.lastLng,
           });
-          
+
           // IMMEDIATE STATE HYDRATION - Set ALL driver state from API response
           setDriverInfo({
             id: activeOrder.driver.id,
@@ -448,91 +657,130 @@ export default function RequestFlow() {
             phone: activeOrder.driver.phone,
             avatarUrl: activeOrder.driver.avatarUrl || "",
             vehicleType: activeOrder.driver.vehicleType || "سطحة",
-            plateNumber: activeOrder.driver.plateNumber || ""
+            plateNumber: activeOrder.driver.plateNumber || "",
           });
-          console.log("✅ [CUSTOMER RECOVERY] Driver info hydrated:", activeOrder.driver.name);
-          
+          console.log(
+            "✅ [CUSTOMER RECOVERY] Driver info hydrated:",
+            activeOrder.driver.name,
+          );
+
           // CRITICAL: Restore driver's LIVE LOCATION for immediate tracking
           if (activeOrder.driver.lat && activeOrder.driver.lng) {
             const driverLat = Number(activeOrder.driver.lat);
             const driverLng = Number(activeOrder.driver.lng);
             setDriverLocation([driverLat, driverLng]);
-            console.log("✅ [CUSTOMER RECOVERY] Driver live location hydrated:", {lat: driverLat, lng: driverLng});
+            console.log(
+              "✅ [CUSTOMER RECOVERY] Driver live location hydrated:",
+              { lat: driverLat, lng: driverLng },
+            );
           } else if (activeOrder.driver.lastLat && activeOrder.driver.lastLng) {
             const driverLat = Number(activeOrder.driver.lastLat);
             const driverLng = Number(activeOrder.driver.lastLng);
             setDriverLocation([driverLat, driverLng]);
-            console.log("✅ [CUSTOMER RECOVERY] Driver live location hydrated (from lastLat/lastLng):", {lat: driverLat, lng: driverLng});
+            console.log(
+              "✅ [CUSTOMER RECOVERY] Driver live location hydrated (from lastLat/lastLng):",
+              { lat: driverLat, lng: driverLng },
+            );
           } else {
-            console.log("⚠️ [CUSTOMER RECOVERY] No live location available in driver object");
+            console.log(
+              "⚠️ [CUSTOMER RECOVERY] No live location available in driver object",
+            );
           }
-          
-          console.log("🎉 [CUSTOMER RECOVERY] Complete driver state hydration successful!");
+
+          console.log(
+            "🎉 [CUSTOMER RECOVERY] Complete driver state hydration successful!",
+          );
         } else {
           // MANDATORY FALLBACK: If driver object is missing from API, fetch separately
-          console.warn("⚠️ [CUSTOMER RECOVERY] Driver object missing from API response - initiating fallback fetch");
-          console.log("🔄 [CUSTOMER RECOVERY] Fetching driver", activeOrder.driverId, "separately");
-          
-          const driverResponse = await fetch(`/api/drivers/${activeOrder.driverId}`);
+          console.warn(
+            "⚠️ [CUSTOMER RECOVERY] Driver object missing from API response - initiating fallback fetch",
+          );
+          console.log(
+            "🔄 [CUSTOMER RECOVERY] Fetching driver",
+            activeOrder.driverId,
+            "separately",
+          );
+
+          const driverResponse = await fetch(
+            `/api/drivers/${activeOrder.driverId}`,
+          );
           if (driverResponse.ok) {
             const driverData = await driverResponse.json();
-            console.log("✅ [CUSTOMER RECOVERY] Driver data fetched via fallback");
+            console.log(
+              "✅ [CUSTOMER RECOVERY] Driver data fetched via fallback",
+            );
             console.log("✅ [CUSTOMER RECOVERY] Driver:", driverData);
-            
+
             setDriverInfo({
               id: driverData.id,
               name: driverData.name,
               phone: driverData.phone,
               avatarUrl: driverData.avatarUrl || "",
               vehicleType: driverData.vehicleType || "سطحة",
-              plateNumber: driverData.plateNumber || ""
+              plateNumber: driverData.plateNumber || "",
             });
-            console.log("✅ [CUSTOMER RECOVERY] Driver info restored (fallback):", driverData.name);
-            
+            console.log(
+              "✅ [CUSTOMER RECOVERY] Driver info restored (fallback):",
+              driverData.name,
+            );
+
             if (driverData.lat && driverData.lng) {
               const driverLat = Number(driverData.lat);
               const driverLng = Number(driverData.lng);
               setDriverLocation([driverLat, driverLng]);
-              console.log("✅ [CUSTOMER RECOVERY] Driver live location restored (fallback):", {lat: driverLat, lng: driverLng});
+              console.log(
+                "✅ [CUSTOMER RECOVERY] Driver live location restored (fallback):",
+                { lat: driverLat, lng: driverLng },
+              );
             } else if (driverData.lastLat && driverData.lastLng) {
               const driverLat = Number(driverData.lastLat);
               const driverLng = Number(driverData.lastLng);
               setDriverLocation([driverLat, driverLng]);
-              console.log("✅ [CUSTOMER RECOVERY] Driver location restored from lastLat/lastLng");
+              console.log(
+                "✅ [CUSTOMER RECOVERY] Driver location restored from lastLat/lastLng",
+              );
             }
           } else {
-            console.error("❌ [CUSTOMER RECOVERY] Fallback fetch failed - driver info unavailable");
+            console.error(
+              "❌ [CUSTOMER RECOVERY] Fallback fetch failed - driver info unavailable",
+            );
           }
         }
       } else {
-        console.log("ℹ️ [CUSTOMER RECOVERY] No driver assigned yet (status: pending)");
+        console.log(
+          "ℹ️ [CUSTOMER RECOVERY] No driver assigned yet (status: pending)",
+        );
       }
-      
+
       // Restore form data for map display
       console.log("🔄 [CUSTOMER RECOVERY] Step 5: Restoring map coordinates");
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         pickupLat: activeOrder.pickupLat,
         pickupLng: activeOrder.pickupLng,
         destLat: activeOrder.destLat || activeOrder.dropoffLat,
         destLng: activeOrder.destLng || activeOrder.dropoffLng,
         location: activeOrder.pickupAddress || activeOrder.location,
-        destination: activeOrder.destination || activeOrder.destAddress
+        destination: activeOrder.destination || activeOrder.destAddress,
       }));
       console.log("✅ [CUSTOMER RECOVERY] Map data restored");
-      
+
       // Rejoin socket room for live updates
       console.log("🔄 [CUSTOMER RECOVERY] Step 6: Rejoining socket room");
       socket.emit("join_order", activeOrder.id);
-      console.log("✅ [CUSTOMER RECOVERY] Socket room joined - will receive live updates");
-      
+      console.log(
+        "✅ [CUSTOMER RECOVERY] Socket room joined - will receive live updates",
+      );
+
       // CRITICAL: Emit customer_ready event to notify server/driver that customer is back online
-      socket.emit("customer_ready", { 
-        orderId: activeOrder.id, 
-        customerPhone: customerPhone 
+      socket.emit("customer_ready", {
+        orderId: activeOrder.id,
+        customerPhone: customerPhone,
       });
-      console.log("✅ [CUSTOMER RECOVERY] Notified server that customer is ready");
-      
+      console.log(
+        "✅ [CUSTOMER RECOVERY] Notified server that customer is ready",
+      );
+
       // Store order ID in localStorage for persistence
       try {
         localStorage.setItem("sat7a_active_order_id", String(activeOrder.id));
@@ -540,31 +788,35 @@ export default function RequestFlow() {
       } catch (e) {
         console.warn("[localStorage] Quota exceeded for active order ID");
       }
-      
+
       console.log("🎉 [CUSTOMER RECOVERY] Recovery complete successfully!");
       console.log("📊 [CUSTOMER RECOVERY] Final state:", {
         viewState: activeOrder.status === "pending" ? "success" : "tracking",
         orderId: activeOrder.id,
         status: activeOrder.status,
         hasDriver: !!activeOrder.driverId,
-        driverLocation: driverLocation
+        driverLocation: driverLocation,
       });
-      
+
       // CRITICAL: Use setTimeout to ensure ALL state updates are flushed before ending loading
       // This prevents any flash of the booking view
       // CRITICAL: Immediately end loading state - React batches state updates
       setIsCheckingRecovery(false);
-      console.log("✅ [CUSTOMER RECOVERY] Loading state ended - UI will now render recovered view");
-      
+      console.log(
+        "✅ [CUSTOMER RECOVERY] Loading state ended - UI will now render recovered view",
+      );
+
       // Show success toast
       toast({
         title: "✅ تم استرجاع الطلب",
         description: "تم استعادة طلبك النشط بنجاح",
-        className: "bg-green-600 text-white font-black rounded-[24px]"
+        className: "bg-green-600 text-white font-black rounded-[24px]",
       });
-      
     } catch (error) {
-      console.error("❌ [CUSTOMER RECOVERY] Error fetching active order:", error);
+      console.error(
+        "❌ [CUSTOMER RECOVERY] Error fetching active order:",
+        error,
+      );
       setIsCheckingRecovery(false); // CRITICAL: End loading state even on error
     }
   };
@@ -582,10 +834,13 @@ export default function RequestFlow() {
       // CRITICAL: Listen for FINAL_CLEANUP event from server
       socket.on("FINAL_CLEANUP", (data: any) => {
         console.log("🚨 [FINAL_CLEANUP] Received FINAL_CLEANUP event:", data);
-        
-        if (data.orderId === activeOrderId || data.orderId === Number(activeOrderId)) {
+
+        if (
+          data.orderId === activeOrderId ||
+          data.orderId === Number(activeOrderId)
+        ) {
           console.log("🧹 [FINAL_CLEANUP] Forcing immediate state reset");
-          
+
           // FORCE RESET ALL STATE
           setActiveOrderId(null);
           setDriverInfo(null);
@@ -594,58 +849,78 @@ export default function RequestFlow() {
           setDriverLocation(null);
           setShowCancelModal(false);
           setIsChatOpen(false);
-          
+
           // FORCE CLEANUP localStorage
           localStorage.removeItem("sat7a_active_order_id");
-          
+
           // FORCE VIEW RESET
           setViewState("booking");
-          
+
           console.log("✅ [FINAL_CLEANUP] State forcefully reset to idle");
         }
       });
 
       const handleStatusChange = (data: any) => {
         if (data.status) {
-          console.log("📡 [STATUS_CHANGE] Received status update:", data.status);
+          console.log(
+            "📡 [STATUS_CHANGE] Received status update:",
+            data.status,
+          );
           setRequestStatus(data.status);
 
-          if (data.status === "accepted" || data.driverInfo || data.status === "arrived" || data.status === "picked_up") {
-            console.log("🎉 [STATUS_CHANGE EMERGENCY] Order accepted - forcing tracking view");
+          if (
+            data.status === "accepted" ||
+            data.driverInfo ||
+            data.status === "arrived" ||
+            data.status === "picked_up"
+          ) {
+            console.log(
+              "🎉 [STATUS_CHANGE EMERGENCY] Order accepted - forcing tracking view",
+            );
             setViewState("tracking");
-            
+
             const info = data.driverInfo || data;
             const driverData = {
               id: info.driverId || info.id,
-              name: info.username || info.name || info.driverName || "كابتن سطحة",
+              name:
+                info.username || info.name || info.driverName || "كابتن سطحة",
               phone: info.phone || info.driverPhone || "07XXXXXXXXX",
               avatarUrl: info.avatarUrl || info.driverAvatar || "",
               vehicleType: info.vehicleType || "سطحة هيدروليك",
-              plateNumber: info.plateNumber || "أربيل - 12345"
+              plateNumber: info.plateNumber || "أربيل - 12345",
             };
-            
-            console.log("✅ [STATUS_CHANGE EMERGENCY] Setting driver data:", driverData);
+
+            console.log(
+              "✅ [STATUS_CHANGE EMERGENCY] Setting driver data:",
+              driverData,
+            );
             setDriverInfo(driverData);
 
             if (info.lat && info.lng) {
               setDriverLocation([Number(info.lat), Number(info.lng)]);
-              console.log("📍 [STATUS_CHANGE EMERGENCY] Driver location set:", [info.lat, info.lng]);
+              console.log("📍 [STATUS_CHANGE EMERGENCY] Driver location set:", [
+                info.lat,
+                info.lng,
+              ]);
             }
 
             if (data.status === "accepted") {
-                toast({ 
-                  title: "✅ تم قبول طلبك", 
-                  description: `الكابتن ${info.username || info.name || 'قادم'} في الطريق إليك`,
-                  className: "bg-green-600 text-white font-black rounded-2xl shadow-2xl border-none"
-                });
+              toast({
+                title: "✅ تم قبول طلبك",
+                description: `الكابتن ${info.username || info.name || "قادم"} في الطريق إليك`,
+                className:
+                  "bg-green-600 text-white font-black rounded-2xl shadow-2xl border-none",
+              });
             }
-            
+
             // CRITICAL: System Notification when driver arrives
             if (data.status === "arrived") {
-              console.log("🔔 [NOTIFICATION] Driver arrived - triggering system notification");
-              
+              console.log(
+                "🔔 [NOTIFICATION] Driver arrived - triggering system notification",
+              );
+
               if ("Notification" in window) {
-                Notification.requestPermission().then(permission => {
+                Notification.requestPermission().then((permission) => {
                   if (permission === "granted") {
                     const notification = new Notification("SATHA - سطحة", {
                       body: "الكابتن وصل للموقع",
@@ -653,21 +928,25 @@ export default function RequestFlow() {
                       badge: "/logo.png",
                       tag: "driver-arrived",
                       requireInteraction: true,
-                      vibrate: [200, 100, 200]
+                      vibrate: [200, 100, 200],
                     });
-                    
+
                     // Play notification sound
                     try {
                       const audio = new Audio("/notification.mp3");
-                      audio.play().catch(e => console.log("Audio play failed:", e));
+                      audio
+                        .play()
+                        .catch((e) => console.log("Audio play failed:", e));
                     } catch (e) {
                       console.log("Audio creation failed:", e);
                     }
-                    
+
                     // Auto-close after 10 seconds
                     setTimeout(() => notification.close(), 10000);
-                    
-                    console.log("✅ [NOTIFICATION] System notification sent to customer");
+
+                    console.log(
+                      "✅ [NOTIFICATION] System notification sent to customer",
+                    );
                   } else {
                     console.log("⚠️ [NOTIFICATION] Permission denied");
                   }
@@ -675,19 +954,22 @@ export default function RequestFlow() {
               } else {
                 console.log("⚠️ [NOTIFICATION] Notification API not available");
               }
-              
+
               // Also show in-app toast
-              toast({ 
-                title: "📍 الكابتن وصل للموقع", 
+              toast({
+                title: "📍 الكابتن وصل للموقع",
                 description: "الرجاء التوجه للموقع المحدد",
-                className: "bg-blue-600 text-white font-black rounded-2xl shadow-2xl border-none"
+                className:
+                  "bg-blue-600 text-white font-black rounded-2xl shadow-2xl border-none",
               });
             }
           }
 
           if (data.status === "completed") {
-            console.log("🚀 [ORDER COMPLETE] Customer side - Order completed, cleaning up");
-            
+            console.log(
+              "🚀 [ORDER COMPLETE] Customer side - Order completed, cleaning up",
+            );
+
             // IMMEDIATE STATE CLEANUP - Prevent any restoration attempts
             console.log("🧹 [CLEANUP] Step 1: Clearing all state IMMEDIATELY");
             setActiveOrderId(null);
@@ -695,30 +977,33 @@ export default function RequestFlow() {
             setRequestStatus("pending");
             setMessages([]);
             setDriverLocation(null);
-            
+
             // IMMEDIATE localStorage cleanup - BOTH keys
             console.log("🧹 [CLEANUP] Step 2: Removing ALL localStorage keys");
             localStorage.removeItem("sat7a_active_order_id");
             localStorage.removeItem(`driver_active_order_${data.driverId}`); // Driver-side key
-            
+
             // IMMEDIATE socket room cleanup
             if (activeOrderId) {
               console.log("🧹 [CLEANUP] Step 3: Leaving socket room");
               socket.emit("leave_order", activeOrderId);
             }
-            
+
             // CRITICAL: Close ALL modals
             console.log("🧹 [CLEANUP] Step 4: Closing modals");
             setShowCancelModal(false);
             setIsChatOpen(false);
-            
+
             // IMMEDIATE view reset
             console.log("🧹 [CLEANUP] Step 5: Resetting view to booking");
             setViewState("booking");
-            
+
             // Show completion toast AFTER cleanup
-            toast({ title: "وصلت بالسلامة", description: "تم إكمال الطلب بنجاح" });
-            
+            toast({
+              title: "وصلت بالسلامة",
+              description: "تم إكمال الطلب بنجاح",
+            });
+
             console.log("✅ [ORDER COMPLETE] Customer cleanup complete");
           }
         }
@@ -728,60 +1013,78 @@ export default function RequestFlow() {
       socket.on("status_changed", handleStatusChange);
       socket.on(`order_status_${activeOrderId}`, handleStatusChange);
       socket.on("order_accepted", handleStatusChange); // CRITICAL: Explicit order_accepted listener
-      
-      console.log("✅ [SOCKET EMERGENCY] All order listeners attached for order:", activeOrderId);
+
+      console.log(
+        "✅ [SOCKET EMERGENCY] All order listeners attached for order:",
+        activeOrderId,
+      );
 
       socket.on("driver_location_update", (data: any) => {
-          if (Number(data.orderId) === Number(activeOrderId)) {
-              setDriverLocation([Number(data.lat), Number(data.lng)]);
-              if (data.heading !== undefined) setDriverHeading(data.heading);
-          }
+        if (Number(data.orderId) === Number(activeOrderId)) {
+          setDriverLocation([Number(data.lat), Number(data.lng)]);
+          if (data.heading !== undefined) setDriverHeading(data.heading);
+        }
       });
 
       // CRITICAL: Handle real-time wallet updates from admin
       if (userProfile.id) {
         socket.on(`customer_wallet_updated_${userProfile.id}`, (data: any) => {
-          console.log("💰 [WALLET UPDATE] Received real-time balance update from admin:", data);
+          console.log(
+            "💰 [WALLET UPDATE] Received real-time balance update from admin:",
+            data,
+          );
           console.log(`💰 [WALLET UPDATE] New Balance: ${data.newBalance} IQD`);
-          
+
           // IMMEDIATE state update
-          setUserProfile(prev => {
+          setUserProfile((prev) => {
             const updated = {
               ...prev,
-              wallet: data.newBalance
+              wallet: data.newBalance,
             };
-            
+
             // Update localStorage
             try {
               const savedUser = localStorage.getItem("sat7a_user");
               if (savedUser) {
                 const parsed = JSON.parse(savedUser);
-                localStorage.setItem("sat7a_user", JSON.stringify({...parsed, wallet: data.newBalance}));
+                localStorage.setItem(
+                  "sat7a_user",
+                  JSON.stringify({ ...parsed, wallet: data.newBalance }),
+                );
               }
             } catch (e) {
-              console.warn("[localStorage] Failed to update wallet in localStorage");
+              console.warn(
+                "[localStorage] Failed to update wallet in localStorage",
+              );
             }
-            
+
             return updated;
           });
-          
+
           // Show success notification
           toast({
-            title: data.type === "credit" ? "💰 تم إضافة رصيد" : "💸 تم خصم رصيد",
-            description: data.message || `الرصيد الجديد: ${data.newBalance} د.ع`,
-            className: "bg-green-600 text-white font-black rounded-[24px] shadow-2xl"
+            title:
+              data.type === "credit" ? "💰 تم إضافة رصيد" : "💸 تم خصم رصيد",
+            description:
+              data.message || `الرصيد الجديد: ${data.newBalance} د.ع`,
+            className:
+              "bg-green-600 text-white font-black rounded-[24px] shadow-2xl",
           });
-          
+
           console.log("✅ [WALLET UPDATE] Balance updated successfully in UI");
         });
-        
-        console.log(`🔌 [SOCKET] Listening for wallet updates on: customer_wallet_updated_${userProfile.id}`);
+
+        console.log(
+          `🔌 [SOCKET] Listening for wallet updates on: customer_wallet_updated_${userProfile.id}`,
+        );
       }
-      
+
       // CRITICAL FIX: Handle order deletion by admin
       socket.on("order_deleted_by_admin", (data: any) => {
-        console.log("🚀 [ADMIN DELETE] Order deleted by admin, immediate cleanup");
-        
+        console.log(
+          "🚀 [ADMIN DELETE] Order deleted by admin, immediate cleanup",
+        );
+
         // IMMEDIATE STATE CLEANUP
         console.log("🧹 [CLEANUP] Step 1: Clearing all state IMMEDIATELY");
         const orderIdToLeave = activeOrderId; // Capture before clearing
@@ -790,33 +1093,33 @@ export default function RequestFlow() {
         setRequestStatus("pending");
         setMessages([]);
         setDriverLocation(null);
-        
+
         // IMMEDIATE localStorage cleanup
         console.log("🧹 [CLEANUP] Step 2: Removing from localStorage");
         localStorage.removeItem("sat7a_active_order_id");
-        
+
         // IMMEDIATE socket room cleanup
         if (orderIdToLeave) {
           console.log("🧹 [CLEANUP] Step 3: Leaving socket room");
           socket.emit("leave_order", orderIdToLeave);
         }
-        
+
         // CRITICAL: Close ALL modals
         console.log("🧹 [CLEANUP] Step 4: Closing modals");
         setShowCancelModal(false);
         setIsChatOpen(false);
-        
+
         // IMMEDIATE view reset
         console.log("🧹 [CLEANUP] Step 5: Resetting view to booking");
         setViewState("booking");
-        
+
         // Show notification AFTER cleanup
-        toast({ 
+        toast({
           variant: "destructive",
-          title: "تم إلغاء الطلب", 
-          description: data.message || "تم إلغاء طلبك من قبل الإدارة" 
+          title: "تم إلغاء الطلب",
+          description: data.message || "تم إلغاء طلبك من قبل الإدارة",
         });
-        
+
         console.log("✅ [ADMIN DELETE] Customer cleanup complete");
       });
 
@@ -834,32 +1137,35 @@ export default function RequestFlow() {
   useEffect(() => {
     const handleNewMessage = (msg: any) => {
       if (Number(msg.orderId) === Number(activeOrderId)) {
-        setMessages(prev => {
-          const exists = prev.find(m => m.id === msg.id);
+        setMessages((prev) => {
+          const exists = prev.find((m) => m.id === msg.id);
           if (exists) return prev;
-          return [...prev, {
-            id: msg.id,
-            orderId: msg.orderId,
-            content: msg.content || msg.message,
-            senderId: msg.senderId,
-            senderType: msg.senderType,
-            senderName: msg.senderName,
-            createdAt: msg.createdAt,
-            timestamp: msg.createdAt
-          }];
+          return [
+            ...prev,
+            {
+              id: msg.id,
+              orderId: msg.orderId,
+              content: msg.content || msg.message,
+              senderId: msg.senderId,
+              senderType: msg.senderType,
+              senderName: msg.senderName,
+              createdAt: msg.createdAt,
+              timestamp: msg.createdAt,
+            },
+          ];
         });
-        if (!isChatOpen) setUnreadCount(prev => prev + 1);
+        if (!isChatOpen) setUnreadCount((prev) => prev + 1);
         setTimeout(scrollChatToBottom, 100);
       }
     };
 
     socket.on("new_message", handleNewMessage);
 
-    return () => { 
+    return () => {
       socket.off("new_message", handleNewMessage);
     };
   }, [isChatOpen, activeOrderId]);
-  
+
   // Reset sheet to expanded when driver is found
   useEffect(() => {
     if (requestStatus !== "pending" && driverInfo) {
@@ -875,8 +1181,8 @@ export default function RequestFlow() {
       orderId: activeOrderId,
       message: chatMessage,
       senderId: userProfile.id,
-      senderType: 'customer',
-      senderName: userProfile.username
+      senderType: "customer",
+      senderName: userProfile.username,
     };
 
     socket.emit("send_message", payload);
@@ -893,24 +1199,27 @@ export default function RequestFlow() {
           username: userProfile.username,
           phone: userProfile.phone,
           password: userProfile.password,
-          city: normalizeCity(formData.city)
+          city: normalizeCity(formData.city),
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "فشل التسجيل");
 
       console.log("📝 [SIGNUP] User data received from server:", data);
-      
-      const completeProfile = { 
-        ...userProfile, 
-        id: data.id, 
-        wallet: data.walletBalance?.toString() || "0", 
+
+      const completeProfile = {
+        ...userProfile,
+        id: data.id,
+        wallet: data.walletBalance?.toString() || "0",
         address: normalizeCity(formData.city),
-        image: data.image || userProfile.image || "" // CRITICAL: Preserve image during signup
+        image: data.image || userProfile.image || "", // CRITICAL: Preserve image during signup
       };
-      
-      console.log("✅ [SIGNUP] Profile created with image:", completeProfile.image ? "Yes" : "No");
-      
+
+      console.log(
+        "✅ [SIGNUP] Profile created with image:",
+        completeProfile.image ? "Yes" : "No",
+      );
+
       setUserProfile(completeProfile);
       try {
         localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
@@ -934,24 +1243,31 @@ export default function RequestFlow() {
       const response = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: userProfile.phone, password: userProfile.password }),
+        body: JSON.stringify({
+          phone: userProfile.phone,
+          password: userProfile.password,
+        }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "بيانات الدخول غير صحيحة");
+      if (!response.ok)
+        throw new Error(data.message || "بيانات الدخول غير صحيحة");
 
       console.log("🔐 [LOGIN] User data received from server:", data);
 
-      const completeProfile = { 
-        ...userProfile, 
-        id: data.id, 
+      const completeProfile = {
+        ...userProfile,
+        id: data.id,
         username: data.username || data.name,
         wallet: data.walletBalance?.toString() || "0",
         trips: data.tripsCount?.toString() || "0",
-        image: data.image || "" // CRITICAL: Load image from database
+        image: data.image || "", // CRITICAL: Load image from database
       };
-      
-      console.log("✅ [LOGIN] Profile hydrated with image:", completeProfile.image ? "Yes" : "No");
-      
+
+      console.log(
+        "✅ [LOGIN] Profile hydrated with image:",
+        completeProfile.image ? "Yes" : "No",
+      );
+
       setUserProfile(completeProfile);
       try {
         localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
@@ -962,14 +1278,18 @@ export default function RequestFlow() {
       }
       setIsLoggedIn(true);
     } catch (err: any) {
-      toast({ variant: "destructive", title: "فشل الدخول", description: err.message });
+      toast({
+        variant: "destructive",
+        title: "فشل الدخول",
+        description: err.message,
+      });
     }
   };
 
   const handleLogout = () => {
     localStorage.removeItem("sat7a_session_active");
     localStorage.removeItem("sat7a_active_order_id");
-    setIsLoggedIn(false); 
+    setIsLoggedIn(false);
     setAuthMode("choice");
     setActiveOrderId(null);
   };
@@ -977,33 +1297,38 @@ export default function RequestFlow() {
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     console.log("📸 [PROFILE IMAGE] Customer uploading profile image");
-    
+
     try {
       const reader = new FileReader();
       reader.onloadend = async () => {
         const base64 = reader.result as string;
-        
+
         console.log("📸 [PROFILE IMAGE] Image converted to base64");
-        
+
         // CRITICAL: Save to database immediately for persistence
         if (userProfile.phone) {
           console.log("📸 [PROFILE IMAGE] Uploading to database...");
-          
-          const uploadRes = await fetch(`/api/users/${userProfile.phone}/update-image`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image: base64 })
-          });
-          
+
+          const uploadRes = await fetch(
+            `/api/users/${userProfile.phone}/update-image`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ image: base64 }),
+            },
+          );
+
           if (uploadRes.ok) {
-            console.log("✅ [PROFILE IMAGE] Image saved to database successfully");
-            
+            console.log(
+              "✅ [PROFILE IMAGE] Image saved to database successfully",
+            );
+
             // Update state
-            setUserProfile(prev => {
+            setUserProfile((prev) => {
               const updated = { ...prev, image: base64 };
-              
+
               // Update localStorage
               try {
                 localStorage.setItem("sat7a_user", JSON.stringify(updated));
@@ -1011,27 +1336,29 @@ export default function RequestFlow() {
               } catch (e) {
                 console.warn("⚠️ [PROFILE IMAGE] localStorage quota exceeded");
               }
-              
+
               return updated;
             });
-            
+
             toast({
               title: "✅ تم تحديث الصورة",
               description: "تم حفظ صورتك الشخصية بنجاح",
-              className: "bg-green-600 text-white font-black rounded-[24px]"
+              className: "bg-green-600 text-white font-black rounded-[24px]",
             });
           } else {
             console.error("❌ [PROFILE IMAGE] Failed to upload to database");
             toast({
               variant: "destructive",
               title: "فشل التحميل",
-              description: "لم نتمكن من حفظ الصورة، يرجى المحاولة مرة أخرى"
+              description: "لم نتمكن من حفظ الصورة، يرجى المحاولة مرة أخرى",
             });
           }
         } else {
           // Fallback: Just save to state and localStorage if not logged in yet
-          console.log("⚠️ [PROFILE IMAGE] User not logged in, saving temporarily");
-          setUserProfile(prev => ({ ...prev, image: base64 }));
+          console.log(
+            "⚠️ [PROFILE IMAGE] User not logged in, saving temporarily",
+          );
+          setUserProfile((prev) => ({ ...prev, image: base64 }));
         }
       };
       reader.readAsDataURL(file);
@@ -1040,7 +1367,7 @@ export default function RequestFlow() {
       toast({
         variant: "destructive",
         title: "خطأ",
-        description: "حدث خطأ أثناء تحميل الصورة"
+        description: "حدث خطأ أثناء تحميل الصورة",
       });
     }
   };
@@ -1056,17 +1383,22 @@ export default function RequestFlow() {
 
       // CRITICAL: Only allow cancellation if status is pending
       if (requestStatus !== "pending") {
-        console.error("[Cancel] Cannot cancel - order status is:", requestStatus);
+        console.error(
+          "[Cancel] Cannot cancel - order status is:",
+          requestStatus,
+        );
         setShowCancelModal(false);
         toast({
           variant: "destructive",
           title: "لا يمكن الإلغاء",
-          description: "الطلب قيد التنفيذ بالفعل"
+          description: "الطلب قيد التنفيذ بالفعل",
         });
         return;
       }
 
-      console.log(`[Cancel] Deleting order ${activeOrderId}, status: ${requestStatus}`);
+      console.log(
+        `[Cancel] Deleting order ${activeOrderId}, status: ${requestStatus}`,
+      );
 
       const response = await fetch(`/api/requests/${activeOrderId}`, {
         method: "DELETE",
@@ -1078,14 +1410,17 @@ export default function RequestFlow() {
       }
 
       console.log("[Cancel] Order deleted successfully");
-      
+
       // CRITICAL: Leave socket room and cleanup
       socket.emit("leave_order", activeOrderId);
-      console.log("🧹 [CLEANUP] Customer cancelled order - left room:", activeOrderId);
-      
+      console.log(
+        "🧹 [CLEANUP] Customer cancelled order - left room:",
+        activeOrderId,
+      );
+
       // CLOSE modal only after success
       setShowCancelModal(false);
-      
+
       // Clear local state and return to booking
       localStorage.removeItem("sat7a_active_order_id");
       setViewState("booking");
@@ -1098,7 +1433,7 @@ export default function RequestFlow() {
       toast({
         title: "تم إلغاء الطلب بنجاح",
         description: "يمكنك إنشاء طلب جديد الآن",
-        className: "bg-green-600 text-white"
+        className: "bg-green-600 text-white",
       });
     } catch (error: any) {
       console.error("[Cancel] Error:", error);
@@ -1106,7 +1441,7 @@ export default function RequestFlow() {
       toast({
         variant: "destructive",
         title: "خطأ في الإلغاء",
-        description: error.message || "حاول مرة أخرى"
+        description: error.message || "حاول مرة أخرى",
       });
     }
   };
@@ -1115,23 +1450,38 @@ export default function RequestFlow() {
     if (query.length < 3) return;
     setIsSearching(true);
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5&countrycodes=iq`);
-      const data = await res.json(); 
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5&countrycodes=iq`,
+      );
+      const data = await res.json();
       setSearchResults(data);
-    } catch (error) { console.error(error); } finally { setIsSearching(false); }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   const reverseGeocode = async (lat: number, lng: number) => {
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`);
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`,
+      );
       const data = await res.json();
       if (data.address) {
-        const detectedCity = data.address.state || data.address.city || data.address.province || data.address.governorate || "بابل";
-        const locationName = data.display_name.split(',')[0];
-        setFormData(prev => ({ 
-          ...prev, 
+        const detectedCity =
+          data.address.state ||
+          data.address.city ||
+          data.address.province ||
+          data.address.governorate ||
+          "بابل";
+        const locationName = data.display_name.split(",")[0];
+        setFormData((prev) => ({
+          ...prev,
           city: normalizeCity(detectedCity),
-          ...(step === "pickup" ? { location: locationName } : { destination: locationName })
+          ...(step === "pickup"
+            ? { location: locationName }
+            : { destination: locationName }),
         }));
       }
     } catch (err) {
@@ -1141,73 +1491,112 @@ export default function RequestFlow() {
 
   const handleGetCurrentLocation = () => {
     if (!navigator.geolocation) {
-      toast({ variant: "destructive", title: "خطأ", description: "GPS غير متاح على هذا الجهاز" });
+      toast({
+        variant: "destructive",
+        title: "خطأ",
+        description: "GPS غير متاح على هذا الجهاز",
+      });
       return;
     }
-    
+
     console.log("📍 [GPS] Getting current location with high accuracy...");
-    
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        console.log("✅ [GPS] Position acquired:", { lat: latitude, lng: longitude });
-        
+        console.log("✅ [GPS] Position acquired:", {
+          lat: latitude,
+          lng: longitude,
+        });
+
         // Update formData state FIRST
         if (step === "pickup") {
-          setFormData(p => ({ ...p, pickupLat: latitude, pickupLng: longitude }));
-          reverseGeocode(latitude, longitude); 
+          setFormData((p) => ({
+            ...p,
+            pickupLat: latitude,
+            pickupLng: longitude,
+          }));
+          reverseGeocode(latitude, longitude);
         } else {
-          setFormData(p => ({ ...p, destLat: latitude, destLng: longitude }));
+          setFormData((p) => ({ ...p, destLat: latitude, destLng: longitude }));
           reverseGeocode(latitude, longitude);
         }
-        
+
         // Trigger fly animation AFTER state update
         setShouldFly(true);
         setTimeout(() => setShouldFly(false), 2000);
-        
-        toast({ title: "تم تحديد موقعك", description: "GPS", className: "bg-green-600 text-white font-black" });
+
+        toast({
+          title: "تم تحديد موقعك",
+          description: "GPS",
+          className: "bg-green-600 text-white font-black",
+        });
       },
       (error) => {
         console.error("❌ [GPS] Error:", error);
-        toast({ 
-          variant: "destructive", 
-          title: "فشل تحديد الموقع", 
-          description: error.message || "تأكد من تفعيل خدمة الموقع"
+        toast({
+          variant: "destructive",
+          title: "فشل تحديد الموقع",
+          description: error.message || "تأكد من تفعيل خدمة الموقع",
         });
       },
-      { 
+      {
         enableHighAccuracy: true,
         timeout: 10000,
-        maximumAge: 0
-      }
+        maximumAge: 0,
+      },
     );
   };
 
   const handleSelectResult = (result: any) => {
-    const lat = parseFloat(result.lat); 
+    const lat = parseFloat(result.lat);
     const lon = parseFloat(result.lon);
-    const resultCity = result.address?.state || result.address?.city || result.address?.province || result.address?.governorate || "بابل";
+    const resultCity =
+      result.address?.state ||
+      result.address?.city ||
+      result.address?.province ||
+      result.address?.governorate ||
+      "بابل";
 
     setShouldFly(true);
     if (step === "pickup") {
-      setFormData(p => ({ ...p, pickupLat: lat, pickupLng: lon, location: result.display_name.split(',')[0], city: normalizeCity(resultCity) }));
+      setFormData((p) => ({
+        ...p,
+        pickupLat: lat,
+        pickupLng: lon,
+        location: result.display_name.split(",")[0],
+        city: normalizeCity(resultCity),
+      }));
     } else {
-      setFormData(p => ({ ...p, destLat: lat, destLng: lon, destination: result.display_name.split(',')[0] }));
+      setFormData((p) => ({
+        ...p,
+        destLat: lat,
+        destLng: lon,
+        destination: result.display_name.split(",")[0],
+      }));
     }
-    setIsSearchOpen(false); 
+    setIsSearchOpen(false);
     setTimeout(() => setShouldFly(false), 2000);
   };
 
   // Professional Wallet Deposit Handler (replicated from Driver)
-  const handleCustomerDeposit = async (method: 'zain' | 'master') => {
+  const handleCustomerDeposit = async (method: "zain" | "master") => {
     if (!userProfile.id) {
-      toast({ variant: "destructive", title: "خطأ", description: "لم يتم العثور على بيانات المستخدم" });
+      toast({
+        variant: "destructive",
+        title: "خطأ",
+        description: "لم يتم العثور على بيانات المستخدم",
+      });
       return;
     }
 
     const amountValue = parseInt(depositAmount);
     if (isNaN(amountValue) || amountValue < 1000) {
-      toast({ variant: "destructive", title: "مبلغ غير صحيح", description: "أقل مبلغ للشحن هو 1000 دينار" });
+      toast({
+        variant: "destructive",
+        title: "مبلغ غير صحيح",
+        description: "أقل مبلغ للشحن هو 1000 دينار",
+      });
       return;
     }
 
@@ -1219,149 +1608,193 @@ export default function RequestFlow() {
         body: JSON.stringify({
           amount: amountValue,
           userId: Number(userProfile.id),
-          userType: "customer"
+          userType: "customer",
         }),
       });
-      
+
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "فشل في بدء عملية الدفع");
-      
+      if (!response.ok)
+        throw new Error(data.message || "فشل في بدء عملية الدفع");
+
       if (data.url || data.redirectUrl) {
         window.location.href = data.url || data.redirectUrl;
       } else {
-        toast({ 
-          title: "✅ تم بدء العملية", 
+        toast({
+          title: "✅ تم بدء العملية",
           description: "سيتم تحويلك لإكمال الدفع",
-          className: "bg-green-600 text-white font-black rounded-[24px]"
+          className: "bg-green-600 text-white font-black rounded-[24px]",
         });
       }
     } catch (err: any) {
-      toast({ 
-        variant: "destructive", 
-        title: "خطأ في عملية الشحن", 
-        description: err.message || "فشلت عملية الشحن" 
+      toast({
+        variant: "destructive",
+        title: "خطأ في عملية الشحن",
+        description: err.message || "فشلت عملية الشحن",
       });
-    } finally { 
-      setIsDepositing(false); 
+    } finally {
+      setIsDepositing(false);
     }
   };
 
   // CRITICAL FIX #2: Professional Dynamic Pricing with Loading State
   useEffect(() => {
-    if (formData.vehicleType && formData.pickupLat && formData.pickupLng && formData.destLat && formData.destLng) {
-      console.log('💰 [PRICING] Triggering fare calculation');
-      
+    if (
+      formData.vehicleType &&
+      formData.pickupLat &&
+      formData.pickupLng &&
+      formData.destLat &&
+      formData.destLng
+    ) {
+      console.log("💰 [PRICING] Triggering fare calculation");
+
       const calculateFare = async () => {
         setIsPriceCalculating(true); // CRITICAL: Show loading
         setCalculatedPrice(0); // Reset price while calculating
-        
+
         try {
           // Call backend to get traffic-aware pricing
-          const response = await fetch('/api/distance-matrix', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          const response = await fetch("/api/distance-matrix", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               origin: `${formData.pickupLat},${formData.pickupLng}`,
-              destination: `${formData.destLat},${formData.destLng}`
-            })
+              destination: `${formData.destLat},${formData.destLng}`,
+            }),
           });
-          
+
           let distanceKm, durationMinutes;
-          
+
           if (response.ok) {
             const data = await response.json();
-            
-            if (data.status === 'OK' && data.rows?.[0]?.elements?.[0]?.status === 'OK') {
+
+            if (
+              data.status === "OK" &&
+              data.rows?.[0]?.elements?.[0]?.status === "OK"
+            ) {
               const element = data.rows[0].elements[0];
               distanceKm = element.distance.value / 1000;
-              durationMinutes = (element.duration_in_traffic?.value || element.duration.value) / 60;
-              console.log(`✅ [PRICING] Google Maps data: ${distanceKm}km, ${durationMinutes}min`);
+              durationMinutes =
+                (element.duration_in_traffic?.value || element.duration.value) /
+                60;
+              console.log(
+                `✅ [PRICING] Google Maps data: ${distanceKm}km, ${durationMinutes}min`,
+              );
             } else {
-              throw new Error('Google API returned non-OK status');
+              throw new Error("Google API returned non-OK status");
             }
           } else {
-            throw new Error('Distance Matrix API unavailable');
+            throw new Error("Distance Matrix API unavailable");
           }
-          
+
           // Calculate fare using backend pricing engine
-          const fareResponse = await fetch('/api/calculate-fare', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          const fareResponse = await fetch("/api/calculate-fare", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               distanceKm,
               durationMinutes,
-              vehicleType: formData.vehicleType
-            })
+              vehicleType: formData.vehicleType,
+            }),
           });
-          
+
           if (fareResponse.ok) {
             const fareData = await fareResponse.json();
             console.log(`✅ [PRICING] Calculated fare:`, fareData);
-            
+
             setDistanceKm(fareData.distanceKm);
             setCalculatedPrice(fareData.finalPrice);
-            setFormData(prev => ({ ...prev, price: fareData.finalPrice.toString() }));
+            setFormData((prev) => ({
+              ...prev,
+              price: fareData.finalPrice.toString(),
+            }));
             setIsPriceCalculating(false); // CRITICAL: Calculation complete
           } else {
             setIsPriceCalculating(false);
           }
         } catch (error) {
-          console.warn('⚠️ [PRICING] Falling back to simple calculation:', error);
+          console.warn(
+            "⚠️ [PRICING] Falling back to simple calculation:",
+            error,
+          );
           setIsPriceCalculating(false);
-          
+
           // Fallback: Haversine distance + estimated duration
-          const { calculateHaversineDistance } = await import('@/services/MapService');
+          const { calculateHaversineDistance } = await import(
+            "@/services/MapService"
+          );
           const distance = calculateHaversineDistance(
             formData.pickupLat,
             formData.pickupLng,
             formData.destLat,
-            formData.destLng
+            formData.destLng,
           );
-          
+
           const estimatedDuration = (distance / 40) * 60; // 40 km/h avg speed
-          
+
           // Call backend for pricing
-          const fareResponse = await fetch('/api/calculate-fare', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          const fareResponse = await fetch("/api/calculate-fare", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               distanceKm: distance,
               durationMinutes: estimatedDuration,
-              vehicleType: formData.vehicleType
-            })
+              vehicleType: formData.vehicleType,
+            }),
           });
-          
+
           if (fareResponse.ok) {
             const fareData = await fareResponse.json();
             setDistanceKm(fareData.distanceKm);
             setCalculatedPrice(fareData.finalPrice);
-            setFormData(prev => ({ ...prev, price: fareData.finalPrice.toString() }));
+            setFormData((prev) => ({
+              ...prev,
+              price: fareData.finalPrice?.toString(),
+            }));
             setIsPriceCalculating(false); // CRITICAL: Done
           } else {
             setIsPriceCalculating(false);
           }
         }
       };
-      
+
       calculateFare();
     } else {
       // Reset if incomplete data
       setCalculatedPrice(0);
       setIsPriceCalculating(false);
     }
-  }, [formData.vehicleType, formData.pickupLat, formData.pickupLng, formData.destLat, formData.destLng]);
+  }, [
+    formData.vehicleType,
+    formData.pickupLat,
+    formData.pickupLng,
+    formData.destLat,
+    formData.destLng,
+  ]);
 
   const handleFinalOrder = async () => {
     if (!userProfile.id) {
-      toast({ title: "تنبيه", description: "يرجى تسجيل الدخول مجدداً لإتمام عملية الطلب." });
-      setIsLoggedIn(false); setAuthMode("login"); return;
+      toast({
+        title: "تنبيه",
+        description: "يرجى تسجيل الدخول مجدداً لإتمام عملية الطلب.",
+      });
+      setIsLoggedIn(false);
+      setAuthMode("login");
+      return;
     }
 
     // FEATURE 2: Use calculated price (already set by useEffect)
-    const numericPrice = calculatedPrice || parseFloat(formData.price.replace(/[^\d]/g, '')) || 0;
-    
-    if (paymentMethod === "wallet" && parseFloat(userProfile.wallet) < numericPrice) {
-      toast({ variant: "destructive", title: "رصيد غير كافٍ", description: "يرجى شحن محفظتك أو اختيار الدفع النقدي." });
+    const numericPrice =
+      calculatedPrice || parseFloat(formData.price?.replace(/[^\d]/g, "")) || 0;
+
+    if (
+      paymentMethod === "wallet" &&
+      parseFloat(userProfile.wallet) < numericPrice
+    ) {
+      toast({
+        variant: "destructive",
+        title: "رصيد غير كافٍ",
+        description: "يرجى شحن محفظتك أو اختيار الدفع النقدي.",
+      });
       return;
     }
 
@@ -1377,16 +1810,16 @@ export default function RequestFlow() {
         customerPhone: userProfile.phone || "0000",
         location: formData.location || "موقعي الحالي",
         destination: formData.destination || "وجهة غير محددة",
-        pickupLat: Number(formData.pickupLat), 
+        pickupLat: Number(formData.pickupLat),
         pickupLng: Number(formData.pickupLng),
         destLat: Number(formData.destLat),
         destLng: Number(formData.destLng),
         vehicleType: formData.vehicleType,
-        price: numericPrice, 
-        city: normalizeCity(formData.city), 
+        price: numericPrice,
+        city: normalizeCity(formData.city),
         paymentMethod: paymentMethod,
         status: "pending",
-        customerId: userProfile.id
+        customerId: userProfile.id,
       };
 
       const response = await fetch("/api/requests", {
@@ -1399,20 +1832,28 @@ export default function RequestFlow() {
       if (!response.ok) throw new Error(result.message || "فشل في إرسال الطلب");
 
       socket.emit("new_request_created", { ...orderPayload, id: result.id });
-      setActiveOrderId(result.id); 
+      setActiveOrderId(result.id);
       setViewState("success");
       setShowPriceConfirmation(false); // Reset for next time
-    } catch (err: any) { 
-      toast({ variant: "destructive", title: "خطأ في الطلب", description: err.message });
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "خطأ في الطلب",
+        description: err.message,
+      });
       setShowPriceConfirmation(false);
     }
   };
 
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-white flex flex-col p-6 relative overflow-hidden font-sans" dir="rtl">
-        <motion.button 
-          initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
+      <div
+        className="min-h-screen bg-white flex flex-col p-6 relative overflow-hidden font-sans"
+        dir="rtl"
+      >
+        <motion.button
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
           onClick={() => setLocation("/")}
           className="absolute top-8 right-8 z-[50] bg-white p-3 px-5 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-2 hover:bg-gray-50 active:scale-95 transition-all text-gray-900 font-black"
         >
@@ -1420,84 +1861,167 @@ export default function RequestFlow() {
           <span className="text-sm">الرئيسية</span>
         </motion.button>
 
-        <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} className="flex-1 flex flex-col justify-center w-full max-w-md mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex-1 flex flex-col justify-center w-full max-w-md mx-auto"
+        >
           <div className="text-center mb-10">
             <div className="w-20 h-20 bg-orange-500 rounded-[28px] flex items-center justify-center mx-auto mb-6 shadow-2xl rotate-3 shadow-orange-200">
               <Truck className="text-white w-10 h-10" />
             </div>
             <h2 className="text-4xl font-black text-gray-900 italic tracking-tighter">
-              {authMode === "choice" ? "أهلاً بك" : authMode === "signup" ? "كُن عضواً" : "عودة حميدة"}
+              {authMode === "choice"
+                ? "أهلاً بك"
+                : authMode === "signup"
+                  ? "كُن عضواً"
+                  : "عودة حميدة"}
             </h2>
-            <p className="text-gray-400 font-bold mt-2">تطبيق سطحة لخدمتك أينما كنت</p>
+            <p className="text-gray-400 font-bold mt-2">
+              تطبيق سطحة لخدمتك أينما كنت
+            </p>
           </div>
 
           {authMode === "choice" && (
             <div className="space-y-4">
-              <Button onClick={() => setAuthMode("signup")} className="w-full h-20 bg-orange-500 hover:bg-orange-600 rounded-[30px] text-2xl font-black shadow-xl shadow-orange-100 transition-all">أنا زبون جديد</Button>
-              <Button onClick={() => setAuthMode("login")} variant="ghost" className="w-full h-20 rounded-[30px] text-xl font-black bg-gray-50 text-gray-600 border-2 border-transparent hover:border-gray-200">تسجيل دخول</Button>
+              <Button
+                onClick={() => setAuthMode("signup")}
+                className="w-full h-20 bg-orange-500 hover:bg-orange-600 rounded-[30px] text-2xl font-black shadow-xl shadow-orange-100 transition-all"
+              >
+                أنا زبون جديد
+              </Button>
+              <Button
+                onClick={() => setAuthMode("login")}
+                variant="ghost"
+                className="w-full h-20 rounded-[30px] text-xl font-black bg-gray-50 text-gray-600 border-2 border-transparent hover:border-gray-200"
+              >
+                تسجيل دخول
+              </Button>
             </div>
           )}
 
           {(authMode === "signup" || authMode === "login") && (
-            <form onSubmit={authMode === "signup" ? handleSignUp : handleLogin} className="space-y-4">
+            <form
+              onSubmit={authMode === "signup" ? handleSignUp : handleLogin}
+              className="space-y-4"
+            >
               {authMode === "signup" && (
                 <div className="flex flex-col items-center mb-6">
                   <div className="relative group">
-                    <div 
+                    <div
                       onClick={() => {
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.accept = 'image/*';
+                        const input = document.createElement("input");
+                        input.type = "file";
+                        input.accept = "image/*";
                         input.onchange = (e) => handleImageChange(e as any);
                         input.click();
                       }}
                       className="w-24 h-24 bg-gray-50 rounded-[35px] border-4 border-white flex items-center justify-center overflow-hidden shadow-2xl ring-2 ring-orange-100 cursor-pointer hover:ring-orange-300 transition-all"
                     >
-                      {userProfile.image ? <img src={userProfile.image} className="w-full h-full object-cover" /> : <User className="text-orange-200 w-10 h-10" />}
+                      {userProfile.image ? (
+                        <img
+                          src={userProfile.image}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <User className="text-orange-200 w-10 h-10" />
+                      )}
                     </div>
                     <div className="absolute -bottom-1 -right-1 bg-black text-white p-2 rounded-xl shadow-lg border-2 border-white pointer-events-none">
                       <Camera className="w-4 h-4" />
                     </div>
                   </div>
-                  <p className="text-xs text-gray-400 mt-2 font-bold">اضغط لتحميل صورة</p>
+                  <p className="text-xs text-gray-400 mt-2 font-bold">
+                    اضغط لتحميل صورة
+                  </p>
                 </div>
               )}
               <div className="bg-white rounded-[35px] p-6 shadow-[0_10_40px_rgba(0,0,0,0.04)] border border-gray-50 space-y-4">
                 {authMode === "signup" && (
                   <div className="bg-gray-50 rounded-2xl p-3 px-5 flex items-center justify-between group focus-within:ring-2 focus-within:ring-orange-500 transition-all">
                     <div className="flex-1">
-                      <p className="text-[10px] font-black text-gray-400 mb-1">الاسم الكامل</p>
-                      <input required placeholder="أدخل اسمك" className="bg-transparent border-none outline-none w-full font-black text-gray-700 text-right" value={userProfile.username} onChange={e => setUserProfile({...userProfile, username: e.target.value})} />
+                      <p className="text-[10px] font-black text-gray-400 mb-1">
+                        الاسم الكامل
+                      </p>
+                      <input
+                        required
+                        placeholder="أدخل اسمك"
+                        className="bg-transparent border-none outline-none w-full font-black text-gray-700 text-right"
+                        value={userProfile.username}
+                        onChange={(e) =>
+                          setUserProfile({
+                            ...userProfile,
+                            username: e.target.value,
+                          })
+                        }
+                      />
                     </div>
                     <User className="text-orange-500 w-5 h-5 mr-3" />
                   </div>
                 )}
                 <div className="bg-gray-50 rounded-2xl p-3 px-5 flex items-center justify-between focus-within:ring-2 focus-within:ring-orange-500 transition-all">
                   <div className="flex-1">
-                    <p className="text-[10px] font-black text-gray-400 mb-1">رقم الهاتف</p>
-                    <input required type="tel" placeholder="07XXXXXXXXX" className="bg-transparent border-none outline-none w-full font-black text-gray-700 text-right" value={userProfile.phone} onChange={e => setUserProfile({...userProfile, phone: e.target.value})} />
+                    <p className="text-[10px] font-black text-gray-400 mb-1">
+                      رقم الهاتف
+                    </p>
+                    <input
+                      required
+                      type="tel"
+                      placeholder="07XXXXXXXXX"
+                      className="bg-transparent border-none outline-none w-full font-black text-gray-700 text-right"
+                      value={userProfile.phone}
+                      onChange={(e) =>
+                        setUserProfile({
+                          ...userProfile,
+                          phone: e.target.value,
+                        })
+                      }
+                    />
                   </div>
                   <Phone className="text-orange-500 w-5 h-5 mr-3" />
                 </div>
                 <div className="bg-gray-50 rounded-2xl p-3 px-5 flex items-center justify-between focus-within:ring-2 focus-within:ring-orange-500 transition-all">
                   <div className="flex-1">
-                    <p className="text-[10px] font-black text-gray-400 mb-1">كلمة السر</p>
-                    <input required type="password" placeholder="••••••••" className="bg-transparent border-none outline-none w-full font-black text-gray-700 text-right" value={userProfile.password} onChange={e => setUserProfile({...userProfile, password: e.target.value})} />
+                    <p className="text-[10px] font-black text-gray-400 mb-1">
+                      كلمة السر
+                    </p>
+                    <input
+                      required
+                      type="password"
+                      placeholder="••••••••"
+                      className="bg-transparent border-none outline-none w-full font-black text-gray-700 text-right"
+                      value={userProfile.password}
+                      onChange={(e) =>
+                        setUserProfile({
+                          ...userProfile,
+                          password: e.target.value,
+                        })
+                      }
+                    />
                   </div>
                   <Lock className="text-orange-500 w-5 h-5 mr-3" />
                 </div>
               </div>
-              <Button type="submit" className="w-full h-18 bg-gray-900 hover:bg-black text-white rounded-[25px] font-black text-xl mt-4 shadow-2xl transition-all active:scale-95">
+              <Button
+                type="submit"
+                className="w-full h-18 bg-gray-900 hover:bg-black text-white rounded-[25px] font-black text-xl mt-4 shadow-2xl transition-all active:scale-95"
+              >
                 {authMode === "signup" ? "تأكيد وإنشاء" : "دخول مباشر"}
               </Button>
-              <button type="button" onClick={() => setAuthMode("choice")} className="w-full text-center text-gray-400 font-black text-xs mt-4 hover:text-orange-500">إلغاء والعودة</button>
+              <button
+                type="button"
+                onClick={() => setAuthMode("choice")}
+                className="w-full text-center text-gray-400 font-black text-xs mt-4 hover:text-orange-500"
+              >
+                إلغاء والعودة
+              </button>
             </form>
           )}
         </motion.div>
         <div className="mt-auto text-center pb-4">
-           <p className="text-[10px] font-black text-gray-300 flex items-center justify-center gap-2 tracking-widest uppercase">
-             <ShieldCheck className="w-3 h-3" /> نظام حماية البيانات 2026
-           </p>
+          <p className="text-[10px] font-black text-gray-300 flex items-center justify-center gap-2 tracking-widest uppercase">
+            <ShieldCheck className="w-3 h-3" /> نظام حماية البيانات 2026
+          </p>
         </div>
       </div>
     );
@@ -1506,9 +2030,12 @@ export default function RequestFlow() {
   // CRITICAL: Loading state during recovery check - DO NOT render booking view until check completes
   if (isCheckingRecovery) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-8" dir="rtl">
-        <motion.div 
-          initial={{ scale: 0.8, opacity: 0 }} 
+      <div
+        className="min-h-screen bg-white flex flex-col items-center justify-center p-8"
+        dir="rtl"
+      >
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           className="space-y-6 text-center"
         >
@@ -1518,82 +2045,166 @@ export default function RequestFlow() {
             </div>
           </div>
           <div className="space-y-2">
-            <h2 className="text-2xl font-black text-gray-900">جاري التحقق...</h2>
-            <p className="text-gray-400 font-bold text-sm">يرجى الانتظار بينما نتحقق من طلباتك النشطة</p>
+            <h2 className="text-2xl font-black text-gray-900">
+              جاري التحقق...
+            </h2>
+            <p className="text-gray-400 font-bold text-sm">
+              يرجى الانتظار بينما نتحقق من طلباتك النشطة
+            </p>
           </div>
         </motion.div>
       </div>
     );
   }
 
-  if (viewState === "success") return (
-    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-8 text-center" dir="rtl">
-      <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="space-y-8">
-        <div className="w-32 h-32 bg-orange-500 rounded-[40px] flex items-center justify-center mx-auto shadow-2xl rotate-12"><Check className="w-16 h-16 text-white" /></div>
-        <div className="space-y-2">
-            <h2 className="text-4xl font-black text-gray-900 italic tracking-tighter">تم الإرسال!</h2>
-            <p className="text-gray-400 font-bold">طلبك الآن متاح لجميع السائقين القريبين</p>
-            <p className="text-orange-500 font-black">طريقة الدفع: {paymentMethod === "wallet" ? "المحفظة" : "نقدي"}</p>
-        </div>
-        <Button onClick={() => setViewState("tracking")} className="w-full h-16 bg-black text-white rounded-[24px] font-black text-xl shadow-2xl">تتبع الرحلة</Button>
-      </motion.div>
-    </div>
-  );
+  if (viewState === "success")
+    return (
+      <div
+        className="min-h-screen bg-white flex flex-col items-center justify-center p-8 text-center"
+        dir="rtl"
+      >
+        <motion.div
+          initial={{ scale: 0.5, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="space-y-8"
+        >
+          <div className="w-32 h-32 bg-orange-500 rounded-[40px] flex items-center justify-center mx-auto shadow-2xl rotate-12">
+            <Check className="w-16 h-16 text-white" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-4xl font-black text-gray-900 italic tracking-tighter">
+              تم الإرسال!
+            </h2>
+            <p className="text-gray-400 font-bold">
+              طلبك الآن متاح لجميع السائقين القريبين
+            </p>
+            <p className="text-orange-500 font-black">
+              طريقة الدفع: {paymentMethod === "wallet" ? "المحفظة" : "نقدي"}
+            </p>
+          </div>
+          <Button
+            onClick={() => setViewState("tracking")}
+            className="w-full h-16 bg-black text-white rounded-[24px] font-black text-xl shadow-2xl"
+          >
+            تتبع الرحلة
+          </Button>
+        </motion.div>
+      </div>
+    );
 
-  if (viewState === "tracking") return (
-    <div className="h-screen w-full bg-slate-50 flex flex-col relative" dir="rtl">
+  if (viewState === "tracking")
+    return (
+      <div
+        className="h-screen w-full bg-slate-50 flex flex-col relative"
+        dir="rtl"
+      >
         <div className="absolute inset-0 z-0">
-            <MapContainer center={[formData.pickupLat, formData.pickupLng]} zoom={15} style={{ height: "100%", width: "100%" }} zoomControl={false}>
-                <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="&copy; Google Maps" detectRetina={true} tileSize={256}/>
-                {driverLocation && <Marker position={driverLocation} icon={getOrangeArrowIcon(driverHeading)} />}
-                <Marker position={[formData.pickupLat, formData.pickupLng]} />
-                {/* خط الملاحة بين السائق والزبون باستخدام الطرق الفعلية */}
-                {driverLocation && (
-                  <RoutingPolyline 
-                    start={driverLocation}
-                    end={[formData.pickupLat, formData.pickupLng]} 
-                    color="#f97316" 
-                    weight={4} 
-                    opacity={0.7}
-                  />
-                )}
-                <FlyToMarker center={driverLocation || [formData.pickupLat, formData.pickupLng]} shouldFly={!!driverLocation} />
-            </MapContainer>
+          <MapContainer
+            center={[formData.pickupLat, formData.pickupLng]}
+            zoom={15}
+            style={{ height: "100%", width: "100%" }}
+            zoomControl={false}
+          >
+            <TileLayer
+              url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+              attribution="&copy; Google Maps"
+              detectRetina={true}
+              tileSize={256}
+            />
+            {driverLocation && (
+              <Marker
+                position={driverLocation}
+                icon={getOrangeArrowIcon(driverHeading)}
+              />
+            )}
+            <Marker 
+              position={[formData.pickupLat, formData.pickupLng]}
+              draggable={true}
+              eventHandlers={{
+                dragend: (e) => handleMarkerDragEnd(e, 'pickup'),
+              }}
+            />
+            {/* خط الملاحة بين السائق واx�زبون باستخدام الطرق الفعلية */}
+            {driverLocation && (
+              <RoutingPolyline
+                start={driverLocation}
+                end={[formData.pickupLat, formData.pickupLng]}
+                color="#f97316"
+                weight={4}
+                opacity={0.7}
+              />
+            )}
+            <FlyToMarker
+              center={
+                driverLocation || [formData.pickupLat, formData.pickupLng]
+              }
+              shouldFly={!!driverLocation}
+            />
+          </MapContainer>
         </div>
         <header className="absolute top-6 inset-x-6 z-[1000] flex justify-between items-center">
-            <div className="w-12"></div>
-            <div className="bg-orange-500 text-white px-4 py-2 rounded-2xl shadow-xl font-black italic flex items-center gap-2"><Navigation className="w-4 h-4 animate-pulse" /> مباشر</div>
+          <div className="w-12"></div>
+          <div className="bg-orange-500 text-white px-4 py-2 rounded-2xl shadow-xl font-black italic flex items-center gap-2">
+            <Navigation className="w-4 h-4 animate-pulse" /> مباشر
+          </div>
         </header>
 
         <AnimatePresence>
           {isChatOpen && (
-            <motion.div 
-              initial={{ y: "100%" }} 
-              animate={{ y: 0 }} 
-              exit={{ y: "100%" }} 
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
               className="fixed inset-0 z-[9997] bg-white flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 border-b flex justify-between items-center bg-white shadow-sm">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center font-black text-orange-600 overflow-hidden">
-                    {driverInfo?.avatarUrl ? <img src={driverInfo.avatarUrl} className="w-full h-full object-cover" /> : <User />}
+                    {driverInfo?.avatarUrl ? (
+                      <img
+                        src={driverInfo.avatarUrl}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <User />
+                    )}
                   </div>
                   <div>
-                    <h4 className="font-black text-gray-800">{driverInfo?.name || "الكابتن"}</h4>
-                    <p className="text-[10px] text-gray-400 font-bold">متصل الآن</p>
+                    <h4 className="font-black text-gray-800">
+                      {driverInfo?.name || "الكابتن"}
+                    </h4>
+                    <p className="text-[10px] text-gray-400 font-bold">
+                      متصل الآن
+                    </p>
                   </div>
                 </div>
-                <Button variant="ghost" onClick={() => setIsChatOpen(false)} className="rounded-2xl"><X className="w-6 h-6"/></Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => setIsChatOpen(false)}
+                  className="rounded-2xl"
+                >
+                  <X className="w-6 h-6" />
+                </Button>
               </div>
 
               <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
                 {messages.map((msg, index) => (
-                  <div key={msg.id || index} className={`flex ${msg.senderType === 'customer' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`p-4 rounded-2xl max-w-[80%] font-bold shadow-sm ${msg.senderType === 'customer' ? 'bg-orange-500 text-white rounded-br-none' : 'bg-white text-gray-800 rounded-bl-none'}`}>
+                  <div
+                    key={msg.id || index}
+                    className={`flex ${msg.senderType === "customer" ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`p-4 rounded-2xl max-w-[80%] font-bold shadow-sm ${msg.senderType === "customer" ? "bg-orange-500 text-white rounded-br-none" : "bg-white text-gray-800 rounded-bl-none"}`}
+                    >
                       {msg.content || msg.text}
-                      <p className={`text-[8px] mt-1 opacity-60 ${msg.senderType === 'customer' ? 'text-right' : 'text-left'}`}>
-                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      <p
+                        className={`text-[8px] mt-1 opacity-60 ${msg.senderType === "customer" ? "text-right" : "text-left"}`}
+                      >
+                        {new Date(msg.timestamp).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
                       </p>
                     </div>
                   </div>
@@ -1602,26 +2213,31 @@ export default function RequestFlow() {
               </div>
 
               <div className="p-4 border-t flex gap-2 bg-white pb-10">
-                <input 
-                  type="text" 
-                  value={chatMessage} 
-                  onChange={(e) => setChatMessage(e.target.value)} 
-                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                  placeholder="اكتب رسالة للكابتن..." 
+                <input
+                  type="text"
+                  value={chatMessage}
+                  onChange={(e) => setChatMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
+                  placeholder="اكتب رسالة للكابتن..."
                   className="flex-1 bg-gray-100 rounded-2xl px-5 text-right font-bold outline-none border-2 border-transparent focus:border-orange-200 transition-all"
                 />
-                <Button onClick={handleSendMessage} className="bg-orange-500 rounded-2xl w-14 h-14 shadow-lg shadow-orange-100"><Send className="w-5 h-5 rotate-180"/></Button>
+                <Button
+                  onClick={handleSendMessage}
+                  className="bg-orange-500 rounded-2xl w-14 h-14 shadow-lg shadow-orange-100"
+                >
+                  <Send className="w-5 h-5 rotate-180" />
+                </Button>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
         {/* PROFESSIONAL DRAGGABLE BOTTOM SHEET - SATHA STYLE (Smart Handle) */}
-        <motion.div 
+        <motion.div
           drag="y"
           dragConstraints={{ top: 0, bottom: 0 }}
           dragElastic={0.1}
-          animate={{ 
+          animate={{
             y: (() => {
               // Searching state: Fixed at comfortable viewing height with cancel button visible
               if (requestStatus === "pending" || !driverInfo) {
@@ -1629,14 +2245,14 @@ export default function RequestFlow() {
               }
               // Driver found: Toggle between minimized and expanded
               return isSheetExpanded ? 0 : "calc(100% - 120px)"; // Expanded: Full | Minimized: 120px peek
-            })()
+            })(),
           }}
           onDragEnd={(e, info) => {
             // Smart snapping based on drag direction
             if (info.offset.y > 100) {
               setIsSheetExpanded(false); // Drag down = minimize
             } else if (info.offset.y < -50) {
-              setIsSheetExpanded(true);  // Drag up = expand
+              setIsSheetExpanded(true); // Drag up = expand
             }
           }}
           transition={{ type: "spring", damping: 30, stiffness: 300 }}
@@ -1644,24 +2260,32 @@ export default function RequestFlow() {
         >
           <div className="bg-white rounded-t-[45px] shadow-[0_-20px_60px_rgba(0,0,0,0.15)] pointer-events-auto">
             {/* SMART HANDLE - Click to toggle, Drag to move (Replicated from DriverDashboard) */}
-            <div 
+            <div
               className="w-full flex flex-col items-center py-5 cursor-grab active:cursor-grabbing"
               onClick={() => setIsSheetExpanded(!isSheetExpanded)}
-              style={{ touchAction: 'none' }}
+              style={{ touchAction: "none" }}
             >
               <div className="w-16 h-2 bg-gray-300 rounded-full mb-2" />
-              <GripHorizontal className={`w-6 h-6 transition-all duration-300 ${isSheetExpanded ? 'text-gray-300' : 'text-orange-500 rotate-180'}`} />
+              <GripHorizontal
+                className={`w-6 h-6 transition-all duration-300 ${isSheetExpanded ? "text-gray-300" : "text-orange-500 rotate-180"}`}
+              />
             </div>
 
             <div className="px-6 pb-16 space-y-5">
               {/* STATUS HEADER */}
               <div className="text-center pt-2">
                 <div className="flex items-center justify-center gap-2 mb-1">
-                  {requestStatus === "pending" && <Loader2 className="w-5 h-5 animate-spin text-orange-500" />}
+                  {requestStatus === "pending" && (
+                    <Loader2 className="w-5 h-5 animate-spin text-orange-500" />
+                  )}
                   <h3 className="text-lg font-black text-gray-800">
-                    {requestStatus === "pending" ? "جاري البحث..." : 
-                     requestStatus === "accepted" ? "الكابتن قادم" : 
-                     requestStatus === "arrived" ? "وصل الكابتن" : "في الطريق"}
+                    {requestStatus === "pending"
+                      ? "جاري البحث..."
+                      : requestStatus === "accepted"
+                        ? "الكابتن قادم"
+                        : requestStatus === "arrived"
+                          ? "وصل الكابتن"
+                          : "في الطريق"}
                   </h3>
                   {/* Cancel button during pending */}
                   {requestStatus === "pending" && (
@@ -1671,7 +2295,7 @@ export default function RequestFlow() {
                         setShowCancelModal(true);
                       }}
                       className="text-red-500 text-xs font-bold underline px-2"
-                      style={{ pointerEvents: 'auto' }}
+                      style={{ pointerEvents: "auto" }}
                     >
                       إلغاء
                     </button>
@@ -1680,7 +2304,9 @@ export default function RequestFlow() {
                 {requestStatus !== "pending" && (
                   <div className="inline-flex items-center gap-1 bg-orange-50 px-3 py-1 rounded-full">
                     <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
-                    <span className="text-[11px] font-black text-orange-600">مباشر</span>
+                    <span className="text-[11px] font-black text-orange-600">
+                      مباشر
+                    </span>
                   </div>
                 )}
               </div>
@@ -1693,7 +2319,9 @@ export default function RequestFlow() {
                     <h2 className="text-xl font-black text-gray-800">
                       {driverInfo.vehicleType || "سطحة هيدروليك"}
                     </h2>
-                    <p className="text-[10px] text-gray-500 font-bold">نوع السطحة</p>
+                    <p className="text-[10px] text-gray-500 font-bold">
+                      نوع السطحة
+                    </p>
                   </div>
 
                   {/* DRIVER INFO ROW */}
@@ -1702,10 +2330,13 @@ export default function RequestFlow() {
                     <div className="relative shrink-0">
                       <div className="w-20 h-20 rounded-full border-4 border-orange-500 overflow-hidden shadow-lg bg-white">
                         {driverInfo.avatarUrl ? (
-                          <img 
-                            src={driverInfo.avatarUrl} 
-                            className="w-full h-full object-cover" 
-                            onError={(e) => { (e.target as any).src = "https://cdn-icons-png.flaticon.com/512/147/147144.png" }} 
+                          <img
+                            src={driverInfo.avatarUrl}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as any).src =
+                                "https://cdn-icons-png.flaticon.com/512/147/147144.png";
+                            }}
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center bg-orange-100">
@@ -1721,7 +2352,9 @@ export default function RequestFlow() {
                       <h3 className="text-lg font-black text-gray-900 leading-tight mb-0.5">
                         {driverInfo.name || "كابتن سطحة"}
                       </h3>
-                      <p className="text-xs text-gray-500 font-bold mb-2">سائق معتمد</p>
+                      <p className="text-xs text-gray-500 font-bold mb-2">
+                        سائق معتمد
+                      </p>
                       <div className="flex items-center gap-1 text-orange-500 text-[11px] font-black bg-orange-50 w-fit px-3 py-1 rounded-full">
                         <Star className="w-3 h-3 fill-orange-500" />
                         <span>4.9</span>
@@ -1733,12 +2366,14 @@ export default function RequestFlow() {
                     <div className="shrink-0">
                       <div className="bg-white border-4 border-gray-800 rounded-xl px-3 py-2 shadow-md">
                         <div className="text-center">
-                          <div className="text-[10px] font-bold text-gray-600 mb-0.5">IRAQ</div>
+                          <div className="text-[10px] font-bold text-gray-600 mb-0.5">
+                            IRAQ
+                          </div>
                           <div className="text-xl font-black text-gray-900 leading-none tracking-wider">
-                            {driverInfo.plateNumber?.split('-')[1] || "123"}
+                            {driverInfo.plateNumber?.split("-")[1] || "123"}
                           </div>
                           <div className="text-[10px] font-bold text-gray-600 mt-0.5">
-                            {driverInfo.plateNumber?.split('-')[0] || "بغداد"}
+                            {driverInfo.plateNumber?.split("-")[0] || "بغداد"}
                           </div>
                         </div>
                       </div>
@@ -1747,32 +2382,44 @@ export default function RequestFlow() {
 
                   {/* ACTION BUTTONS */}
                   <div className="flex gap-3 pt-2">
-                    <button 
-                      onClick={() => { setIsChatOpen(true); setUnreadCount(0); }}
+                    <button
+                      onClick={() => {
+                        setIsChatOpen(true);
+                        setUnreadCount(0);
+                      }}
                       className="flex-1 bg-gradient-to-r from-green-500 to-green-600 rounded-[20px] h-14 shadow-lg shadow-green-200 flex items-center justify-center gap-2 active:scale-95 transition-transform relative"
                     >
                       <MessageSquare className="w-5 h-5 text-white" />
-                      <span className="text-white font-black text-sm">مراسلة</span>
+                      <span className="text-white font-black text-sm">
+                        مراسلة
+                      </span>
                       {unreadCount > 0 && (
                         <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] min-w-[22px] h-5 rounded-full flex items-center justify-center border-2 border-white font-black animate-bounce">
                           {unreadCount}
                         </span>
                       )}
                     </button>
-                    
-                    <a 
+
+                    <a
                       href={`tel:${driverInfo.phone}`}
                       className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 rounded-[20px] h-14 shadow-lg shadow-blue-200 flex items-center justify-center gap-2 active:scale-95 transition-transform"
                     >
                       <Phone className="w-5 h-5 text-white" />
-                      <span className="text-white font-black text-sm">اتصال</span>
+                      <span className="text-white font-black text-sm">
+                        اتصال
+                      </span>
                     </a>
                   </div>
 
                   {/* PHONE NUMBER DISPLAY */}
                   <div className="text-center bg-gray-50 py-3 rounded-[20px]">
-                    <p className="text-[11px] text-gray-500 font-bold mb-1">رقم الهاتف</p>
-                    <p className="text-lg font-black text-gray-800 tracking-wide" dir="ltr">
+                    <p className="text-[11px] text-gray-500 font-bold mb-1">
+                      رقم الهاتف
+                    </p>
+                    <p
+                      className="text-lg font-black text-gray-800 tracking-wide"
+                      dir="ltr"
+                    >
                       {driverInfo.phone || "07XXXXXXXXX"}
                     </p>
                   </div>
@@ -1787,7 +2434,7 @@ export default function RequestFlow() {
                           setShowCancelModal(true);
                         }}
                         className="w-full py-3 text-center text-red-500 hover:text-red-600 font-bold text-sm transition-colors rounded-[16px] hover:bg-red-50"
-                        style={{ pointerEvents: 'auto' }}
+                        style={{ pointerEvents: "auto" }}
                       >
                         إلغاء الرحلة
                       </button>
@@ -1801,22 +2448,25 @@ export default function RequestFlow() {
 
         {/* Professional Cancel Confirmation Modal - INSIDE TRACKING VIEW */}
         {showCancelModal && (
-          <div 
+          <div
             className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6"
-            style={{ zIndex: 99999, pointerEvents: 'auto' }}
+            style={{ zIndex: 99999, pointerEvents: "auto" }}
           >
             <div
               className="bg-white rounded-[40px] shadow-2xl max-w-md w-full p-8 relative overflow-hidden"
-              style={{ pointerEvents: 'auto' }}
+              style={{ pointerEvents: "auto" }}
             >
               <div className="absolute inset-0 bg-gradient-to-br from-red-50 to-orange-50 opacity-50" />
               <div className="relative z-10">
                 <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-200">
                   <X className="w-10 h-10 text-white" />
                 </div>
-                <h3 className="text-2xl font-black text-center text-gray-900 mb-3">إلغاء الرحلة؟</h3>
+                <h3 className="text-2xl font-black text-center text-gray-900 mb-3">
+                  إلغاء الرحلة؟
+                </h3>
                 <p className="text-center text-gray-600 font-bold text-sm leading-relaxed mb-8">
-                  هل أنت متأكد من إلغاء هذا الطلب؟ سيتم حذف الطلب نهائياً ولن يتم إشعار السائق.
+                  هل أنت متأكد من إلغاء هذا الطلب؟ سيتم حذف الطلب نهائياً ولن
+                  يتم إشعار السائق.
                 </p>
                 <div className="flex gap-3">
                   <button
@@ -1842,99 +2492,224 @@ export default function RequestFlow() {
             </div>
           </div>
         )}
-    </div>
-  );
+      </div>
+    );
 
   return (
-    <div className="h-screen w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative" dir="rtl">
+    <div
+      className="h-screen w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative"
+      dir="rtl"
+    >
       <header className="absolute top-0 inset-x-0 z-[4000] p-6 flex flex-col gap-3">
-          <div className="flex items-start gap-3 w-full">
-              <Sheet>
-                <SheetTrigger asChild><Button variant="secondary" size="icon" className="rounded-2xl shadow-xl bg-white text-black w-14 h-14 border-none hover:bg-gray-50"><Menu className="w-6 h-6" /></Button></SheetTrigger>
-                <SheetContent side="right" className="w-[85%] p-0 z-[9000] border-none text-right flex flex-col bg-white">
-                    <div className="p-8 pt-20 bg-orange-500 text-right rounded-bl-[60px] shadow-2xl relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none"><Truck className="w-64 h-64 -rotate-12 absolute -right-10 -bottom-10" /></div>
-                        <div className="relative group w-24 h-24 mb-6">
-                            <div className="w-24 h-24 bg-white rounded-[32px] overflow-hidden shadow-2xl border-4 border-white/20 flex items-center justify-center">
-                                {userProfile.image ? <img src={userProfile.image} alt="Profile" className="w-full h-full object-cover" /> : <span className="text-4xl">👤</span>}
-                            </div>
-                            <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-2 -right-2 bg-black text-white p-2 rounded-xl shadow-lg active:scale-90 transition-transform"><Camera className="w-4 h-4" /></button>
-                            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageChange} />
-                        </div>
-                        <h2 className="text-2xl font-black text-white leading-tight">{userProfile.username || "مستخدم جديد"}</h2>
-                        <p className="text-white/80 text-sm font-bold mt-1 italic">{userProfile.address || formData.city}</p>
-                    </div>
-
-                    <div className="p-6 pt-10 flex-1 overflow-y-auto">
-                      <SidebarLink onClick={() => !isWalletOpen && setIsHistoryOpen(true)} icon={<History className="w-5 h-5"/>} label="سجل الرحلات" extra={`${userProfile.trips} رحلة`} />
-                      <SidebarLink onClick={() => !isHistoryOpen && setIsWalletOpen(true)} icon={<Wallet className="w-5 h-5"/>} label="المحفظة" extra={`${userProfile.wallet} د.ع`} color="text-green-600" extraColor="bg-green-50 text-green-700" />
-                      <SidebarLink icon={<Star className="w-5 h-5"/>} label="التقييم" extra="4.9 ★" color="text-yellow-500" extraColor="bg-yellow-50 text-yellow-700" />
-                      <SidebarLink icon={<Phone className="w-5 h-5"/>} label="الدعم الفني" color="text-blue-600" />
-                    </div>
-
-                    <div className="p-8 border-t border-gray-50">
-                        <Button variant="ghost" className="w-full justify-start gap-4 text-red-500 font-black h-14 rounded-2xl hover:bg-red-50 transition-all" onClick={handleLogout}>
-                            <div className="bg-red-50 p-2.5 rounded-xl"><LogOut className="w-5 h-5" /></div>
-                            <span>تسجيل الخروج</span>
-                        </Button>
-                    </div>
-                </SheetContent>
-              </Sheet>
-
-              <div onClick={() => !isWalletOpen && !isHistoryOpen && step !== "vehicle" && setIsSearchOpen(true)} className="flex-1 bg-white shadow-2xl rounded-[28px] p-4 flex flex-col justify-center border border-white cursor-pointer transition-transform active:scale-95">
-                <StepIndicator step={step} />
-                <div className="flex items-center justify-between">
-                    <span className="text-sm font-black text-gray-800 truncate">
-                        {step === "pickup" ? (formData.location || "حدد موقع التحميل") : 
-                         step === "dropoff" ? (formData.destination || "حدد وجهة التوصيل") : "اختر نوع السطحة"}
-                    </span>
-                    <Search className="w-5 h-5 text-orange-500" />
+        <div className="flex items-start gap-3 w-full">
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button
+                variant="secondary"
+                size="icon"
+                className="rounded-2xl shadow-xl bg-white text-black w-14 h-14 border-none hover:bg-gray-50"
+              >
+                <Menu className="w-6 h-6" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent
+              side="right"
+              className="w-[85%] p-0 z-[9000] border-none text-right flex flex-col bg-white"
+            >
+              <div className="p-8 pt-20 bg-orange-500 text-right rounded-bl-[60px] shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
+                  <Truck className="w-64 h-64 -rotate-12 absolute -right-10 -bottom-10" />
                 </div>
+                <div className="relative group w-24 h-24 mb-6">
+                  <div className="w-24 h-24 bg-white rounded-[32px] overflow-hidden shadow-2xl border-4 border-white/20 flex items-center justify-center">
+                    {userProfile.image ? (
+                      <img
+                        src={userProfile.image}
+                        alt="Profile"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-4xl">👤</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="absolute -bottom-2 -right-2 bg-black text-white p-2 rounded-xl shadow-lg active:scale-90 transition-transform"
+                  >
+                    <Camera className="w-4 h-4" />
+                  </button>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                  />
+                </div>
+                <h2 className="text-2xl font-black text-white leading-tight">
+                  {userProfile.username || "مستخدم جديد"}
+                </h2>
+                <p className="text-white/80 text-sm font-bold mt-1 italic">
+                  {userProfile.address || formData.city}
+                </p>
               </div>
+
+              <div className="p-6 pt-10 flex-1 overflow-y-auto">
+                <SidebarLink
+                  onClick={() => !isWalletOpen && setIsHistoryOpen(true)}
+                  icon={<History className="w-5 h-5" />}
+                  label="سجل الرحلات"
+                  extra={`${userProfile.trips} رحلة`}
+                />
+                <SidebarLink
+                  onClick={() => !isHistoryOpen && setIsWalletOpen(true)}
+                  icon={<Wallet className="w-5 h-5" />}
+                  label="المحفظة"
+                  extra={`${userProfile.wallet} د.ع`}
+                  color="text-green-600"
+                  extraColor="bg-green-50 text-green-700"
+                />
+                <SidebarLink
+                  icon={<Star className="w-5 h-5" />}
+                  label="التقييم"
+                  extra="4.9 ★"
+                  color="text-yellow-500"
+                  extraColor="bg-yellow-50 text-yellow-700"
+                />
+                <SidebarLink
+                  icon={<Phone className="w-5 h-5" />}
+                  label="الدعم الفني"
+                  color="text-blue-600"
+                />
+              </div>
+
+              <div className="p-8 border-t border-gray-50">
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start gap-4 text-red-500 font-black h-14 rounded-2xl hover:bg-red-50 transition-all"
+                  onClick={handleLogout}
+                >
+                  <div className="bg-red-50 p-2.5 rounded-xl">
+                    <LogOut className="w-5 h-5" />
+                  </div>
+                  <span>تسجيل الخروج</span>
+                </Button>
+              </div>
+            </SheetContent>
+          </Sheet>
+
+          <div
+            onClick={() =>
+              !isWalletOpen &&
+              !isHistoryOpen &&
+              step !== "vehicle" &&
+              setIsSearchOpen(true)
+            }
+            className="flex-1 bg-white shadow-2xl rounded-[28px] p-4 flex flex-col justify-center border border-white cursor-pointer transition-transform active:scale-95"
+          >
+            <StepIndicator step={step} />
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-black text-gray-800 truncate">
+                {step === "pickup"
+                  ? formData.location || "حدد موقع التحميل"
+                  : step === "dropoff"
+                    ? formData.destination || "حدد وجهة التوصيل"
+                    : "اختر نوع السطحة"}
+              </span>
+              <Search className="w-5 h-5 text-orange-500" />
+            </div>
           </div>
+        </div>
       </header>
 
       <div className="flex-1 relative z-0 flex flex-col">
         {(step === "pickup" || step === "dropoff") && (
           <div className="flex-1 relative">
-            <MapContainer center={[formData.pickupLat, formData.pickupLng]} zoom={15} style={{ height: "100%", width: "100%" }} zoomControl={false}>
-              <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="&copy; Google Maps" detectRetina={true} tileSize={256}/>
-              <FlyToMarker center={step === "pickup" ? [formData.pickupLat, formData.pickupLng] : [formData.destLat, formData.destLng]} shouldFly={shouldFly} />
-              <MapEventsHandler onMove={(center) => {
-                 setShouldFly(false);
-                 if (step === "pickup") {
-                   setFormData(prev => ({...prev, pickupLat: center.lat, pickupLng: center.lng}));
-                   reverseGeocode(center.lat, center.lng); 
-                 } else {
-                   setFormData(prev => ({...prev, destLat: center.lat, destLng: center.lng}));
-                   reverseGeocode(center.lat, center.lng);
-                 }
-              }} />
+            <MapContainer
+              center={[formData.pickupLat, formData.pickupLng]}
+              zoom={15}
+              style={{ height: "100%", width: "100%" }}
+              zoomControl={false}
+            >
+              <TileLayer
+                url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+                attribution="&copy; Google Maps"
+                detectRetina={true}
+                tileSize={256}
+              />
+              <FlyToMarker
+                center={
+                  step === "pickup"
+                    ? [formData.pickupLat, formData.pickupLng]
+                    : [formData.destLat, formData.destLng]
+                }
+                shouldFly={shouldFly}
+              />
+              <MapEventsHandler
+                onMove={(center) => {
+                  setShouldFly(false);
+                  if (step === "pickup") {
+                    setFormData((prev) => ({
+                      ...prev,
+                      pickupLat: center.lat,
+                      pickupLng: center.lng,
+                    }));
+                    reverseGeocode(center.lat, center.lng);
+                  } else {
+                    setFormData((prev) => ({
+                      ...prev,
+                      destLat: center.lat,
+                      destLng: center.lng,
+                    }));
+                    reverseGeocode(center.lat, center.lng);
+                  }
+                }}
+              />
             </MapContainer>
-            <Button onClick={handleGetCurrentLocation} className="absolute bottom-40 right-6 z-[1000] w-14 h-14 rounded-2xl bg-white text-orange-500 shadow-2xl border-none active:scale-90 transition-transform"><Target className="w-7 h-7" /></Button>
+            <Button
+              onClick={handleGetCurrentLocation}
+              className="absolute bottom-40 right-6 z-[1000] w-14 h-14 rounded-2xl bg-white text-orange-500 shadow-2xl border-none active:scale-90 transition-transform"
+            >
+              <Target className="w-7 h-7" />
+            </Button>
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[1000]">
-                <div className="flex flex-col items-center -mt-12">
-                    <div className={`px-5 py-2 rounded-2xl text-white text-xs font-black mb-2 shadow-2xl ${step === "pickup" ? "bg-orange-500" : "bg-black"}`}>{step === "pickup" ? "تحميل من هنا" : "توصيل لهنا"}</div>
-                    <div className={`w-1.5 h-8 ${step === "pickup" ? "bg-orange-500" : "bg-black"} rounded-full shadow-lg`}></div>
+              <div className="flex flex-col items-center -mt-12">
+                <div
+                  className={`px-5 py-2 rounded-2xl text-white text-xs font-black mb-2 shadow-2xl ${step === "pickup" ? "bg-orange-500" : "bg-black"}`}
+                >
+                  {step === "pickup" ? "تحميل من هنا" : "توصيل لهنا"}
                 </div>
+                <div
+                  className={`w-1.5 h-8 ${step === "pickup" ? "bg-orange-500" : "bg-black"} rounded-full shadow-lg`}
+                ></div>
+              </div>
             </div>
           </div>
         )}
 
         {step === "vehicle" && (
-          <div className="absolute inset-0 z-10 bg-gray-50 overflow-y-auto px-4 pt-28 scroll-smooth" style={{ height: '100%' }}>
-            <h3 className="font-black text-gray-800 text-lg pr-2 mb-4">اختر السطحة المناسبة</h3>
+          <div
+            className="absolute inset-0 z-10 bg-gray-50 overflow-y-auto px-4 pt-28 scroll-smooth"
+            style={{ height: "100%" }}
+          >
+            <h3 className="font-black text-gray-800 text-lg pr-2 mb-4">
+              اختر السطحة المناسبة
+            </h3>
             <div className="space-y-4">
               {VEHICLE_OPTIONS.map((opt) => (
-                <div 
-                  key={opt.id} 
-                  onClick={() => setFormData(p => ({...p, vehicleType: opt.id}))}
-                  className={`p-5 rounded-[28px] border-2 transition-all flex items-center justify-between ${formData.vehicleType === opt.id ? 'bg-orange-500 border-orange-500 text-white shadow-lg scale-[1.01]' : 'bg-white border-gray-100 shadow-sm hover:border-orange-200'}`}
+                <div
+                  key={opt.id}
+                  onClick={() =>
+                    setFormData((p) => ({ ...p, vehicleType: opt.id }))
+                  }
+                  className={`p-5 rounded-[28px] border-2 transition-all flex items-center justify-between ${formData.vehicleType === opt.id ? "bg-orange-500 border-orange-500 text-white shadow-lg scale-[1.01]" : "bg-white border-gray-100 shadow-sm hover:border-orange-200"}`}
                 >
                   {/* CRITICAL FIX #2: Clean text-only design, NO ICONS */}
                   <div className="flex-1">
                     <h4 className="font-black text-xl">{opt.label}</h4>
-                    <p className="text-sm font-bold opacity-70 mt-1">{opt.description}</p>
+                    <p className="text-sm font-bold opacity-70 mt-1">
+                      {opt.description}
+                    </p>
                   </div>
                   {formData.vehicleType === opt.id && (
                     <div className="bg-white/20 p-2 rounded-xl">
@@ -1948,28 +2723,45 @@ export default function RequestFlow() {
               {isPriceCalculating && (
                 <div className="flex items-center justify-center gap-3 p-4 mt-4">
                   <Loader2 className="w-5 h-5 text-orange-500 animate-spin" />
-                  <span className="text-sm font-bold text-gray-600">جاري حساب السعر...</span>
+                  <span className="text-sm font-bold text-gray-600">
+                    جاري حساب السعر...
+                  </span>
                 </div>
               )}
-              
+
               {/* Simple price display (non-intrusive) */}
               {!isPriceCalculating && calculatedPrice > 0 && (
                 <div className="flex items-center justify-between px-4 py-3 mt-4 bg-orange-50 rounded-[20px] border border-orange-200">
-                  <span className="text-sm font-bold text-gray-700">السعر المقدّر:</span>
-                  <span className="text-2xl font-black text-orange-600">{calculatedPrice.toLocaleString()} <span className="text-sm">د.ع</span></span>
+                  <span className="text-sm font-bold text-gray-700">
+                    السعر المقدّر:
+                  </span>
+                  <span className="text-2xl font-black text-orange-600">
+                    {calculatedPrice.toLocaleString()}{" "}
+                    <span className="text-sm">د.ع</span>
+                  </span>
                 </div>
               )}
 
               <div className="bg-white p-5 rounded-[30px] shadow-sm border border-gray-100 space-y-3 mt-4">
-                  <h4 className="font-black text-gray-800 text-xs">طريقة الدفع</h4>
-                  <div className="flex gap-2">
-                      <button type="button" onClick={() => setPaymentMethod("cash")} className={`flex-1 h-12 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 ${paymentMethod === "cash" ? "bg-black text-white shadow-md" : "bg-gray-50 text-gray-400"}`}>
-                          <RotateCcw className="w-4 h-4" /> كاش
-                      </button>
-                      <button type="button" onClick={() => setPaymentMethod("wallet")} className={`flex-1 h-12 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 ${paymentMethod === "wallet" ? "bg-orange-500 text-white shadow-md" : "bg-gray-50 text-gray-400"}`}>
-                          <Wallet className="w-4 h-4" /> المحفظة
-                      </button>
-                  </div>
+                <h4 className="font-black text-gray-800 text-xs">
+                  طريقة الدفع
+                </h4>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("cash")}
+                    className={`flex-1 h-12 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 ${paymentMethod === "cash" ? "bg-black text-white shadow-md" : "bg-gray-50 text-gray-400"}`}
+                  >
+                    <RotateCcw className="w-4 h-4" /> كاش
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("wallet")}
+                    className={`flex-1 h-12 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 ${paymentMethod === "wallet" ? "bg-orange-500 text-white shadow-md" : "bg-gray-50 text-gray-400"}`}
+                  >
+                    <Wallet className="w-4 h-4" /> المحفظة
+                  </button>
+                </div>
               </div>
             </div>
             <div className="h-[220px] w-full"></div>
@@ -1978,200 +2770,320 @@ export default function RequestFlow() {
       </div>
 
       <footer className="fixed bottom-0 inset-x-0 bg-white p-8 pb-10 rounded-t-[45px] shadow-[0_-15px_40px_rgba(0,0,0,0.1)] z-[5000] border-t border-gray-100">
-          <Button onClick={() => { if (step === "pickup") setStep("dropoff"); else if (step === "dropoff") setStep("vehicle"); else handleFinalOrder(); }}
-            disabled={step === "vehicle" && !formData.vehicleType} className={`w-full h-18 rounded-[28px] font-black text-xl transition-all shadow-xl ${step === "vehicle" ? "bg-orange-500 text-white" : "bg-black text-white"}`}>
-            {step === "vehicle" ? (showPriceConfirmation ? `تأكيد الطلب - ${calculatedPrice.toLocaleString()} د.ع` : "متابعة") : "تأكيد الموقع"}
-          </Button>
-          {step !== "pickup" && (
-            <button onClick={() => {
+        <Button
+          onClick={() => {
+            if (step === "pickup") setStep("dropoff");
+            else if (step === "dropoff") setStep("vehicle");
+            else handleFinalOrder();
+          }}
+          disabled={step === "vehicle" && !formData.vehicleType}
+          className={`w-full h-18 rounded-[28px] font-black text-xl transition-all shadow-xl ${step === "vehicle" ? "bg-orange-500 text-white" : "bg-black text-white"}`}
+        >
+          {step === "vehicle"
+            ? showPriceConfirmation
+              ? `تأكيد الطلب - ${calculatedPrice?.toLocaleString()} د.ع`
+              : "متابعة"
+            : "تأكيد الموقع"}
+        </Button>
+        {step !== "pickup" && (
+          <button
+            onClick={() => {
               if (showPriceConfirmation) {
                 setShowPriceConfirmation(false);
               } else {
                 setStep(step === "dropoff" ? "pickup" : "dropoff");
               }
-            }} className="w-full mt-5 text-gray-400 font-black text-xs flex items-center justify-center gap-2 hover:text-orange-500 transition-colors">
-              <RotateCcw className="w-3 h-3" /> {showPriceConfirmation ? "تعديل الطلب" : "رجوع للخطوة السابقة"}
-            </button>
-          )}
+            }}
+            className="w-full mt-5 text-gray-400 font-black text-xs flex items-center justify-center gap-2 hover:text-orange-500 transition-colors"
+          >
+            <RotateCcw className="w-3 h-3" />{" "}
+            {showPriceConfirmation ? "تعديل الطلب" : "رجوع للخطوة السابقة"}
+          </button>
+        )}
       </footer>
 
       <AnimatePresence>
-          {isSearchOpen && (
-              <motion.div 
-                initial={{ y: "100%" }} 
-                animate={{ y: 0 }} 
-                exit={{ y: "100%" }} 
-                className="fixed inset-0 z-[9996] bg-white p-6 flex flex-col"
-                onClick={(e) => e.stopPropagation()}
+        {isSearchOpen && (
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            className="fixed inset-0 z-[9996] bg-white p-6 flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-4 mb-8">
+              <Button
+                variant="ghost"
+                onClick={() => setIsSearchOpen(false)}
+                className="rounded-2xl bg-gray-50"
               >
-                <div className="flex items-center gap-4 mb-8">
-                    <Button variant="ghost" onClick={() => setIsSearchOpen(false)} className="rounded-2xl bg-gray-50"><X className="w-6 h-6" /></Button>
-                    <h3 className="font-black text-xl">البحث عن موقع</h3>
+                <X className="w-6 h-6" />
+              </Button>
+              <h3 className="font-black text-xl">البحث عن موقع</h3>
+            </div>
+            <div className="bg-gray-50 rounded-[28px] p-4 border border-gray-100 flex items-center gap-3 mb-6">
+              <Search className="w-6 h-6 text-gray-400" />
+              <input
+                autoFocus
+                placeholder="ادخل اسم المنطقة..."
+                className="bg-transparent border-none outline-none w-full font-bold text-right"
+                onChange={(e) => searchLocation(e.target.value)}
+              />
+              {isSearching && (
+                <Loader2 className="animate-spin text-orange-500" />
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-4">
+              {searchResults.map((res, i) => (
+                <div
+                  key={i}
+                  onClick={() => handleSelectResult(res)}
+                  className="flex items-center gap-4 p-4 hover:bg-orange-50 rounded-2xl cursor-pointer"
+                >
+                  <div className="bg-white p-2 rounded-xl shadow-sm">
+                    <MapPin className="w-5 h-5 text-orange-500" />
+                  </div>
+                  <div className="flex-1 truncate text-right">
+                    <h4 className="font-bold text-gray-700 truncate">
+                      {res.display_name.split(",")[0]}
+                    </h4>
+                    <p className="text-[10px] text-gray-400 truncate">
+                      {res.display_name}
+                    </p>
+                  </div>
                 </div>
-                <div className="bg-gray-50 rounded-[28px] p-4 border border-gray-100 flex items-center gap-3 mb-6">
-                    <Search className="w-6 h-6 text-gray-400" />
-                    <input autoFocus placeholder="ادخل اسم المنطقة..." className="bg-transparent border-none outline-none w-full font-bold text-right" onChange={(e) => searchLocation(e.target.value)} />
-                    {isSearching && <Loader2 className="animate-spin text-orange-500" />}
-                </div>
-                <div className="flex-1 overflow-y-auto space-y-4">
-                    {searchResults.map((res, i) => (
-                        <div key={i} onClick={() => handleSelectResult(res)} className="flex items-center gap-4 p-4 hover:bg-orange-50 rounded-2xl cursor-pointer">
-                            <div className="bg-white p-2 rounded-xl shadow-sm"><MapPin className="w-5 h-5 text-orange-500" /></div>
-                            <div className="flex-1 truncate text-right">
-                                <h4 className="font-bold text-gray-700 truncate">{res.display_name.split(',')[0]}</h4>
-                                <p className="text-[10px] text-gray-400 truncate">{res.display_name}</p>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-              </motion.div>
-          )}
+              ))}
+            </div>
+          </motion.div>
+        )}
 
-          {isHistoryOpen && (
-            <motion.div 
-              initial={{ x: "100%" }} 
-              animate={{ x: 0 }} 
-              exit={{ x: "100%" }} 
-              className="fixed inset-0 z-[9998] bg-white flex flex-col"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="p-6 border-b flex justify-between items-center">
-                <h3 className="font-black text-xl">سجل الرحلات</h3>
-                <Button variant="ghost" onClick={() => setIsHistoryOpen(false)} className="rounded-2xl"><X /></Button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
-                {tripsHistory.length > 0 ? tripsHistory.map((trip) => (
-                  <div key={trip.id} className="bg-white p-5 rounded-[30px] shadow-sm border border-gray-100">
+        {isHistoryOpen && (
+          <motion.div
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            className="fixed inset-0 z-[9998] bg-white flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 border-b flex justify-between items-center">
+              <h3 className="font-black text-xl">سجل الرحلات</h3>
+              <Button
+                variant="ghost"
+                onClick={() => setIsHistoryOpen(false)}
+                className="rounded-2xl"
+              >
+                <X />
+              </Button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+              {tripsHistory.length > 0 ? (
+                tripsHistory.map((trip) => (
+                  <div
+                    key={trip.id}
+                    className="bg-white p-5 rounded-[30px] shadow-sm border border-gray-100"
+                  >
                     <div className="flex justify-between mb-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                        <span>رقم الرحلة #{trip.id}</span>
-                        <span className="text-green-600 bg-green-50 px-2 py-1 rounded-lg">مكتملة</span>
+                      <span>رقم الرحلة #{trip.id}</span>
+                      <span className="text-green-600 bg-green-50 px-2 py-1 rounded-lg">
+                        مكتملة
+                      </span>
                     </div>
                     <div className="space-y-3 relative">
-                        <div className="flex items-center gap-3 font-bold text-sm"><MapPin className="text-orange-500 w-4 h-4"/> {trip.pickupLocation}</div>
-                        <div className="flex items-center gap-3 font-bold text-sm"><Target className="text-black w-4 h-4"/> {trip.destination}</div>
+                      <div className="flex items-center gap-3 font-bold text-sm">
+                        <MapPin className="text-orange-500 w-4 h-4" />{" "}
+                        {trip.pickupLocation}
+                      </div>
+                      <div className="flex items-center gap-3 font-bold text-sm">
+                        <Target className="text-black w-4 h-4" />{" "}
+                        {trip.destination}
+                      </div>
                     </div>
                     <div className="mt-4 pt-4 border-t flex justify-between items-center font-black">
-                        <span className="text-orange-600">{trip.price} د.ع</span>
-                        <span className="text-gray-300 text-[10px]">{new Date(trip.createdAt).toLocaleDateString()}</span>
+                      <span className="text-orange-600">{trip.price} د.ع</span>
+                      <span className="text-gray-300 text-[10px]">
+                        {new Date(trip.createdAt).toLocaleDateString()}
+                      </span>
                     </div>
                   </div>
-                )) : <div className="h-full flex flex-col items-center justify-center opacity-30 italic font-black">لا توجد رحلات سابقة</div>}
-              </div>
-            </motion.div>
-          )}
+                ))
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center opacity-30 italic font-black">
+                  لا توجد رحلات سابقة
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
 
-          {isWalletOpen && (
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }} 
-              animate={{ opacity: 1, y: 0 }} 
-              className="fixed inset-0 z-[10000] bg-white flex flex-col font-sans text-right"
-              dir="rtl"
-              style={{ pointerEvents: 'auto' }}
+        {isWalletOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="fixed inset-0 z-[10000] bg-white flex flex-col font-sans text-right"
+            dir="rtl"
+            style={{ pointerEvents: "auto" }}
+          >
+            <div
+              className="p-6 flex items-center justify-between border-b border-gray-50 bg-white"
+              style={{ zIndex: 10001 }}
             >
-              <div className="p-6 flex items-center justify-between border-b border-gray-50 bg-white" style={{ zIndex: 10001 }}>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  onClick={() => setIsWalletOpen(false)}
-                  className="rounded-full bg-gray-100 h-10 w-10"
-                  style={{ pointerEvents: 'auto' }}
-                >
-                  <X className="w-6 h-6 text-black" />
-                </Button>
-                <h2 className="text-xl font-black text-gray-800 italic">المحفظة</h2>
-                <div className="w-10"></div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsWalletOpen(false)}
+                className="rounded-full bg-gray-100 h-10 w-10"
+                style={{ pointerEvents: "auto" }}
+              >
+                <X className="w-6 h-6 text-black" />
+              </Button>
+              <h2 className="text-xl font-black text-gray-800 italic">
+                المحفظة
+              </h2>
+              <div className="w-10"></div>
+            </div>
+
+            <div
+              className="flex-1 overflow-y-auto px-6 py-8 space-y-8"
+              style={{ pointerEvents: "auto" }}
+            >
+              <div className="bg-[#FF7A00] p-7 rounded-[30px] text-white shadow-lg relative overflow-hidden">
+                <p className="text-white/80 text-xs font-bold mb-1">
+                  رصيدك الحالي المتاح
+                </p>
+                <div className="flex items-baseline gap-2">
+                  <h3 className="text-4xl font-black tracking-tight">
+                    {Number(userProfile.wallet || 0).toLocaleString()}
+                  </h3>
+                  <span className="text-lg font-bold opacity-90">د.ع</span>
+                </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8" style={{ pointerEvents: 'auto' }}>
-                <div className="bg-[#FF7A00] p-7 rounded-[30px] text-white shadow-lg relative overflow-hidden">
-                  <p className="text-white/80 text-xs font-bold mb-1">رصيدك الحالي المتاح</p>
-                  <div className="flex items-baseline gap-2">
-                    <h3 className="text-4xl font-black tracking-tight">{Number(userProfile.wallet || 0).toLocaleString()}</h3>
-                    <span className="text-lg font-bold opacity-90">د.ع</span>
+              <div className="space-y-3">
+                <label className="text-gray-500 text-sm font-bold block px-2">
+                  مبلغ الشحن المطلوب
+                </label>
+                <input
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  type="number"
+                  placeholder="أدخل المبلغ..."
+                  className="w-full h-16 bg-gray-50 border-2 border-gray-100 rounded-[22px] px-6 text-xl font-black text-gray-800 focus:border-orange-500 focus:outline-none transition-all"
+                  style={{ pointerEvents: "auto", userSelect: "auto" }}
+                />
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="text-gray-800 font-black text-lg pr-2">
+                  وسائل الشحن
+                </h4>
+                <button
+                  onClick={() => setWalletPaymentMethod("zain")}
+                  className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${walletPaymentMethod === "zain" ? "border-orange-500 bg-orange-50/20" : "border-gray-100"}`}
+                  style={{ pointerEvents: "auto" }}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center p-1">
+                      <img
+                        src="/zain-logo.png"
+                        className="w-full h-full object-contain"
+                        alt="Zain"
+                      />
+                    </div>
+                    <span className="font-bold text-gray-700 text-lg">
+                      زين كاش
+                    </span>
                   </div>
-                </div>
-
-                <div className="space-y-3">
-                  <label className="text-gray-500 text-sm font-bold block px-2">مبلغ الشحن المطلوب</label>
-                  <input 
-                    value={depositAmount}
-                    onChange={(e) => setDepositAmount(e.target.value)}
-                    type="number" 
-                    placeholder="أدخل المبلغ..."
-                    className="w-full h-16 bg-gray-50 border-2 border-gray-100 rounded-[22px] px-6 text-xl font-black text-gray-800 focus:border-orange-500 focus:outline-none transition-all"
-                    style={{ pointerEvents: 'auto', userSelect: 'auto' }}
-                  />
-                </div>
-
-                <div className="space-y-4">
-                  <h4 className="text-gray-800 font-black text-lg pr-2">وسائل الشحن</h4>
-                  <button 
-                    onClick={() => setWalletPaymentMethod('zain')}
-                    className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${walletPaymentMethod === 'zain' ? 'border-orange-500 bg-orange-50/20' : 'border-gray-100'}`}
-                    style={{ pointerEvents: 'auto' }}
+                  <div
+                    className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${walletPaymentMethod === "zain" ? "border-orange-500" : "border-gray-200"}`}
                   >
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center p-1">
-                        <img src="/zain-logo.png" className="w-full h-full object-contain" alt="Zain" />
-                      </div>
-                      <span className="font-bold text-gray-700 text-lg">زين كاش</span>
-                    </div>
-                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${walletPaymentMethod === 'zain' ? 'border-orange-500' : 'border-gray-200'}`}>
-                      {walletPaymentMethod === 'zain' && <div className="w-3 h-3 bg-orange-500 rounded-full"></div>}
-                    </div>
-                  </button>
+                    {walletPaymentMethod === "zain" && (
+                      <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
+                    )}
+                  </div>
+                </button>
 
-                  <button 
-                    onClick={() => setWalletPaymentMethod('card')}
-                    className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${walletPaymentMethod === 'card' ? 'border-blue-500 bg-blue-50/20' : 'border-gray-100'}`}
-                    style={{ pointerEvents: 'auto' }}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white">
-                        <CreditCard className="w-6 h-6" />
-                      </div>
-                      <span className="font-bold text-gray-700 text-lg">ماستر كارد / فيزا</span>
-                    </div>
-                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${walletPaymentMethod === 'card' ? 'border-blue-500' : 'border-gray-200'}`}>
-                      {walletPaymentMethod === 'card' && <div className="w-3 h-3 bg-blue-500 rounded-full"></div>}
-                    </div>
-                  </button>
-                </div>
-
-                <div className="pt-4 pb-20">
-                  <h4 className="text-gray-800 font-black text-lg pr-2 mb-4">سجل العمليات</h4>
-                  {tripsHistory && tripsHistory.length > 0 ? (
-                    tripsHistory.map((trip) => (
-                      <div key={trip.id} className="flex items-center justify-between py-5 border-b border-gray-50 px-2">
-                        <div className="text-right">
-                          <p className="font-bold text-gray-800">رحلة مكتملة</p>
-                          <p className="text-[11px] text-gray-400 font-bold">{new Date(trip.createdAt).toLocaleDateString('ar-EG')}</p>
-                        </div>
-                        <div className="text-lg font-black text-red-600">
-                          -{trip.price?.toLocaleString() || 0} د.ع
-                        </div>
-                      </div>
-                    ))
-                  ) : <div className="text-center py-10 opacity-30 italic font-bold">لا توجد عمليات مسجلة</div>}
-                </div>
-              </div>
-
-              <div className="p-6 bg-white border-t border-gray-50 pb-8" style={{ pointerEvents: 'auto' }}>
-                <Button 
-                  disabled={isDepositing || !walletPaymentMethod}
-                  onClick={() => handleCustomerDeposit(walletPaymentMethod === 'card' ? 'master' : 'zain')}
-                  className="w-full h-16 rounded-[22px] bg-orange-500 text-white text-xl font-black shadow-lg hover:bg-orange-600 disabled:opacity-50"
-                  style={{ pointerEvents: 'auto' }}
+                <button
+                  onClick={() => setWalletPaymentMethod("card")}
+                  className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${walletPaymentMethod === "card" ? "border-blue-500 bg-blue-50/20" : "border-gray-100"}`}
+                  style={{ pointerEvents: "auto" }}
                 >
-                  {isDepositing ? <Loader2 className="w-6 h-6 animate-spin" /> : "تأكيد عملية الشحن"}
-                </Button>
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white">
+                      <CreditCard className="w-6 h-6" />
+                    </div>
+                    <span className="font-bold text-gray-700 text-lg">
+                      ماستر كارد / فيزا
+                    </span>
+                  </div>
+                  <div
+                    className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${walletPaymentMethod === "card" ? "border-blue-500" : "border-gray-200"}`}
+                  >
+                    {walletPaymentMethod === "card" && (
+                      <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                    )}
+                  </div>
+                </button>
               </div>
-            </motion.div>
-          )}
+
+              <div className="pt-4 pb-20">
+                <h4 className="text-gray-800 font-black text-lg pr-2 mb-4">
+                  سجل العمليات
+                </h4>
+                {tripsHistory && tripsHistory.length > 0 ? (
+                  tripsHistory.map((trip) => (
+                    <div
+                      key={trip.id}
+                      className="flex items-center justify-between py-5 border-b border-gray-50 px-2"
+                    >
+                      <div className="text-right">
+                        <p className="font-bold text-gray-800">رحلة مكتملة</p>
+                        <p className="text-[11px] text-gray-400 font-bold">
+                          {new Date(trip.createdAt).toLocaleDateString("ar-EG")}
+                        </p>
+                      </div>
+                      <div className="text-lg font-black text-red-600">
+                        -{trip.price?.toLocaleString() || 0} د.ع
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-10 opacity-30 italic font-bold">
+                    لا توجد عمليات مسجلة
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div
+              className="p-6 bg-white border-t border-gray-50 pb-8"
+              style={{ pointerEvents: "auto" }}
+            >
+              <Button
+                disabled={isDepositing || !walletPaymentMethod}
+                onClick={() =>
+                  handleCustomerDeposit(
+                    walletPaymentMethod === "card" ? "master" : "zain",
+                  )
+                }
+                className="w-full h-16 rounded-[22px] bg-orange-500 text-white text-xl font-black shadow-lg hover:bg-orange-600 disabled:opacity-50"
+                style={{ pointerEvents: "auto" }}
+              >
+                {isDepositing ? (
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                ) : (
+                  "تأكيد عملية الشحن"
+                )}
+              </Button>
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
-      
+
       {/* CRITICAL FIX #2: Professional Price Confirmation Modal */}
-      <Dialog open={showPriceConfirmation} onOpenChange={setShowPriceConfirmation}>
+      <Dialog
+        open={showPriceConfirmation}
+        onOpenChange={setShowPriceConfirmation}
+      >
         <DialogContent className="max-w-md mx-auto bg-white rounded-[30px] p-0 border-none shadow-2xl">
           <div className="p-8 text-center space-y-6">
             {/* Header */}
@@ -2180,36 +3092,52 @@ export default function RequestFlow() {
                 <DollarSign className="w-12 h-12 text-orange-600" />
               </div>
             </div>
-            
+
             {/* Title */}
             <div>
-              <h3 className="text-2xl font-black text-gray-800 mb-2">تأكيد الطلب</h3>
-              <p className="text-sm text-gray-500 font-bold">يرجى مراجعة التفاصيل قبل التأكيد</p>
+              <h3 className="text-2xl font-black text-gray-800 mb-2">
+                تأكيد الطلب
+              </h3>
+              <p className="text-sm text-gray-500 font-bold">
+                يرجى مراجعة التفاصيل قبل التأكيد
+              </p>
             </div>
-            
+
             {/* Price Details */}
             <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-6 rounded-[25px] space-y-3">
               <div className="flex justify-between items-center pb-3 border-b border-orange-200">
                 <span className="text-gray-600 font-bold">نوع السيارة:</span>
-                <span className="text-gray-800 font-black">{formData.vehicleType}</span>
+                <span className="text-gray-800 font-black">
+                  {formData.vehicleType}
+                </span>
               </div>
               <div className="flex justify-between items-center pb-3 border-b border-orange-200">
                 <span className="text-gray-600 font-bold">المسافة:</span>
-                <span className="text-gray-800 font-black">{distanceKm.toFixed(1)} كم</span>
+                <span className="text-gray-800 font-black">
+                  {distanceKm.toFixed(1)} كم
+                </span>
               </div>
               <div className="flex justify-between items-center pb-3 border-b border-orange-200">
                 <span className="text-gray-600 font-bold">طريقة الدفع:</span>
-                <span className="text-gray-800 font-black">{paymentMethod === "wallet" ? "محفظة" : "نقدي"}</span>
+                <span className="text-gray-800 font-black">
+                  {paymentMethod === "wallet" ? "محفظة" : "نقدي"}
+                </span>
               </div>
               <div className="flex justify-between items-center pt-3">
-                <span className="text-orange-600 font-black text-lg">السعر الإجمالي:</span>
+                <span className="text-orange-600 font-black text-lg">
+                  السعر الإجمالي:
+                </span>
                 <div className="text-right">
-                  <span className="text-4xl font-black text-orange-600">{calculatedPrice.toLocaleString()}</span>
-                  <span className="text-sm text-orange-500 font-bold mr-1">د.ع</span>
+                  <span className="text-4xl font-black text-orange-600">
+                    {calculatedPrice?.toLocaleString()}
+                  </span>
+                  <span className="text-sm text-orange-500 font-bold mr-1">
+                    د.ع
+                  </span>
                 </div>
               </div>
             </div>
-            
+
             {/* Actions */}
             <div className="flex gap-3 pt-4">
               <Button
