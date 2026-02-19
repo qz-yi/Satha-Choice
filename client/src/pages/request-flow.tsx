@@ -1701,11 +1701,18 @@ export default function RequestFlow() {
             const fareData = await fareResponse.json();
             console.log(`✅ [PRICING] Calculated fare:`, fareData);
 
-            setDistanceKm(fareData.distanceKm);
-            setCalculatedPrice(fareData.finalPrice);
+            const safePrice = typeof fareData.finalPrice === 'number' && !isNaN(fareData.finalPrice) && fareData.finalPrice > 0
+              ? fareData.finalPrice
+              : 0;
+            const safeDistance = typeof fareData.distanceKm === 'number' && !isNaN(fareData.distanceKm)
+              ? fareData.distanceKm
+              : 0;
+
+            setDistanceKm(safeDistance);
+            setCalculatedPrice(safePrice);
             setFormData((prev) => ({
               ...prev,
-              price: fareData.finalPrice.toString(),
+              price: safePrice.toString(),
             }));
             setIsPriceCalculating(false); // CRITICAL: Calculation complete
           } else {
@@ -1744,11 +1751,17 @@ export default function RequestFlow() {
 
           if (fareResponse.ok) {
             const fareData = await fareResponse.json();
-            setDistanceKm(fareData.distanceKm);
-            setCalculatedPrice(fareData.finalPrice);
+            const safePrice = typeof fareData.finalPrice === 'number' && !isNaN(fareData.finalPrice) && fareData.finalPrice > 0
+              ? fareData.finalPrice
+              : 0;
+            const safeDistance = typeof fareData.distanceKm === 'number' && !isNaN(fareData.distanceKm)
+              ? fareData.distanceKm
+              : 0;
+            setDistanceKm(safeDistance);
+            setCalculatedPrice(safePrice);
             setFormData((prev) => ({
               ...prev,
-              price: fareData.finalPrice?.toString(),
+              price: safePrice?.toString(),
             }));
             setIsPriceCalculating(false); // CRITICAL: Done
           } else {

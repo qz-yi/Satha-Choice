@@ -354,8 +354,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       surgeMultiplier = surgeMultiplier || 1.0;
       console.log(`📊 [CALCULATE FARE] Surge multiplier: ${surgeMultiplier}x`);
       
-      // CRITICAL FIX #3: Get admin-configured vehicle pricing
-      const vehicleConfig = PricingConfig.getVehiclePricing(vehicleType);
+      // CRITICAL FIX #3: Get admin-configured vehicle pricing (MUST await - it's async!)
+      const vehicleConfig = await PricingConfig.getVehiclePricing(vehicleType);
       console.log(`📊 [CALCULATE FARE] Vehicle config for ${vehicleType}:`, vehicleConfig);
       
       // Calculate fare
@@ -368,8 +368,17 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       );
       
       console.log('✅ [CALCULATE FARE] Result:', pricingResult);
+
+      // Safety net: ensure finalPrice is always a valid integer, never NaN/null/undefined
+      const safeResult = {
+        ...pricingResult,
+        finalPrice: (Number.isFinite(pricingResult.finalPrice) && pricingResult.finalPrice > 0)
+          ? pricingResult.finalPrice
+          : (vehicleConfig.minimumFare || 25000),
+        distanceKm: Number.isFinite(pricingResult.distanceKm) ? pricingResult.distanceKm : parseFloat(distanceKm),
+      };
       
-      res.json(pricingResult);
+      res.json(safeResult);
     } catch (error: any) {
       console.error('❌ [CALCULATE FARE] Error:', error);
       res.status(500).json({ message: 'فشل في حساب السعر: ' + error.message });
