@@ -43,3 +43,6 @@ waitForPort = 5000
 
 [userenv.development]
 NODE_ENV = "development"
+
+[agent]
+expertMode = true
