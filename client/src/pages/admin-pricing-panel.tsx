@@ -255,7 +255,7 @@ export default function AdminPricingPanel() {
 
       {/* Vehicle Pricing Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {vehiclePricing.map((vehicle, index) => {
+        {Array.isArray(vehiclePricing) && vehiclePricing.length > 0 ? (vehiclePricing.map((vehicle, index) => {
           const icons: Record<string, any> = {
             "سطحة": Truck,
             "سحب": Truck,
