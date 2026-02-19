@@ -64,25 +64,40 @@ export function calculateDynamicFare(
   console.log(`💰 [PRICING ENGINE] Calculating for ${vehicleType}`);
   console.log(`📏 [PRICING ENGINE] Distance: ${distanceKm}km, Duration: ${durationMinutes}min`);
   
-  // Get vehicle configuration
-  const config = customConfig || DEFAULT_VEHICLE_CONFIGS[vehicleType] || DEFAULT_VEHICLE_CONFIGS["سطحة"];
-  
-  console.log(`⚙️ [PRICING ENGINE] Config:`, config);
-  
-  // CRITICAL FIX #3: Calculate base fare
+  // Get vehicle configuration — always resolve to a plain object, never a Promise
+  const rawConfig = (customConfig && typeof customConfig === 'object' && !('then' in customConfig))
+    ? customConfig
+    : (DEFAULT_VEHICLE_CONFIGS[vehicleType] || DEFAULT_VEHICLE_CONFIGS["سطحة"]);
+
+  // Force all values to numbers — guards against DB returning strings or undefined
+  const config = {
+    vehicleType: rawConfig.vehicleType || vehicleType,
+    baseFare:    Number(rawConfig.baseFare)    || 25000,
+    kmRate:      Number(rawConfig.kmRate)      || 1250,
+    minuteRate:  Number(rawConfig.minuteRate)  || 500,
+    minimumFare: Number(rawConfig.minimumFare) || 35000,
+  };
+
+  console.log(`⚙️ [PRICING ENGINE] Config (coerced):`, config);
+
+  // Force inputs to numbers as well
+  const safeDistanceKm    = Math.max(0, Number(distanceKm)    || 0);
+  const safeDurationMin   = Math.max(0, Number(durationMinutes) || 0);
+
+  // Calculate base fare
   const baseFare = config.baseFare;
-  
-  // CRITICAL FIX #3: Calculate distance fare (THE 7KM RULE - NOT 10KM!)
-  const baseDistanceCoverage = 7; // CORRECTED: First 7km included in base fare
-  const additionalKm = Math.max(0, distanceKm - baseDistanceCoverage);
+
+  // Distance fare — first 7 km included in base fare
+  const baseDistanceCoverage = 7;
+  const additionalKm = Math.max(0, safeDistanceKm - baseDistanceCoverage);
   const distanceFare = additionalKm * config.kmRate;
-  
+
   console.log(`📊 [PRICING ENGINE] Base covers first ${baseDistanceCoverage}km | Additional: ${additionalKm.toFixed(2)}km`);
-  
-  // Calculate time fare
-  const timeFare = durationMinutes * config.minuteRate;
-  
-  // Calculate subtotal
+
+  // Time fare
+  const timeFare = safeDurationMin * config.minuteRate;
+
+  // Subtotal
   let subtotal = baseFare + distanceFare + timeFare;
   
   console.log(`💵 [PRICING ENGINE] Base: ${baseFare}, Distance: ${distanceFare}, Time: ${timeFare}`);
@@ -108,15 +123,20 @@ export function calculateDynamicFare(
   
   console.log(`✅ [PRICING ENGINE] Final price: ${finalPrice} IQD`);
   
+  // Final safety: guarantee all returned values are valid numbers
+  const safeFinalPrice = Number.isFinite(finalPrice) && finalPrice > 0
+    ? Math.round(finalPrice)
+    : config.minimumFare;
+
   return {
     baseFare,
     distanceFare,
     timeFare,
     subtotal: baseFare + distanceFare + timeFare,
     surgeMultiplier,
-    finalPrice: Math.round(finalPrice),
-    distanceKm: Math.round(distanceKm * 10) / 10,
-    durationMinutes: Math.round(durationMinutes),
+    finalPrice: safeFinalPrice,
+    distanceKm: Math.round(safeDistanceKm * 10) / 10,
+    durationMinutes: Math.round(safeDurationMin),
     isCapped
   };
 }

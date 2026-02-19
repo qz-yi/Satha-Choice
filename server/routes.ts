@@ -337,10 +337,13 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const { distanceKm, durationMinutes, vehicleType } = req.body;
       
       console.log('💰 [CALCULATE FARE] Request:', { distanceKm, durationMinutes, vehicleType });
-      
-      if (!distanceKm || !vehicleType) {
-        return res.status(400).json({ message: 'Missing required parameters' });
+
+      // vehicleType is required; distanceKm 0 is valid (return base/minimum fare)
+      if (!vehicleType) {
+        return res.status(400).json({ message: 'vehicleType is required' });
       }
+      const parsedDistance = parseFloat(distanceKm) || 0;
+      const parsedDuration = parseFloat(durationMinutes || 0) || 0;
       
       // STEP 3: Get surge multiplier with guaranteed fallback
       let surgeMultiplier = 1.0;
@@ -358,26 +361,28 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const vehicleConfig = await PricingConfig.getVehiclePricing(vehicleType);
       console.log(`📊 [CALCULATE FARE] Vehicle config for ${vehicleType}:`, vehicleConfig);
       
-      // Calculate fare
+      // Calculate fare with fully parsed, safe numeric inputs
       const pricingResult = calculateDynamicFare(
-        parseFloat(distanceKm),
-        parseFloat(durationMinutes || 0),
+        parsedDistance,
+        parsedDuration,
         vehicleType,
         surgeMultiplier,
         vehicleConfig
       );
-      
+
       console.log('✅ [CALCULATE FARE] Result:', pricingResult);
 
-      // Safety net: ensure finalPrice is always a valid integer, never NaN/null/undefined
+      // Double-check: finalPrice must always be a valid positive integer
+      const confirmedFinalPrice = (Number.isFinite(pricingResult.finalPrice) && pricingResult.finalPrice > 0)
+        ? pricingResult.finalPrice
+        : (Number(vehicleConfig.minimumFare) || 25000);
+
       const safeResult = {
         ...pricingResult,
-        finalPrice: (Number.isFinite(pricingResult.finalPrice) && pricingResult.finalPrice > 0)
-          ? pricingResult.finalPrice
-          : (vehicleConfig.minimumFare || 25000),
-        distanceKm: Number.isFinite(pricingResult.distanceKm) ? pricingResult.distanceKm : parseFloat(distanceKm),
+        finalPrice: confirmedFinalPrice,
+        distanceKm: Number.isFinite(pricingResult.distanceKm) ? pricingResult.distanceKm : parsedDistance,
       };
-      
+
       res.json(safeResult);
     } catch (error: any) {
       console.error('❌ [CALCULATE FARE] Error:', error);

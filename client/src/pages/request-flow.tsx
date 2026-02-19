@@ -159,6 +159,20 @@ const StepIndicator = ({ step }: { step: string }) => {
   );
 };
 
+// Client-side pricing mirrors server DEFAULT_PRICING — used as last-resort fallback
+const CLIENT_PRICING: Record<string, { baseFare: number; kmRate: number; minimumFare: number }> = {
+  "سطحة":    { baseFare: 25000, kmRate: 1250, minimumFare: 35000 },
+  "سحب":     { baseFare: 20000, kmRate: 1000, minimumFare: 30000 },
+  "هيدروليك":{ baseFare: 50000, kmRate: 2500, minimumFare: 70000 },
+};
+const getClientFare = (vehicleType: string, distanceKm: number): number => {
+  const cfg = CLIENT_PRICING[vehicleType] || CLIENT_PRICING["سطحة"];
+  const addKm = Math.max(0, distanceKm - 7);
+  return Math.max(cfg.baseFare + addKm * cfg.kmRate, cfg.minimumFare);
+};
+const getClientMinFare = (vehicleType: string): number =>
+  (CLIENT_PRICING[vehicleType] || CLIENT_PRICING["سطحة"]).minimumFare;
+
 export default function RequestFlow() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -1701,70 +1715,78 @@ export default function RequestFlow() {
             const fareData = await fareResponse.json();
             console.log(`✅ [PRICING] Calculated fare:`, fareData);
 
-            const safePrice = typeof fareData.finalPrice === 'number' && !isNaN(fareData.finalPrice) && fareData.finalPrice > 0
-              ? fareData.finalPrice
-              : 0;
-            const safeDistance = typeof fareData.distanceKm === 'number' && !isNaN(fareData.distanceKm)
-              ? fareData.distanceKm
-              : 0;
+            // Use Number() to handle both string and numeric responses from API
+            const finalPrice = Math.round(Number(fareData.finalPrice) || 0);
+            const finalDistance = Number(fareData.distanceKm) || 0;
+            // If server returned 0 for some reason, use client-side minimum
+            const confirmedPrice = finalPrice > 0 ? finalPrice : getClientMinFare(formData.vehicleType);
 
-            setDistanceKm(safeDistance);
-            setCalculatedPrice(safePrice);
-            setFormData((prev) => ({
-              ...prev,
-              price: safePrice.toString(),
-            }));
-            setIsPriceCalculating(false); // CRITICAL: Calculation complete
+            setDistanceKm(finalDistance);
+            setCalculatedPrice(confirmedPrice);
+            setFormData((prev) => ({ ...prev, price: confirmedPrice.toString() }));
+            setIsPriceCalculating(false);
           } else {
+            // API responded but with error — try client-side calculation
+            const clientPrice = getClientFare(formData.vehicleType, distanceKm as number || 0);
+            setCalculatedPrice(clientPrice);
+            setFormData((prev) => ({ ...prev, price: clientPrice.toString() }));
             setIsPriceCalculating(false);
           }
         } catch (error) {
-          console.warn(
-            "⚠️ [PRICING] Falling back to simple calculation:",
-            error,
-          );
-          setIsPriceCalculating(false);
+          console.warn("⚠️ [PRICING] Primary path failed, falling back:", error);
 
-          // Fallback: Haversine distance + estimated duration
-          const { calculateHaversineDistance } = await import(
-            "@/services/MapService"
-          );
-          const distance = calculateHaversineDistance(
-            formData.pickupLat,
-            formData.pickupLng,
-            formData.destLat,
-            formData.destLng,
-          );
+          // ── Haversine fallback ──────────────────────────────────────────────
+          try {
+            const { calculateHaversineDistance } = await import("@/services/MapService");
+            const distance = calculateHaversineDistance(
+              formData.pickupLat,
+              formData.pickupLng,
+              formData.destLat,
+              formData.destLng,
+            );
+            const estimatedDuration = (distance / 40) * 60;
 
-          const estimatedDuration = (distance / 40) * 60; // 40 km/h avg speed
+            // Try calling the backend again with the Haversine distance
+            try {
+              const fareResponse = await fetch("/api/calculate-fare", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  distanceKm: distance,
+                  durationMinutes: estimatedDuration,
+                  vehicleType: formData.vehicleType,
+                }),
+              });
 
-          // Call backend for pricing
-          const fareResponse = await fetch("/api/calculate-fare", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              distanceKm: distance,
-              durationMinutes: estimatedDuration,
-              vehicleType: formData.vehicleType,
-            }),
-          });
-
-          if (fareResponse.ok) {
-            const fareData = await fareResponse.json();
-            const safePrice = typeof fareData.finalPrice === 'number' && !isNaN(fareData.finalPrice) && fareData.finalPrice > 0
-              ? fareData.finalPrice
-              : 0;
-            const safeDistance = typeof fareData.distanceKm === 'number' && !isNaN(fareData.distanceKm)
-              ? fareData.distanceKm
-              : 0;
-            setDistanceKm(safeDistance);
-            setCalculatedPrice(safePrice);
-            setFormData((prev) => ({
-              ...prev,
-              price: safePrice?.toString(),
-            }));
-            setIsPriceCalculating(false); // CRITICAL: Done
-          } else {
+              if (fareResponse.ok) {
+                const fareData = await fareResponse.json();
+                const finalPrice = Math.round(Number(fareData.finalPrice) || 0);
+                const finalDistance = Number(fareData.distanceKm) || distance;
+                const confirmedPrice = finalPrice > 0 ? finalPrice : getClientFare(formData.vehicleType, distance);
+                setDistanceKm(Math.round(finalDistance * 10) / 10);
+                setCalculatedPrice(confirmedPrice);
+                setFormData((prev) => ({ ...prev, price: confirmedPrice.toString() }));
+              } else {
+                // Backend error — use pure client-side calculation
+                const clientPrice = getClientFare(formData.vehicleType, distance);
+                setDistanceKm(Math.round(distance * 10) / 10);
+                setCalculatedPrice(clientPrice);
+                setFormData((prev) => ({ ...prev, price: clientPrice.toString() }));
+              }
+            } catch {
+              // Backend threw — use pure client-side calculation
+              const clientPrice = getClientFare(formData.vehicleType, distance);
+              setDistanceKm(Math.round(distance * 10) / 10);
+              setCalculatedPrice(clientPrice);
+              setFormData((prev) => ({ ...prev, price: clientPrice.toString() }));
+            }
+          } catch (haversineError) {
+            console.error("❌ [PRICING] All paths failed:", haversineError);
+            // Absolute last resort: minimum fare for vehicle
+            const minFare = getClientMinFare(formData.vehicleType);
+            setCalculatedPrice(minFare);
+            setFormData((prev) => ({ ...prev, price: minFare.toString() }));
+          } finally {
             setIsPriceCalculating(false);
           }
         }
