@@ -1082,10 +1082,23 @@ export default function DriverDashboard() {
                       availableRequests.map((req) => (
                         <div key={req.id} className="bg-gray-50 border border-gray-100 p-5 rounded-[32px] flex items-center justify-between group">
                           <div className="flex-1 ml-4 space-y-3 text-right">
-                            <div className="flex items-center gap-3"><div className="w-2.5 h-2.5 rounded-full bg-orange-500" /><span className="text-sm font-black text-gray-700">{req.pickupAddress || req.location}</span></div>
-                            <div className="flex items-center gap-3 pr-1"><div className="w-2 h-2 rounded-full bg-gray-300" /><span className="text-xs text-gray-400 font-bold">{req.destination || "موقع محدد"}</span></div>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                                <span className="text-sm font-black text-gray-700">{req.pickupAddress || req.location}</span>
+                              </div>
+                              <div className="bg-green-50 px-2 py-0.5 rounded-lg border border-green-100 flex items-center gap-1">
+                                <DollarSign className="w-3 h-3 text-green-600" />
+                                <span className="text-green-700 font-black text-xs">{Number(req.price || 0).toLocaleString()}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 pr-1">
+                              <div className="w-2 h-2 rounded-full bg-gray-300" />
+                              <span className="text-xs text-gray-400 font-bold">{req.destination || "موقع محدد"}</span>
+                            </div>
                           </div>
-                          <div className="flex flex-col items-center gap-2 border-r pr-5 border-gray-200 min-w-[100px]"><span className="text-xl font-black text-orange-600">{req.price}</span><Button onClick={() => handleAcceptOrder(req)} className="bg-black hover:bg-orange-600 text-white rounded-2xl h-10 px-6 font-black text-xs transition-all">قبول</Button></div>
+                          <div className="hidden flex-col items-center gap-2 border-r pr-5 border-gray-200 min-w-[100px]"><span className="text-xl font-black text-orange-600">{req.price}</span><Button onClick={() => handleAcceptOrder(req)} className="bg-black hover:bg-orange-600 text-white rounded-2xl h-10 px-6 font-black text-xs transition-all">قبول</Button></div>
+                          <Button onClick={() => handleAcceptOrder(req)} className="bg-black hover:bg-orange-600 text-white rounded-2xl h-10 px-6 font-black text-xs transition-all shrink-0">قبول</Button>
                         </div>
                       ))
                     )}

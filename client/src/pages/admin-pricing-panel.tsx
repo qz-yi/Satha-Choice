@@ -358,6 +358,41 @@ export default function AdminPricingPanel() {
                   </div>
                 </div>
 
+                {/* Minute Rate */}
+                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 space-y-3">
+                  <label className="text-sm font-black text-gray-600 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-purple-500" />
+                      السعر لكل دقيقة
+                    </span>
+                    <span className="text-purple-600 bg-purple-50 px-2 py-0.5 rounded-lg text-xs">د.ع</span>
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="rounded-xl h-10 w-10 border-2 active:scale-95"
+                      onClick={() => handleStepperChange(vehicle.vehicleType, 'minuteRate', -100)}
+                    >
+                      <span className="text-xl font-black">-</span>
+                    </Button>
+                    <input
+                      type="number"
+                      value={getCurrentValue(vehicle.vehicleType, 'minuteRate')}
+                      onChange={(e) => handlePricingChange(vehicle.vehicleType, 'minuteRate', parseFloat(e.target.value) || 0)}
+                      className="flex-1 h-10 text-center bg-transparent font-black text-gray-800 text-lg outline-none"
+                    />
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="rounded-xl h-10 w-10 border-2 active:scale-95"
+                      onClick={() => handleStepperChange(vehicle.vehicleType, 'minuteRate', 100)}
+                    >
+                      <span className="text-xl font-black">+</span>
+                    </Button>
+                  </div>
+                </div>
+
                 {/* Minimum Fare */}
                 <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 space-y-3">
                   <label className="text-sm font-black text-gray-600 flex items-center justify-between">
