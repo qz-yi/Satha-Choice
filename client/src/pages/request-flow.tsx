@@ -1990,10 +1990,10 @@ export default function RequestFlow() {
                         <span className="text-xs font-black text-orange-600">{calculatedPrice.toLocaleString()} د.ع</span>
                       </div>
                     )}
-                    {safeDistance > 0 && (
+                    {distanceKm > 0 && (
                       <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-100 rounded-2xl px-3 py-1.5">
                         <Navigation className="w-3.5 h-3.5 text-blue-500" />
-                        <span className="text-xs font-black text-blue-600">{safeDistance.toFixed(1)} كم</span>
+                        <span className="text-xs font-black text-blue-600">{distanceKm.toFixed(1)} كم</span>
                       </div>
                     )}
                     <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 rounded-2xl px-3 py-1.5">
