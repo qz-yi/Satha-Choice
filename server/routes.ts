@@ -444,19 +444,23 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     try {
       const { vehicleType } = req.params;
       const { baseFare, kmRate, minuteRate, minimumFare } = req.body;
-      
-      const updated = PricingConfig.updateVehiclePricing(vehicleType, {
-        baseFare: baseFare !== undefined ? parseFloat(baseFare) : undefined,
-        kmRate: kmRate !== undefined ? parseFloat(kmRate) : undefined,
-        minuteRate: minuteRate !== undefined ? parseFloat(minuteRate) : undefined,
-        minimumFare: minimumFare !== undefined ? parseFloat(minimumFare) : undefined
+
+      // CRITICAL FIX: was missing `await` — pricing changes were never persisted to DB!
+      const updated = await PricingConfig.updateVehiclePricing(vehicleType, {
+        baseFare:    baseFare    !== undefined ? Number(baseFare)    : undefined,
+        kmRate:      kmRate      !== undefined ? Number(kmRate)      : undefined,
+        minuteRate:  minuteRate  !== undefined ? Number(minuteRate)  : undefined,
+        minimumFare: minimumFare !== undefined ? Number(minimumFare) : undefined,
       });
-      
-      // Broadcast to all clients that pricing has changed
+
+      console.log(`✅ [ADMIN PRICING] Saved ${vehicleType}:`, updated);
+
+      // Broadcast pricing change to all connected clients
       io.emit('pricing_updated', { vehicleType, config: updated });
-      
+
       res.json({ success: true, config: updated });
     } catch (error: any) {
+      console.error('❌ [ADMIN PRICING] Save failed:', error.message);
       res.status(500).json({ message: error.message || 'Failed to update pricing' });
     }
   });

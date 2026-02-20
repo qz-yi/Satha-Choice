@@ -159,16 +159,20 @@ const StepIndicator = ({ step }: { step: string }) => {
   );
 };
 
-// Client-side pricing mirrors server DEFAULT_PRICING — used as last-resort fallback
-const CLIENT_PRICING: Record<string, { baseFare: number; kmRate: number; minimumFare: number }> = {
-  "سطحة":    { baseFare: 25000, kmRate: 1250, minimumFare: 35000 },
-  "سحب":     { baseFare: 20000, kmRate: 1000, minimumFare: 30000 },
-  "هيدروليك":{ baseFare: 50000, kmRate: 2500, minimumFare: 70000 },
+// Client-side pricing — mirrors server DEFAULT_PRICING, used ONLY as last-resort fallback
+// when the /api/calculate-fare endpoint is completely unreachable.
+// NOTE: these are DEFAULTS only; if admin changed pricing in DB, this won't reflect that.
+const CLIENT_PRICING: Record<string, { baseFare: number; kmRate: number; minuteRate: number; minimumFare: number }> = {
+  "سطحة":    { baseFare: 25000, kmRate: 1250, minuteRate: 500,  minimumFare: 35000 },
+  "سحب":     { baseFare: 20000, kmRate: 1000, minuteRate: 400,  minimumFare: 30000 },
+  "هيدروليك":{ baseFare: 50000, kmRate: 2500, minuteRate: 1000, minimumFare: 70000 },
 };
-const getClientFare = (vehicleType: string, distanceKm: number): number => {
-  const cfg = CLIENT_PRICING[vehicleType] || CLIENT_PRICING["سطحة"];
-  const addKm = Math.max(0, distanceKm - 7);
-  return Math.max(cfg.baseFare + addKm * cfg.kmRate, cfg.minimumFare);
+// Applies the same formula as calculateDynamicFare on the server
+const getClientFare = (vehicleType: string, distanceKm: number, durationMin = 0, surge = 1.0): number => {
+  const cfg    = CLIENT_PRICING[vehicleType] || CLIENT_PRICING["سطحة"];
+  const addKm  = Math.max(0, distanceKm - 7);
+  const sub    = cfg.baseFare + addKm * cfg.kmRate + durationMin * cfg.minuteRate;
+  return Math.round(Math.max(sub * surge, cfg.minimumFare));
 };
 const getClientMinFare = (vehicleType: string): number =>
   (CLIENT_PRICING[vehicleType] || CLIENT_PRICING["سطحة"]).minimumFare;
@@ -1727,7 +1731,7 @@ export default function RequestFlow() {
             setIsPriceCalculating(false);
           } else {
             // API responded but with error — try client-side calculation
-            const clientPrice = getClientFare(formData.vehicleType, distanceKm as number || 0);
+            const clientPrice = getClientFare(formData.vehicleType, distanceKm as number || 0, durationMinutes as number || 0);
             setCalculatedPrice(clientPrice);
             setFormData((prev) => ({ ...prev, price: clientPrice.toString() }));
             setIsPriceCalculating(false);
@@ -1762,27 +1766,25 @@ export default function RequestFlow() {
                 const fareData = await fareResponse.json();
                 const finalPrice = Math.round(Number(fareData.finalPrice) || 0);
                 const finalDistance = Number(fareData.distanceKm) || distance;
-                const confirmedPrice = finalPrice > 0 ? finalPrice : getClientFare(formData.vehicleType, distance);
+                const confirmedPrice = finalPrice > 0 ? finalPrice : getClientFare(formData.vehicleType, distance, estimatedDuration);
                 setDistanceKm(Math.round(finalDistance * 10) / 10);
                 setCalculatedPrice(confirmedPrice);
                 setFormData((prev) => ({ ...prev, price: confirmedPrice.toString() }));
               } else {
-                // Backend error — use pure client-side calculation
-                const clientPrice = getClientFare(formData.vehicleType, distance);
+                // Backend error — use pure client-side calculation (without surge since we can't reach server)
+                const clientPrice = getClientFare(formData.vehicleType, distance, estimatedDuration);
                 setDistanceKm(Math.round(distance * 10) / 10);
                 setCalculatedPrice(clientPrice);
                 setFormData((prev) => ({ ...prev, price: clientPrice.toString() }));
               }
             } catch {
-              // Backend threw — use pure client-side calculation
-              const clientPrice = getClientFare(formData.vehicleType, distance);
+              const clientPrice = getClientFare(formData.vehicleType, distance, estimatedDuration);
               setDistanceKm(Math.round(distance * 10) / 10);
               setCalculatedPrice(clientPrice);
               setFormData((prev) => ({ ...prev, price: clientPrice.toString() }));
             }
           } catch (haversineError) {
             console.error("❌ [PRICING] All paths failed:", haversineError);
-            // Absolute last resort: minimum fare for vehicle
             const minFare = getClientMinFare(formData.vehicleType);
             setCalculatedPrice(minFare);
             setFormData((prev) => ({ ...prev, price: minFare.toString() }));

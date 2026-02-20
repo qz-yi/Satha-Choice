@@ -121,14 +121,26 @@ export async function getVehiclePricing(vehicleType: string): Promise<VehiclePri
       console.log(`✅ [PRICING CONFIG] Loaded ${vehicleType} from database`);
       return {
         vehicleType: result[0].vehicleType,
-        baseFare: result[0].baseFare,
-        kmRate: result[0].kmRate,
-        minuteRate: result[0].minuteRate,
-        minimumFare: result[0].minimumFare
+        baseFare:    Number(result[0].baseFare),
+        kmRate:      Number(result[0].kmRate),
+        minuteRate:  Number(result[0].minuteRate),
+        minimumFare: Number(result[0].minimumFare),
       };
     }
-    
-    console.log(`⚠️ [PRICING CONFIG] ${vehicleType} not in DB, using default`);
+
+    // Not in DB yet — try to seed this specific vehicle type, then return defaults
+    console.log(`⚠️ [PRICING CONFIG] ${vehicleType} not in DB, seeding defaults...`);
+    try {
+      const def = DEFAULT_PRICING[vehicleType] || DEFAULT_PRICING["سطحة"];
+      await db.insert(vehiclePricingConfig).values({
+        vehicleType: def.vehicleType,
+        baseFare:    def.baseFare,
+        kmRate:      def.kmRate,
+        minuteRate:  def.minuteRate,
+        minimumFare: def.minimumFare,
+      }).onConflictDoNothing();
+    } catch { /* table may not exist yet — fall through to defaults */ }
+
     return DEFAULT_PRICING[vehicleType] || DEFAULT_PRICING["سطحة"];
   } catch (error: any) {
     // EMERGENCY FIX: If table doesn't exist, use defaults
@@ -144,23 +156,51 @@ export async function getVehiclePricing(vehicleType: string): Promise<VehiclePri
 
 /**
  * CRITICAL FIX #4: Get all vehicle pricing from DATABASE
+ * Auto-seeds defaults on first run if table is empty.
  */
 export async function getAllVehiclePricing(): Promise<VehiclePricingRow[]> {
   try {
     const result = await db.select().from(vehiclePricingConfig);
-    
+
     if (result.length > 0) {
       console.log(`✅ [PRICING CONFIG] Loaded ${result.length} vehicle configs from database`);
       return result.map(r => ({
         vehicleType: r.vehicleType,
-        baseFare: r.baseFare,
-        kmRate: r.kmRate,
-        minuteRate: r.minuteRate,
-        minimumFare: r.minimumFare
+        baseFare:    Number(r.baseFare),
+        kmRate:      Number(r.kmRate),
+        minuteRate:  Number(r.minuteRate),
+        minimumFare: Number(r.minimumFare),
       }));
     }
-    
-    console.log(`⚠️ [PRICING CONFIG] No pricing in DB, using defaults`);
+
+    // First run — table is empty, seed it with defaults
+    console.log(`⚠️ [PRICING CONFIG] Table empty — seeding defaults into DB...`);
+    try {
+      for (const defaults of Object.values(DEFAULT_PRICING)) {
+        await db.insert(vehiclePricingConfig).values({
+          vehicleType: defaults.vehicleType,
+          baseFare:    defaults.baseFare,
+          kmRate:      defaults.kmRate,
+          minuteRate:  defaults.minuteRate,
+          minimumFare: defaults.minimumFare,
+        }).onConflictDoNothing();
+      }
+      console.log(`✅ [PRICING CONFIG] Defaults seeded successfully`);
+      // Return the freshly seeded data
+      const fresh = await db.select().from(vehiclePricingConfig);
+      if (fresh.length > 0) {
+        return fresh.map(r => ({
+          vehicleType: r.vehicleType,
+          baseFare:    Number(r.baseFare),
+          kmRate:      Number(r.kmRate),
+          minuteRate:  Number(r.minuteRate),
+          minimumFare: Number(r.minimumFare),
+        }));
+      }
+    } catch (seedErr: any) {
+      console.warn(`⚠️ [PRICING CONFIG] Could not seed defaults:`, seedErr.message);
+    }
+
     return Object.values(DEFAULT_PRICING);
   } catch (error) {
     console.warn(`⚠️ [PRICING CONFIG] Database error, using defaults`);

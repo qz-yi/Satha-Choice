@@ -322,26 +322,37 @@ export default function AdminPricingPanel() {
                   );
                 })}
 
-                {/* Live price preview */}
-                <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-4 text-white">
-                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-2">معاينة — رحلة 10 كم / 20 دقيقة</p>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-black text-white">
-                      {Math.max(
-                        getCurrentValue(vehicle.vehicleType, "baseFare") +
-                        Math.max(0, 10 - 7) * getCurrentValue(vehicle.vehicleType, "kmRate") +
-                        20 * getCurrentValue(vehicle.vehicleType, "minuteRate"),
-                        getCurrentValue(vehicle.vehicleType, "minimumFare")
-                      ).toLocaleString()}
-                    </span>
-                    <span className="text-slate-400 font-bold text-sm">د.ع</span>
-                    {surgeMultiplier > 1 && (
-                      <span className="text-orange-400 font-black text-xs bg-orange-500/10 px-2 py-0.5 rounded-full">
-                        ×{surgeMultiplier} ذروة
-                      </span>
-                    )}
-                  </div>
-                </div>
+                {/* Live price preview — exact same formula as server calculateDynamicFare */}
+                {(() => {
+                  const bF  = getCurrentValue(vehicle.vehicleType, "baseFare");
+                  const kR  = getCurrentValue(vehicle.vehicleType, "kmRate");
+                  const mR  = getCurrentValue(vehicle.vehicleType, "minuteRate");
+                  const minF= getCurrentValue(vehicle.vehicleType, "minimumFare");
+                  // 10 km / 20 min preview
+                  const addKm      = Math.max(0, 10 - 7);           // 3 km
+                  const subtotal   = bF + addKm * kR + 20 * mR;
+                  const afterSurge = subtotal * surgeMultiplier;
+                  const preview    = Math.round(Math.max(afterSurge, minF));
+                  return (
+                    <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-4 text-white">
+                      <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-2">
+                        معاينة — رحلة 10 كم / 20 دقيقة{surgeMultiplier > 1 ? ` × ${surgeMultiplier} ذروة` : ""}
+                      </p>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-black text-white">{preview.toLocaleString()}</span>
+                        <span className="text-slate-400 font-bold text-sm">د.ع</span>
+                        {surgeMultiplier > 1 && (
+                          <span className="text-orange-400 font-black text-xs bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-full">
+                            شامل ×{surgeMultiplier}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-2">
+                        {bF.toLocaleString()} + {(addKm * kR).toLocaleString()} + {(20 * mR).toLocaleString()} = {Math.round(afterSurge).toLocaleString()} → بعد الحد الأدنى: {preview.toLocaleString()}
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             </motion.div>
           );
