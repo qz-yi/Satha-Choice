@@ -1916,132 +1916,140 @@ export default function RequestFlow() {
           )}
         </AnimatePresence>
 
-        {/* PROFESSIONAL DRAGGABLE BOTTOM SHEET - SATHA STYLE (Smart Handle) */}
-        <motion.div
-          drag="y"
-          dragConstraints={{ top: 0, bottom: 0 }}
-          dragElastic={0.1}
-          animate={{
-            y: (() => {
-              if (requestStatus === "pending" || !driverInfo) {
-                return "calc(100% - 380px)";
-              }
-              return isSheetExpanded ? 0 : "calc(100% - 120px)";
-            })(),
-          }}
-          onDragEnd={(e, info) => {
-            // Smart snapping based on drag direction
-            if (info.offset.y > 100) {
-              setIsSheetExpanded(false); // Drag down = minimize
-            } else if (info.offset.y < -50) {
-              setIsSheetExpanded(true); // Drag up = expand
-            }
-          }}
-          transition={{ type: "spring", damping: 30, stiffness: 300 }}
-          className="absolute inset-x-0 bottom-0 z-[2000] pointer-events-auto"
-        >
-          <div className="bg-white rounded-t-[45px] shadow-[0_-20px_60px_rgba(0,0,0,0.15)] pointer-events-auto">
-            {/* SMART HANDLE - Click to toggle, Drag to move (Replicated from DriverDashboard) */}
-            <div
-              className="w-full flex flex-col items-center py-5 cursor-grab active:cursor-grabbing"
-              onClick={() => setIsSheetExpanded(!isSheetExpanded)}
-              style={{ touchAction: "none" }}
+        {/* ══════════════════════════════════════════════════════
+            SEARCHING STATE — Static sheet, no drag, fully visible
+            ══════════════════════════════════════════════════════ */}
+        <AnimatePresence>
+          {(requestStatus === "pending" && !driverInfo) && (
+            <motion.div
+              key="searching-sheet"
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 32, stiffness: 320 }}
+              className="absolute inset-x-0 bottom-0 z-[2000] pointer-events-auto"
             >
-              <div className="w-16 h-2 bg-gray-300 rounded-full mb-2" />
-              <GripHorizontal
-                className={`w-6 h-6 transition-all duration-300 ${isSheetExpanded ? "text-gray-300" : "text-orange-500 rotate-180"}`}
-              />
-            </div>
+              <div className="bg-white rounded-t-[40px] shadow-[0_-20px_60px_rgba(0,0,0,0.15)] px-6 pt-6 pb-10 space-y-4">
 
-            <div className="px-6 pb-16 space-y-5">
-
-              {/* ── SEARCHING STATE ── Professional animated bottom sheet */}
-              {requestStatus === "pending" && !driverInfo ? (
-                <div className="space-y-4 pt-1">
-                  {/* Animated radar / pulse rings */}
-                  <div className="flex justify-center py-2">
-                    <div className="relative w-24 h-24 flex items-center justify-center">
-                      {[1, 2, 3].map(i => (
-                        <motion.div
-                          key={i}
-                          className="absolute rounded-full border-2 border-orange-400"
-                          initial={{ width: 32, height: 32, opacity: 0.8 }}
-                          animate={{ width: 96, height: 96, opacity: 0 }}
-                          transition={{ duration: 1.8, repeat: Infinity, delay: i * 0.5, ease: "easeOut" }}
-                        />
-                      ))}
-                      <div className="w-14 h-14 bg-gradient-to-br from-orange-500 to-orange-600 rounded-full flex items-center justify-center shadow-lg shadow-orange-200 z-10">
-                        <Truck className="w-7 h-7 text-white" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Title */}
-                  <div className="text-center">
-                    <h3 className="text-xl font-black text-gray-900">جاري البحث عن سائق</h3>
-                    <p className="text-sm text-gray-400 font-bold mt-1">نبحث لك عن أقرب كابتن متاح...</p>
-                  </div>
-
-                  {/* Order summary chips */}
-                  <div className="flex items-center justify-center gap-2 flex-wrap">
-                    {calculatedPrice > 0 && (
-                      <div className="flex items-center gap-1.5 bg-orange-50 border border-orange-100 rounded-2xl px-3 py-1.5">
-                        <DollarSign className="w-3.5 h-3.5 text-orange-500" />
-                        <span className="text-xs font-black text-orange-600">{calculatedPrice.toLocaleString()} د.ع</span>
-                      </div>
-                    )}
-                    {distanceKm > 0 && (
-                      <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-100 rounded-2xl px-3 py-1.5">
-                        <Navigation className="w-3.5 h-3.5 text-blue-500" />
-                        <span className="text-xs font-black text-blue-600">{distanceKm.toFixed(1)} كم</span>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 rounded-2xl px-3 py-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-gray-500" />
-                      <span className="text-xs font-black text-gray-600">{formData.vehicleType || "سطحة"}</span>
-                    </div>
-                  </div>
-
-                  {/* Animated progress dots */}
-                  <div className="flex items-center justify-center gap-2 py-1">
-                    {[0, 0.3, 0.6].map((delay, i) => (
+                {/* Animated radar / pulse rings */}
+                <div className="flex justify-center py-2">
+                  <div className="relative w-24 h-24 flex items-center justify-center">
+                    {[1, 2, 3].map(i => (
                       <motion.div
                         key={i}
-                        className="w-2 h-2 bg-orange-400 rounded-full"
-                        animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
-                        transition={{ duration: 1.2, repeat: Infinity, delay }}
+                        className="absolute rounded-full border-2 border-orange-400"
+                        initial={{ width: 32, height: 32, opacity: 0.8 }}
+                        animate={{ width: 96, height: 96, opacity: 0 }}
+                        transition={{ duration: 1.8, repeat: Infinity, delay: i * 0.5, ease: "easeOut" }}
                       />
                     ))}
-                  </div>
-
-                  {/* Cancel button */}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setShowCancelModal(true); }}
-                    className="w-full py-3.5 rounded-[20px] border-2 border-red-100 bg-red-50 text-red-500 font-black text-sm active:scale-95 transition-transform"
-                    style={{ pointerEvents: "auto" }}
-                  >
-                    إلغاء الطلب
-                  </button>
-                </div>
-
-              ) : (
-                <>
-                {/* ── DRIVER FOUND STATE ── Status header */}
-                <div className="text-center pt-2">
-                  <div className="flex items-center justify-center gap-2 mb-1">
-                    <h3 className="text-lg font-black text-gray-800">
-                      {requestStatus === "accepted"
-                        ? "الكابتن قادم"
-                        : requestStatus === "arrived"
-                          ? "وصل الكابتن"
-                          : "في الطريق"}
-                    </h3>
-                  </div>
-                  <div className="inline-flex items-center gap-1 bg-orange-50 px-3 py-1 rounded-full">
-                    <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
-                    <span className="text-[11px] font-black text-orange-600">مباشر</span>
+                    <div className="w-14 h-14 bg-gradient-to-br from-orange-500 to-orange-600 rounded-full flex items-center justify-center shadow-lg shadow-orange-200 z-10">
+                      <Truck className="w-7 h-7 text-white" />
+                    </div>
                   </div>
                 </div>
+
+                {/* Title */}
+                <div className="text-center">
+                  <h3 className="text-xl font-black text-gray-900">جاري البحث عن سائق</h3>
+                  <p className="text-sm text-gray-400 font-bold mt-1">نبحث لك عن أقرب كابتن متاح...</p>
+                </div>
+
+                {/* Order summary chips */}
+                <div className="flex items-center justify-center gap-2 flex-wrap">
+                  {calculatedPrice > 0 && (
+                    <div className="flex items-center gap-1.5 bg-orange-50 border border-orange-100 rounded-2xl px-3 py-1.5">
+                      <DollarSign className="w-3.5 h-3.5 text-orange-500" />
+                      <span className="text-xs font-black text-orange-600">{calculatedPrice.toLocaleString()} د.ع</span>
+                    </div>
+                  )}
+                  {distanceKm > 0 && (
+                    <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-100 rounded-2xl px-3 py-1.5">
+                      <Navigation className="w-3.5 h-3.5 text-blue-500" />
+                      <span className="text-xs font-black text-blue-600">{distanceKm.toFixed(1)} كم</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 rounded-2xl px-3 py-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-gray-500" />
+                    <span className="text-xs font-black text-gray-600">{formData.vehicleType || "سطحة"}</span>
+                  </div>
+                </div>
+
+                {/* Animated progress dots */}
+                <div className="flex items-center justify-center gap-2 py-1">
+                  {[0, 0.3, 0.6].map((delay, i) => (
+                    <motion.div
+                      key={i}
+                      className="w-2 h-2 bg-orange-400 rounded-full"
+                      animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
+                      transition={{ duration: 1.2, repeat: Infinity, delay }}
+                    />
+                  ))}
+                </div>
+
+                {/* Cancel button */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowCancelModal(true); }}
+                  className="w-full py-3.5 rounded-[20px] border-2 border-red-100 bg-red-50 text-red-500 font-black text-sm active:scale-95 transition-transform"
+                  style={{ pointerEvents: "auto" }}
+                >
+                  إلغاء الطلب
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ══════════════════════════════════════════════════════
+            DRIVER FOUND STATE — Draggable sheet with handle
+            ══════════════════════════════════════════════════════ */}
+        <AnimatePresence>
+          {driverInfo && (
+            <motion.div
+              key="driver-sheet"
+              drag="y"
+              dragConstraints={{ top: 0, bottom: 0 }}
+              dragElastic={0.1}
+              initial={{ y: "100%" }}
+              animate={{ y: isSheetExpanded ? 0 : "calc(100% - 120px)" }}
+              exit={{ y: "100%" }}
+              onDragEnd={(_e, info) => {
+                if (info.offset.y > 100) setIsSheetExpanded(false);
+                else if (info.offset.y < -50) setIsSheetExpanded(true);
+              }}
+              transition={{ type: "spring", damping: 30, stiffness: 300 }}
+              className="absolute inset-x-0 bottom-0 z-[2000] pointer-events-auto"
+            >
+              <div className="bg-white rounded-t-[45px] shadow-[0_-20px_60px_rgba(0,0,0,0.15)] pointer-events-auto">
+                {/* SMART HANDLE */}
+                <div
+                  className="w-full flex flex-col items-center py-5 cursor-grab active:cursor-grabbing"
+                  onClick={() => setIsSheetExpanded(!isSheetExpanded)}
+                  style={{ touchAction: "none" }}
+                >
+                  <div className="w-16 h-2 bg-gray-300 rounded-full mb-2" />
+                  <GripHorizontal
+                    className={`w-6 h-6 transition-all duration-300 ${isSheetExpanded ? "text-gray-300" : "text-orange-500 rotate-180"}`}
+                  />
+                </div>
+
+                <div className="px-6 pb-16 space-y-5">
+                  {/* ── DRIVER FOUND STATE ── Status header */}
+                  <div className="text-center pt-2">
+                    <div className="flex items-center justify-center gap-2 mb-1">
+                      <h3 className="text-lg font-black text-gray-800">
+                        {requestStatus === "accepted"
+                          ? "الكابتن قادم"
+                          : requestStatus === "arrived"
+                            ? "وصل الكابتن"
+                            : "في الطريق"}
+                      </h3>
+                    </div>
+                    <div className="inline-flex items-center gap-1 bg-orange-50 px-3 py-1 rounded-full">
+                      <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
+                      <span className="text-[11px] font-black text-orange-600">مباشر</span>
+                    </div>
+                  </div>
 
               {driverInfo && (
                 <>
@@ -2174,11 +2182,11 @@ export default function RequestFlow() {
                   )}
                 </>
               )}
-              </>
-              )}
-            </div>
-          </div>
-        </motion.div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Professional Cancel Confirmation Modal - INSIDE TRACKING VIEW */}
         {showCancelModal && (
