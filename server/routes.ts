@@ -52,10 +52,8 @@ const geocoder = NodeGeocoder({
 
 async function getCityFromCoords(lat: number, lon: number): Promise<string> {
   try {
-    console.log(`[Geocoding] Bypass city detection for coords: ${lat}, ${lon}`);
     return "بابل"; 
   } catch (err) {
-    console.error("خطأ في تحديد المدينة:", err);
     return "بابل";
   }
 }
@@ -95,8 +93,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   const allowedOrigins = process.env.ALLOWED_ORIGINS 
     ? process.env.ALLOWED_ORIGINS.split(',')
     : ['http://localhost:5173', 'http://localhost:5000'];
-  
-  console.log('🔒 [CORS] Allowed origins:', allowedOrigins);
 
   const io = new SocketIOServer(httpServer, {
     cors: { 
@@ -109,21 +105,17 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   });
 
   io.on("connection", (socket) => {
-    console.log(`[Socket] New connection: ${socket.id}`);
 
     socket.on("join_order", (orderId) => {
       socket.join(`order_${orderId}`);
-      console.log(`[Socket] User joined room: order_${orderId}`);
     });
 
     socket.on("join_city", (city) => {
       socket.join(`city_${city}`);
-      console.log(`[Socket] Driver joined city: ${city}`);
     });
 
     socket.on("join_driver_room", (driverId) => {
       socket.join(`driver_${driverId}`);
-      console.log(`[Socket] Driver joined private room: driver_${driverId}`);
     });
 
     socket.on("send_message", async (data) => {
@@ -141,7 +133,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
         io.to(`order_${orderId}`).emit("new_message", savedMsg);
       } catch (err) {
-        console.error("[Socket Chat Error]:", err);
       }
     });
 
@@ -171,10 +162,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         io.to(`order_${orderId}`).emit("status_changed", payload);
         io.emit(`order_status_${orderId}`, payload);
         io.emit("request_updated", { id: orderId, ...payload });
-
-        console.log(`[Socket] Order ${orderId} status updated to: ${status}`);
       } catch (error) {
-        console.error("[Socket Error] Failed to update status:", error);
       }
     });
 
@@ -308,13 +296,9 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     try {
       const { origin, destination } = req.body;
       
-      console.log('🗺️ [DISTANCE MATRIX] Request received');
-      console.log(`📍 Origin: ${origin}, Destination: ${destination}`);
-      
       const apiKey = process.env.GOOGLE_MAPS_API_KEY;
       
       if (!apiKey) {
-        console.log('⚠️ [DISTANCE MATRIX] No API key configured - using fallback');
         return res.status(200).json({ status: 'FALLBACK', message: 'Using Haversine calculation' });
       }
       
@@ -322,11 +306,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       
       const response = await axios.get(url);
       
-      console.log('✅ [DISTANCE MATRIX] Google API responded');
-      
       res.json(response.data);
     } catch (error: any) {
-      console.error('❌ [DISTANCE MATRIX] Error:', error.message);
       res.status(500).json({ status: 'ERROR', message: error.message });
     }
   });
@@ -335,8 +316,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   app.post("/api/calculate-fare", async (req, res) => {
     try {
       const { distanceKm, durationMinutes, vehicleType } = req.body;
-      
-      console.log('💰 [CALCULATE FARE] Request:', { distanceKm, durationMinutes, vehicleType });
 
       // vehicleType is required; distanceKm 0 is valid (return base/minimum fare)
       if (!vehicleType) {
@@ -350,16 +329,13 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       try {
         surgeMultiplier = await PricingConfig.getSurgeMultiplier();
       } catch (error) {
-        console.warn('⚠️ [CALCULATE FARE] Using default surge 1.0');
         surgeMultiplier = 1.0;
       }
       // STEP 3: Ensure it's NEVER undefined/null
       surgeMultiplier = surgeMultiplier || 1.0;
-      console.log(`📊 [CALCULATE FARE] Surge multiplier: ${surgeMultiplier}x`);
       
       // CRITICAL FIX #3: Get admin-configured vehicle pricing (MUST await - it's async!)
       const vehicleConfig = await PricingConfig.getVehiclePricing(vehicleType);
-      console.log(`📊 [CALCULATE FARE] Vehicle config for ${vehicleType}:`, vehicleConfig);
       
       // Calculate fare with fully parsed, safe numeric inputs
       const pricingResult = calculateDynamicFare(
@@ -369,8 +345,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         surgeMultiplier,
         vehicleConfig
       );
-
-      console.log('✅ [CALCULATE FARE] Result:', pricingResult);
 
       // Double-check: finalPrice must always be a valid positive integer
       const confirmedFinalPrice = (Number.isFinite(pricingResult.finalPrice) && pricingResult.finalPrice > 0)
@@ -385,7 +359,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
       res.json(safeResult);
     } catch (error: any) {
-      console.error('❌ [CALCULATE FARE] Error:', error);
       res.status(500).json({ message: 'فشل في حساب السعر: ' + error.message });
     }
   });
@@ -400,7 +373,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       res.json({ surgeMultiplier: surge || 1.0 });
     } catch (error: any) {
       // STEP 3: Even on error, return default instead of 500
-      console.error('[ADMIN PRICING] Error fetching surge:', error);
       res.json({ surgeMultiplier: 1.0 }); // Return default, don't crash
     }
   });
@@ -433,7 +405,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const safeResponse = Array.isArray(allPricing) ? allPricing : [];
       res.json(safeResponse);
     } catch (error: any) {
-      console.error('[ADMIN PRICING] Error fetching vehicles:', error);
       // STEP 1: Return empty array instead of error to prevent frontend crash
       res.json([]); // Safe default
     }
@@ -453,14 +424,11 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         minimumFare: minimumFare !== undefined ? Number(minimumFare) : undefined,
       });
 
-      console.log(`✅ [ADMIN PRICING] Saved ${vehicleType}:`, updated);
-
       // Broadcast pricing change to all connected clients
       io.emit('pricing_updated', { vehicleType, config: updated });
 
       res.json({ success: true, config: updated });
     } catch (error: any) {
-      console.error('❌ [ADMIN PRICING] Save failed:', error.message);
       res.status(500).json({ message: error.message || 'Failed to update pricing' });
     }
   });
@@ -470,8 +438,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     try {
       const { origin, destination } = req.body;
       
-      console.log('🗺️ [ROUTE] Request:', origin, '->', destination);
-      
       if (!origin?.lat || !origin?.lng || !destination?.lat || !destination?.lng) {
         return res.status(400).json({ message: 'Missing coordinates' });
       }
@@ -480,16 +446,12 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       try {
         const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson`;
         
-        console.log('🌐 [ROUTE] Calling OSRM...');
-        
         const response = await axios.get(osrmUrl);
         
         if (response.data?.code === 'Ok' && response.data?.routes?.[0]?.geometry?.coordinates) {
           const coordinates = response.data.routes[0].geometry.coordinates;
           // OSRM returns [lng, lat], we need [lat, lng] for Leaflet
           const points = coordinates.map((coord: number[]) => [coord[1], coord[0]]);
-          
-          console.log(`✅ [ROUTE] OSRM returned ${points.length} points`);
           
           return res.json({ 
             points, 
@@ -499,7 +461,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
           });
         }
       } catch (osrmError) {
-        console.warn('⚠️ [ROUTE] OSRM failed, trying fallback');
       }
       
       // Fallback: Google Directions API (if key is configured)
@@ -509,15 +470,11 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         try {
           const googleUrl = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&key=${apiKey}`;
           
-          console.log('🌐 [ROUTE] Calling Google Directions...');
-          
           const response = await axios.get(googleUrl);
           
           if (response.data?.status === 'OK' && response.data?.routes?.[0]?.overview_polyline?.points) {
             // Decode Google polyline
             const points = decodeGooglePolyline(response.data.routes[0].overview_polyline.points);
-            
-            console.log(`✅ [ROUTE] Google Directions returned ${points.length} points`);
             
             return res.json({ 
               points, 
@@ -527,18 +484,15 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
             });
           }
         } catch (googleError) {
-          console.warn('⚠️ [ROUTE] Google Directions failed');
         }
       }
       
       // Last resort: straight line
-      console.log('⚠️ [ROUTE] Using straight line fallback');
       res.json({ 
         points: [[origin.lat, origin.lng], [destination.lat, destination.lng]], 
         source: 'straight-line' 
       });
     } catch (error: any) {
-      console.error('❌ [ROUTE] Error:', error);
       res.status(500).json({ message: 'فشل في حساب المسار' });
     }
   });
@@ -585,15 +539,11 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const { phone } = req.params;
       const { image } = req.body;
       
-      console.log(`📸 [CUSTOMER IMAGE] Updating profile image for customer: ${phone}`);
-      
       if (!image) {
         return res.status(400).json({ message: "لم يتم تقديم صورة" });
       }
       
       const updatedUser = await storage.updateUser(phone, { image });
-      
-      console.log(`✅ [CUSTOMER IMAGE] Profile image updated successfully for customer: ${phone}`);
       
       res.json({ 
         success: true, 
@@ -601,7 +551,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         message: "تم تحديث الصورة بنجاح" 
       });
     } catch (err: any) {
-      console.error("❌ [CUSTOMER IMAGE ERROR]:", err);
       res.status(500).json({ message: "فشل في تحديث الصورة: " + err.message });
     }
   });
@@ -612,6 +561,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     try {
       const input = insertDriverSchema.parse(req.body);
       const driver = await storage.createDriver(input);
+      // Notify admin dashboard immediately so pending list updates without manual refresh
+      io.emit("new_driver_registration", { id: driver.id, name: driver.name, phone: driver.phone });
       res.status(201).json(driver);
     } catch (err: any) {
       if (err instanceof z.ZodError) {
@@ -673,7 +624,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       });
 
     } catch (err: any) {
-      console.error("[Driver Me Error]:", err);
       res.status(500).json({ message: "حدث خطأ داخلي" });
     }
   });
@@ -715,7 +665,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       await storage.updateDriver(driverId, { avatarUrl: imageUrl });
       res.json({ url: imageUrl });
     } catch (err: any) {
-      console.error("Upload error:", err);
       res.status(500).json({ message: "فشل في رفع الصورة" });
     }
   });
@@ -812,7 +761,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
       // CRITICAL: Check wallet payment and deduct balance BEFORE creating order
       if (bodyData.paymentMethod === "wallet") {
-        console.log("💰 [ORDER CREATE] Wallet payment selected - checking balance");
         
         if (!customer) {
           return res.status(400).json({ message: "لم يتم العثور على حساب الزبون" });
@@ -821,11 +769,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         const customerBalance = parseFloat(customer.walletBalance || "0");
         const orderAmount = parseFloat(bodyData.price || "0");
         
-        console.log(`💰 [ORDER CREATE] Customer balance: ${customerBalance} IQD`);
-        console.log(`💰 [ORDER CREATE] Order amount: ${orderAmount} IQD`);
-        
         if (customerBalance < orderAmount) {
-          console.log("❌ [ORDER CREATE] Insufficient balance");
           return res.status(400).json({ 
             message: `رصيدك غير كافٍ. الرصيد الحالي: ${customerBalance} د.ع، المبلغ المطلوب: ${orderAmount} د.ع` 
           });
@@ -834,9 +778,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         // CRITICAL: Deduct amount from customer wallet
         const newBalance = customerBalance - orderAmount;
         await storage.updateCustomerWallet(customer.phone, -orderAmount); // Negative to deduct
-        
-        console.log(`✅ [ORDER CREATE] Wallet deducted successfully`);
-        console.log(`✅ [ORDER CREATE] Customer ${customer.phone} - Old Balance: ${customerBalance} → New Balance: ${newBalance} IQD`);
         
         // Create transaction record for the deduction
         await storage.createTransaction({
@@ -847,8 +788,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
           referenceId: `ORDER_PAYMENT_${Date.now()}`
         });
         
-        console.log(`✅ [ORDER CREATE] Transaction record created for wallet payment`);
-        
         // Emit socket event to update customer's wallet in real-time
         io.emit(`customer_wallet_updated_${customer.id}`, {
           newBalance: newBalance.toFixed(2),
@@ -856,8 +795,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
           type: "debit",
           message: `تم خصم ${orderAmount} د.ع مقابل الطلب`
         });
-        
-        console.log(`✅ [ORDER CREATE] Socket event emitted to update customer wallet UI`);
       }
 
       const request = await storage.createRequest({
@@ -866,39 +803,27 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       });
 
       // CRITICAL FIX #1: STRICT Vehicle Type Filtering - 100% Isolation
-      console.log(`\n╔════════════════════════════════════════════════════════╗`);
-      console.log(`║  🚗 VEHICLE TYPE FILTER - Request #${request.id}`)
-      console.log(`║  Type Requested: "${request.vehicleType}"`);
-      console.log(`╚════════════════════════════════════════════════════════╝\n`);
       
       const requestVehicleType = request.vehicleType || "سطحة";
       
       // STEP 1: Get ALL drivers
       const allDrivers = await storage.getDrivers();
-      console.log(`📊 [FILTER] Total drivers in DB: ${allDrivers.length}`);
       
       // STEP 2: Filter by ONLINE status
       const onlineDrivers = allDrivers.filter(d => d.isOnline);
-      console.log(`📊 [FILTER] Online drivers: ${onlineDrivers.length}`);
       
       // STEP 3: STRICT vehicle type matching
       const matchingDrivers = onlineDrivers.filter(driver => {
         const match = driver.vehicleType === requestVehicleType;
-        console.log(`  ${match ? '✅' : '❌'} Driver #${driver.id} (${driver.name}): "${driver.vehicleType}" ${match ? '==' : '!='} "${requestVehicleType}"`);
         return match;
       });
       
-      console.log(`\n✅ [FILTER] RESULT: ${matchingDrivers.length} matching drivers\n`);
-      
       if (matchingDrivers.length === 0) {
-        console.warn(`⚠️  [FILTER] NO MATCHING DRIVERS for "${requestVehicleType}"`);
-        console.warn(`⚠️  Request #${request.id} will wait for matching driver to come online\n`);
       }
       
       // STEP 4: Emit to ONLY matching drivers (targeted rooms)
       matchingDrivers.forEach(driver => {
         io.to(`driver_${driver.id}`).emit("new_request_available", request);
-        console.log(`📤 [EMIT] Sent to driver_${driver.id} (${driver.name})`);
       });
       
       // STEP 5: City broadcast (admin tracking only)
@@ -914,8 +839,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         matchingDriversCount: matchingDrivers.length,
         ...request 
       });
-      
-      console.log(`✅ [BROADCAST] Complete for Request #${request.id}\n`);
 
       res.status(201).json(request);
     } catch (err: any) {
@@ -925,54 +848,37 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
   app.post("/api/drivers/:id/accept/:requestId", async (req, res) => {
     try {
-      console.log(`\n🚨 [ACCEPT ORDER] ========================================`);
-      console.log(`🚨 [ACCEPT ORDER] Driver ID: ${req.params.id}`);
-      console.log(`🚨 [ACCEPT ORDER] Request ID: ${req.params.requestId}`);
-      console.log(`🚨 [ACCEPT ORDER] ========================================\n`);
       
       const driverId = Number(req.params.id);
       const requestId = Number(req.params.requestId);
       
       if (isNaN(driverId) || isNaN(requestId)) {
-        console.error(`❌ [ACCEPT ORDER] Invalid IDs - Driver: ${req.params.id}, Request: ${req.params.requestId}`);
         return res.status(400).json({ message: "معرّفات غير صالحة" });
       }
 
       // CRITICAL FIX #1: Verify request exists and is pending
-      console.log(`🔍 [ACCEPT ORDER] Checking request status...`);
       const currentRequest = await storage.getRequest(requestId);
       
       if (!currentRequest) {
-        console.error(`❌ [ACCEPT ORDER] Request ${requestId} not found`);
         return res.status(404).json({ message: "الطلب لم يعد متاحاً" });
       }
       
       if (currentRequest.status !== "pending") {
-        console.warn(`⚠️ [ACCEPT ORDER] Request ${requestId} already ${currentRequest.status}`);
         return res.status(400).json({ message: "عذراً، هذا الطلب تم قبوله بالفعل من قبل سائق آخر" });
       }
-      
-      console.log(`✅ [ACCEPT ORDER] Request ${requestId} is available (status: pending)`);
 
       // CRITICAL FIX #1: Check if driver is busy
-      console.log(`🔍 [ACCEPT ORDER] Checking if driver is busy...`);
       const driverRequests = await storage.getDriverRequests(driverId);
       const isBusy = driverRequests.some(r => ACTIVE_STATUSES.includes(r.status));
       
       if (isBusy) {
-        console.warn(`⚠️ [ACCEPT ORDER] Driver ${driverId} is already busy`);
         return res.status(400).json({ message: "لديك رحلة نشطة حالياً، أكملها أولاً" });
       }
-      
-      console.log(`✅ [ACCEPT ORDER] Driver ${driverId} is available`);
 
       const driver = await storage.getDriver(driverId);
       if (!driver) {
-        console.error(`❌ [ACCEPT ORDER] Driver ${driverId} not found`);
         return res.status(404).json({ message: "السائق غير موجود" });
       }
-      
-      console.log(`✅ [ACCEPT ORDER] Driver found: ${driver.name}`);
       
       const systemSettings = await storage.getSettings();
       const currentCommission = Number(systemSettings?.commissionAmount || 1000);
@@ -984,7 +890,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       }
 
       // CRITICAL FIX #1: Accept the request
-      console.log(`🔄 [ACCEPT ORDER] Calling storage.acceptRequest...`);
       const result = await storage.acceptRequest(driverId, requestId);
       
       // Verification check: ensure DB actually updated
@@ -992,8 +897,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       if (!verifyRequest || verifyRequest.driverId !== driverId) {
          throw new Error("Failed to verify driver assignment in database");
       }
-      
-      console.log(`✅ [ACCEPT ORDER] Database updated successfully`);
       
       // جلب معلومات الطلب لإرسالها للسائق
       const request = await storage.getRequest(requestId);
@@ -1025,29 +928,20 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       };
 
       // CRITICAL FIX #1: Emit socket events with comprehensive logging
-      console.log(`📤 [ACCEPT ORDER] Emitting socket events...`);
       
       // إشعار الزبون بمعلومات السائق الكاملة
       io.to(`order_${requestId}`).emit("status_changed", payload);
-      console.log(`  ✅ Emitted to order_${requestId}: status_changed`);
       
       io.emit(`order_status_${requestId}`, payload);
-      console.log(`  ✅ Emitted global: order_status_${requestId}`);
       
       // إشعار السائق بمعلومات الزبون الكاملة
       io.to(`driver_${driverId}`).emit("customer_info", payload.customerInfo);
-      console.log(`  ✅ Emitted to driver_${driverId}: customer_info`);
 
       // [تصحيح] إشعار لوحة تحكم المدير فوراً لتحديث القائمة دون Refresh
       io.emit("request_updated", { id: requestId, ...payload });
-      console.log(`  ✅ Emitted global: request_updated`);
-      
-      console.log(`✅ [ACCEPT ORDER] All events emitted successfully\n`);
 
       res.json(result);
     } catch (err: any) {
-      console.error(`❌ [ACCEPT ORDER] FATAL ERROR:`, err);
-      console.error(`❌ [ACCEPT ORDER] Stack:`, err.stack);
       res.status(500).json({ message: err.message || "حدث خطأ أثناء قبول الطلب" });
     }
   });
@@ -1108,7 +1002,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       res.json({ message: "تم إكمال الطلب بنجاح وخصم العمولة", balance: newBalance });
 
     } catch (err: any) {
-      console.error("[Fatal Complete Error]:", err);
       res.status(500).json({ message: "حدث خطأ داخلي أثناء إكمال الطلب: " + err.message });
     }
   });
@@ -1171,13 +1064,9 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   app.get("/api/users/:phone/requests", async (req, res) => {
     try {
       const { phone } = req.params;
-      console.log(`[Trip History] Fetching requests for customer: ${phone}`);
       
       const allRequests = await storage.getRequests();
       const userRequests = allRequests.filter(r => r.customerPhone === phone);
-      
-      console.log(`[Trip History] Found ${userRequests.length} requests for ${phone}`);
-      console.log(`[Trip History] Statuses:`, userRequests.map(r => ({ id: r.id, status: r.status })));
       
       // CRITICAL FIX: Include FULL driver data with JOIN for complete state hydration
       const detailedRequests = await Promise.all(userRequests.map(async (req) => {
@@ -1221,11 +1110,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
           driverPhone: driver?.phone
         };
       }));
-      
-      console.log(`[Trip History] Returning ${detailedRequests.length} detailed requests with driver data`);
       res.json(detailedRequests);
     } catch (err: any) {
-      console.error("[Trip History Error]:", err);
       res.status(500).json({ message: err.message || "فشل في جلب سجل الرحلات" });
     }
   });
@@ -1269,7 +1155,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       
       res.json(detailedRequest);
     } catch (err) {
-      console.error("Error fetching request:", err);
       res.status(500).json({ message: "فشل في جلب تفاصيل الطلب" });
     }
   });
@@ -1280,14 +1165,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const { customerPhone, amount, adminId } = req.body;
       const amountNum = Number(amount);
       
-      console.log(`💰 [ADMIN WALLET] Admin ${adminId || 'Unknown'} initiating wallet adjustment for customer ${customerPhone}`);
-      console.log(`💰 [ADMIN WALLET] Amount: ${amountNum} IQD`);
-      
       // CRITICAL: Update customer balance in database
       const updated = await storage.updateCustomerWallet(customerPhone, amountNum);
-      
-      console.log(`✅ [ADMIN WALLET] Database updated successfully`);
-      console.log(`✅ [ADMIN WALLET] Customer ${customerPhone} - Old Balance: ${(parseFloat(updated.walletBalance) - amountNum).toFixed(2)} → New Balance: ${updated.walletBalance} IQD`);
       
       // CRITICAL: Create transaction record for audit trail
       await storage.createTransaction({
@@ -1298,8 +1177,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         referenceId: `ADMIN_ADJUST_${Date.now()}`
       });
       
-      console.log(`✅ [ADMIN WALLET] Transaction record created in database`);
-      
       // CRITICAL: Emit real-time socket event to customer
       io.emit(`customer_wallet_updated_${updated.id}`, { 
         newBalance: updated.walletBalance,
@@ -1308,16 +1185,12 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         message: amountNum > 0 ? "تم إضافة رصيد من الإدارة" : "تم خصم رصيد من الإدارة"
       });
       
-      console.log(`✅ [ADMIN WALLET] Socket event emitted to customer (customer_wallet_updated_${updated.id})`);
-      console.log(`🎉 [ADMIN WALLET] Admin ${adminId || 'Unknown'} successfully adjusted Customer ${updated.id} wallet. Final Balance: ${updated.walletBalance} IQD`);
-      
       res.json({ 
         success: true,
         user: updated,
         message: "تم تحديث المحفظة بنجاح"
       });
     } catch (err: any) {
-      console.error("❌ [ADMIN WALLET ERROR]:", err);
       res.status(500).json({ message: "فشل في تحديث محفظة الزبون: " + err.message });
     }
   });
@@ -1346,15 +1219,12 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const requestId = parseInt(req.params.requestId);
       const { driverId } = req.body;
       
-      console.log(`[Admin Assign] Request ${requestId} → Driver ${driverId}`);
-      
       // CRITICAL: Check if this is a TRANSFER (order already has a different driver)
       const currentRequest = await storage.getRequest(requestId);
       const previousDriverId = currentRequest?.driverId;
       const isTransfer = previousDriverId && previousDriverId !== driverId;
       
       if (isTransfer) {
-        console.log(`🔄 [TRANSFER] Moving order ${requestId} from Driver ${previousDriverId} to Driver ${driverId}`);
       }
       
       // تعيين الطلب للسائق في قاعدة البيانات
@@ -1418,19 +1288,16 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
       // CRITICAL: If this is a TRANSFER, notify the previous driver to IMMEDIATELY clear their UI
       if (isTransfer && previousDriverId) {
-        console.log(`🔄 [TRANSFER] Notifying previous driver ${previousDriverId} to remove order from their screen`);
         io.to(`driver_${previousDriverId}`).emit("order_removed_from_driver", {
           orderId: requestId,
           newDriverId: driverId,
           message: "تم نقل الطلب إلى سائق آخر من قبل الإدارة",
           reason: "admin_transfer"
         });
-        console.log(`✅ [TRANSFER] Previous driver ${previousDriverId} notified via order_removed_from_driver event`);
       }
 
       // CRITICAL: إشعار السائق بالطلب الجديد مع كل التفاصيل - FORCE UI TRANSITION
       if (driverId) {
-        console.log(`🚨 [CRITICAL] Emitting to driver_${driverId}:`, fullOrderData);
         
         // EMIT MULTIPLE EVENTS FOR REDUNDANCY AND FORCE UI UPDATE
         io.to(`driver_${driverId}`).emit("order_assigned", fullOrderData);
@@ -1439,8 +1306,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         
         // إرسال معلومات الزبون للسائق
         io.to(`driver_${driverId}`).emit("customer_info", payload.customerInfo);
-        
-        console.log(`✅ [CRITICAL] Successfully emitted ALL assignment events to driver_${driverId}`);
       }
 
       // إزالة الطلب من قوائم السائقين الآخرين
@@ -1450,7 +1315,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
       res.json({ success: true, updated, driver, request: requestDetails, fullOrderData });
     } catch (err: any) {
-      console.error("Admin assign error:", err);
       res.status(400).json({ message: err.message || "فشل في تحويل الطلب للسائق" });
     }
   });
@@ -1481,7 +1345,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   app.delete("/api/requests/:id", async (req, res) => {
     try {
       const requestId = parseInt(req.params.id);
-      console.log(`[Customer Cancel] Deleting request ${requestId}`);
       
       const request = await storage.getRequest(requestId);
       
@@ -1508,11 +1371,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       // Remove from all drivers' available lists (no new_request broadcast)
       io.emit("request_removed", { id: requestId });
       
-      console.log(`✅ [Customer Cancel] Request ${requestId} deleted successfully`);
-      
       res.json({ success: true, message: "تم إلغاء الطلب بنجاح" });
     } catch (err: any) {
-      console.error("[Customer Cancel Error]:", err);
       res.status(500).json({ message: "فشل في إلغاء الطلب" });
     }
   });
@@ -1550,7 +1410,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       
       res.json({ success: true, message: "تم حذف الطلب بنجاح بدون خصم عمولة" });
     } catch (err: any) {
-      console.error("Delete order error:", err);
       res.status(500).json({ message: "فشل في حذف الطلب" });
     }
   });
@@ -1559,7 +1418,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   app.post("/api/admin/requests/:requestId/force-complete", async (req, res) => {
     try {
       const requestId = parseInt(req.params.requestId);
-      console.log(`🚨 [ADMIN] Force completing request ${requestId}`);
       
       const request = await storage.getRequest(requestId);
       if (!request) {
@@ -1597,8 +1455,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         referenceId: `ADMIN_COMPLETE_${requestId}`
       });
       
-      console.log(`✅ [ADMIN] Order ${requestId} force-completed. Driver ${driverId} balance: ${currentBalance} → ${newBalance}`);
-      
       // FORCE CLEAR Driver's activeOrder via socket
       io.to(`driver_${driverId}`).emit("ADMIN_FORCE_COMPLETE", { 
         requestId,
@@ -1630,7 +1486,6 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         fee
       });
     } catch (err: any) {
-      console.error("[Admin Force Complete Error]:", err);
       res.status(500).json({ message: "فشل في إتمام الطلب: " + err.message });
     }
   });

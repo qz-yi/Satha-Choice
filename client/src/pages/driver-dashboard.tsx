@@ -36,21 +36,16 @@ const getOrangeArrowIcon = (rotation: number) => L.divIcon({
 let socket: any;
 if (typeof window !== 'undefined') {
   socket = getSocket();
-  console.log("✅ [Socket] Driver socket initialized");
   
   // Setup reconnection handler
   socket.on("connect", () => {
-    console.log("✅ [Socket] Driver connected with ID:", socket.id);
     
     // On reconnection, rejoin rooms automatically
     const driverId = localStorage.getItem("currentDriverId");
     if (driverId) {
       socket.emit("join_driver_room", parseInt(driverId));
-      console.log(`🔄 [Socket Reconnect] Rejoined driver room: driver_${driverId}`);
     }
   });
-  
-  console.log("🚗 [Driver Dashboard] Component initialized");
 }
 
 const MapViewHandler = ({ center, isFollowMode }: { center: [number, number], isFollowMode: boolean }) => {
@@ -158,9 +153,7 @@ export default function DriverDashboard() {
   // FEATURE 1: Ensure driver joins their private room for targeted notifications
   useEffect(() => {
     if (driverInfo?.id && socket) {
-      console.log(`🚗 [VEHICLE FILTER] Driver ${driverInfo.id} joining private room (${driverInfo.vehicleType})`);
       socket.emit("join_driver_room", driverInfo.id);
-      console.log(`✅ [VEHICLE FILTER] Driver joined room: driver_${driverInfo.id}`);
     }
   }, [driverInfo?.id]);
 
@@ -174,7 +167,6 @@ export default function DriverDashboard() {
   });
 
   useEffect(() => {
-    console.log("الوضع الحالي للطلب:", orderStage);
   }, [orderStage]);
   
   // SINGLE-USE recovery flag to prevent continuous loops
@@ -184,7 +176,6 @@ export default function DriverDashboard() {
   useEffect(() => {
     // CRITICAL: SINGLE-USE check - runs ONCE per session
     if (hasAttemptedDriverRecovery.current) {
-      console.log("⏭️ [DRIVER RECOVERY] Already attempted, skipping");
       return;
     }
     
@@ -192,73 +183,45 @@ export default function DriverDashboard() {
       // No order to recover OR already have active order
       return;
     }
-    
-    console.log("🚀 [DRIVER RECOVERY] Starting SINGLE-USE recovery check");
     hasAttemptedDriverRecovery.current = true;
     
     const recoveredOrder = driverInfo.activeOrder;
-    console.log("📡 [DRIVER RECOVERY] Found order in driverInfo:", {
-      id: recoveredOrder.id,
-      status: recoveredOrder.status
-    });
     
     // CRITICAL FIX: Use BLACKLIST approach - reject ONLY completed/cancelled/delivered
     // This ensures transferred/assigned orders are recovered regardless of specific status
     const INVALID_STATUSES = ['delivered', 'completed', 'cancelled', 'pending'];
     
     if (INVALID_STATUSES.includes(recoveredOrder.status)) {
-      console.log("🚫 [DRIVER RECOVERY] Recovery aborted: Order status is", recoveredOrder.status);
-      console.log("🧹 [DRIVER RECOVERY] Reason:", 
-        recoveredOrder.status === 'pending' ? 'Order not yet accepted by any driver' : 
-        'Order is already completed/cancelled/delivered'
-      );
-      console.log("🧹 [DRIVER RECOVERY] Clearing ALL LocalStorage for this order");
       localStorage.removeItem(`driver_active_order_${driverInfo.id}`);
       localStorage.removeItem("sat7a_active_order_id");
       return; // ABORT restoration
     }
     
-    console.log("✅ [DRIVER RECOVERY] Order is in valid active status:", recoveredOrder.status);
-    console.log("✅ [DRIVER RECOVERY] This includes admin-assigned and transferred orders");
-    
-    console.log("✅ [DRIVER RECOVERY] VALID active order found, proceeding with restoration");
-    console.log("🔄 [DRIVER RECOVERY] Step 1: Setting active order state");
-    
     setActiveOrder(recoveredOrder);
     
     // Determine stage based on order status
-    console.log("🔄 [DRIVER RECOVERY] Step 2: Determining order stage");
     if (recoveredOrder.status === "accepted" || recoveredOrder.status === "confirmed") {
       setOrderStage("heading_to_pickup");
       setActiveTab("map");
-      console.log("✅ [DRIVER RECOVERY] Stage: heading_to_pickup");
     } else if (recoveredOrder.status === "arrived") {
       setOrderStage("arrived_at_pickup");
       setActiveTab("map");
-      console.log("✅ [DRIVER RECOVERY] Stage: arrived_at_pickup");
     } else if (recoveredOrder.status === "picked_up" || recoveredOrder.status === "in_progress") {
       setOrderStage("in_progress");
       setActiveTab("map");
-      console.log("✅ [DRIVER RECOVERY] Stage: in_progress");
     } else if (recoveredOrder.status === "arrived_dropoff") {
       setOrderStage("arrived_at_destination");
       setActiveTab("map");
-      console.log("✅ [DRIVER RECOVERY] Stage: arrived_at_destination");
     } else {
       // Default fallback for any other active status
       setOrderStage("heading_to_pickup");
       setActiveTab("map");
-      console.log("⚠️ [DRIVER RECOVERY] Unknown status, defaulting to heading_to_pickup");
     }
     
     // Re-join order room for socket updates
-    console.log("🔄 [DRIVER RECOVERY] Step 3: Rejoining socket room");
     if (socket.connected && recoveredOrder.id) {
       socket.emit("join_order", recoveredOrder.id);
-      console.log(`✅ [DRIVER RECOVERY] Rejoined order room: ${recoveredOrder.id}`);
     }
-    
-    console.log("🎉 [DRIVER RECOVERY] Recovery complete successfully!");
     
     toast({
       title: "✅ تم استرجاع الطلب",
@@ -272,7 +235,6 @@ export default function DriverDashboard() {
     if (driverInfo?.id) {
       // Ensure socket is connected before joining rooms
       if (!socket.connected) {
-        console.log("[Socket] Waiting for connection...");
         socket.connect();
       }
       
@@ -280,16 +242,10 @@ export default function DriverDashboard() {
       const joinTimer = setTimeout(() => {
         socket.emit("join_driver_room", driverInfo.id);
         socket.emit("join_city", driverInfo.city);
-        console.log(`[Socket] Driver ${driverInfo.id} FORCEFULLY joined rooms:`, {
-          driverRoom: `driver_${driverInfo.id}`,
-          cityRoom: `city_${driverInfo.city}`,
-          connected: socket.connected
-        });
         
         // CRITICAL: If there's an active order, rejoin its room immediately
         if (activeOrder?.id) {
           socket.emit("join_order", activeOrder.id);
-          console.log(`[Socket] Rejoined order room: ${activeOrder.id}`);
         }
       }, 500);
       
@@ -333,7 +289,6 @@ export default function DriverDashboard() {
         throw new Error("لم يتم استلام رابط الدفع من البوابة");
       }
     } catch (err: any) {
-      console.error("Deposit Error:", err);
       toast({ 
         variant: "destructive", 
         title: "فشل في عملية الربط", 
@@ -374,30 +329,23 @@ export default function DriverDashboard() {
       const dId = Number(driverInfo.id);
       const oId = Number(orderId);
 
-      console.log("🚀 [ORDER COMPLETE] Starting completion process for order:", oId);
-
       // IMMEDIATE STATE CLEANUP - BEFORE API call
       // This prevents any race conditions with recovery logic
-      console.log("🧹 [CLEANUP] Step 1: Clearing local state IMMEDIATELY");
       setActiveOrder(null);
       setOrderStage("heading_to_pickup");
       setActiveTab("map");
       
       // IMMEDIATE localStorage cleanup - BOTH keys
-      console.log("🧹 [CLEANUP] Step 2: Removing ALL localStorage keys");
       localStorage.removeItem(`driver_active_order_${dId}`);
       localStorage.removeItem("sat7a_active_order_id"); // Customer-side key
       
       // IMMEDIATE socket room cleanup
-      console.log("🧹 [CLEANUP] Step 3: Leaving socket room");
       socket.emit("leave_order", oId);
 
       // NOW make the API call
-      console.log("📡 [API CALL] Calling completion endpoint");
       const response = await apiRequest("POST", `/api/drivers/${dId}/complete/${oId}`);
 
       // CRITICAL: Emit FINAL_CLEANUP to force both parties to reset
-      console.log("📡 [FINAL_CLEANUP] Emitting FINAL_CLEANUP event to all parties");
       socket.emit("FINAL_CLEANUP", { 
         orderId: oId,
         driverId: dId,
@@ -411,8 +359,6 @@ export default function DriverDashboard() {
         status: "completed",
         driverId: dId
       });
-      
-      console.log("✅ [ORDER COMPLETE] Completion successful, cleanup events emitted for order:", oId);
 
       // Show success notification
       setNotification({ show: true, message: "تم إكمال الطلب بنجاح", type: "success" });
@@ -428,7 +374,6 @@ export default function DriverDashboard() {
       await refetch();
 
     } catch (err: any) {
-      console.error("Faliure:", err);
       alert(err.message || "حدث خطأ غير متوقع أثناء إكمال الطلب");
     }
   };
@@ -436,111 +381,89 @@ export default function DriverDashboard() {
   const handleAcceptOrder = async (req: any) => {
     const currentCommission = settings?.commissionAmount || 1000;
     if (Number(driverInfo?.walletBalance) < currentCommission) {
-      toast({ 
-        variant: "destructive", 
-        title: "رصيدك غير كافٍ", 
-        description: `يرجى شحن محفظتك بـ ${currentCommission.toLocaleString()} دينار على الأقل لقبول الطلب` 
+      toast({
+        variant: "destructive",
+        title: "رصيدك غير كافٍ",
+        description: `يرجى شحن محفظتك بـ ${currentCommission.toLocaleString()} دينار على الأقل لقبول الطلب`,
       });
       setActiveTab("wallet");
       return;
     }
 
+    // Flag: set to true the moment the server confirms acceptance.
+    // Prevents the outer catch from showing a false "connection error"
+    // after the order was already accepted and secondary operations fail.
+    let accepted = false;
+
     try {
-      // CRITICAL FIX #1: Send accept request with detailed logging
-      console.log(`🔄 [DRIVER ACCEPT] Sending API request...`);
-      console.log(`   API: POST /api/drivers/${driverInfo?.id}/accept/${req.id}`);
-      
       const res = await fetch(`/api/drivers/${driverInfo?.id}/accept/${req.id}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
-      
-      console.log(`📥 [DRIVER ACCEPT] Response status: ${res.status}`);
-      
+
       if (res.ok) {
-        const acceptData = await res.json();
-        console.log("✅ [DRIVER ACCEPT] Order accepted successfully!", acceptData);
-        
-        // IMMEDIATE SUCCESS UI Update
+        accepted = true;
+
+        // Show success immediately and remove from available list
         setNotification({ show: true, message: "تم قبول الطلب بنجاح", type: "success" });
-        
-        // CRITICAL: Fetch FULL order object including customer image from database
-        console.log(`🔄 [DRIVER ACCEPT] Fetching full order details...`);
-        const fullOrderRes = await fetch(`/api/requests/${req.id}`);
-        let fullOrder = req; // Fallback to basic req if fetch fails
-        
-        if (fullOrderRes.ok) {
-          fullOrder = await fullOrderRes.json();
-          console.log("✅ [DRIVER ACCEPT] Full order fetched");
-          console.log("   Customer Image:", fullOrder.user?.image || fullOrder.customerImage);
-        } else {
-          console.warn("⚠️ [DRIVER ACCEPT] Failed to fetch full order, using basic data");
-        }
-        
-        // تفعيل الطلب محلياً with FULL data including customer image
+        setTimeout(() => setNotification(n => ({ ...n, show: false })), 3000);
+        setAvailableRequests(prev => prev.filter(r => r.id !== req.id));
+
+        // Join socket room for chat and live updates
+        socket.emit("join_order", req.id);
+
+        // Fetch full order details (non-critical — won't block or throw to outer catch)
+        let fullOrder = req;
+        try {
+          const fullOrderRes = await fetch(`/api/requests/${req.id}`);
+          if (fullOrderRes.ok) fullOrder = await fullOrderRes.json();
+        } catch { /* use basic req as fallback */ }
+
         setActiveOrder({
           ...fullOrder,
-          customerImage: fullOrder.user?.image || fullOrder.customerImage || null
+          customerImage: fullOrder.user?.image || fullOrder.customerImage || null,
         });
         setOrderStage("heading_to_pickup");
-        setActiveTab("map"); // CRITICAL FIX #1: Force switch to map
-        
-        console.log("✅ [DRIVER ACCEPT] Active order set, UI updated");
-        
-        // الانضمام لغرفة الدردشة الخاصة بالطلب
-        socket.emit("join_order", req.id);
-        console.log(`📤 [DRIVER ACCEPT] Joined socket room: order_${req.id}`);
-        
-        // FEATURE 2: Calculate route to pickup immediately
-        console.log('🗺️ [DRIVER ACCEPT] Fetching route to pickup location');
+        setActiveTab("map");
+
+        // Fetch route to pickup (non-critical — fully isolated)
         try {
-          const routeRes = await fetch('/api/route', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          const routeRes = await fetch("/api/route", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               origin: { lat: driverInfo?.lastLat || 0, lng: driverInfo?.lastLng || 0 },
-              destination: { lat: parseFloat(req.pickupLat), lng: parseFloat(req.pickupLng) }
-            })
+              destination: { lat: parseFloat(req.pickupLat), lng: parseFloat(req.pickupLng) },
+            }),
           });
-          
           if (routeRes.ok) {
             const data = await routeRes.json();
             setRoutePoints(data.points || []);
-            console.log(`✅ [DRIVER ACCEPT] Route loaded: ${data.points?.length} points`);
           }
-        } catch (error) {
-          console.warn('⚠️ [DRIVER ACCEPT] Route fetch failed, using straight line');
-          setRoutePoints([[driverInfo?.lastLat || 0, driverInfo?.lastLng || 0], [parseFloat(req.pickupLat), parseFloat(req.pickupLng)]]);
+        } catch {
+          setRoutePoints([
+            [driverInfo?.lastLat || 0, driverInfo?.lastLng || 0],
+            [parseFloat(req.pickupLat), parseFloat(req.pickupLng)],
+          ]);
         }
-        
-        // إزالة الطلب من القائمة المتاحة فوراً
-        setAvailableRequests(prev => prev.filter(r => r.id !== req.id));
-        
-        setNotification({ show: true, message: "تم قبول الطلب بنجاح", type: "success" });
-        
-        // إخفاء التنبيه بعد 3 ثواني
-        setTimeout(() => {
-          setNotification(n => ({ ...n, show: false }));
-        }, 3000);
-        
-        console.log(`✅ [DRIVER ACCEPT] Complete!\n`);
+
       } else {
         const data = await res.json().catch(() => ({ message: "خطأ غير معروف" }));
-        console.error(`❌ [DRIVER ACCEPT] Failed: ${data.message}`);
-        toast({ 
-          variant: "destructive", 
-          title: "خطأ", 
-          description: data.message || "فشل في قبول الطلب" 
+        toast({
+          variant: "destructive",
+          title: "تعذر القبول",
+          description: data.message || "فشل في قبول الطلب",
         });
       }
-    } catch (err: any) {
-      console.error(`❌ [DRIVER ACCEPT] FATAL ERROR:`, err);
-      console.error(`❌ [DRIVER ACCEPT] Stack:`, err.stack);
-      toast({ 
-        variant: "destructive", 
-        title: "خطأ", 
-        description: "تعذر الاتصال بالخادم" 
-      });
+    } catch {
+      // Only show error toast if the order was NOT confirmed by the server
+      if (!accepted) {
+        toast({
+          variant: "destructive",
+          title: "خطأ في الاتصال",
+          description: "تعذر الوصول إلى الخادم، يرجى المحاولة مجدداً",
+        });
+      }
     }
   };
 
@@ -572,7 +495,7 @@ export default function DriverDashboard() {
           });
         }
       },
-      (err) => console.error(err),
+      () => {},
       { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
     );
     return () => navigator.geolocation.clearWatch(watchId);
@@ -651,9 +574,6 @@ export default function DriverDashboard() {
 
       // CRITICAL FIX: FORCE UI TRANSITION - Admin Dispatch
       const handleOrderAssigned = (data: any) => {
-        console.log("🚨 [CRITICAL] Admin assigned order to driver:", data);
-        console.log("🚨 [CRITICAL] Current activeOrder:", activeOrder);
-        console.log("🚨 [CRITICAL] Socket connected:", socket.connected);
         
         if (!activeOrder) {
           // FORCE UI TRANSITION - Set activeOrder immediately
@@ -670,8 +590,6 @@ export default function DriverDashboard() {
             vehicleType: data.vehicleType,
             status: "accepted"
           };
-          
-          console.log("🚨 [CRITICAL] FORCING activeOrder to:", forceOrderData);
           
           // FORCE STATE UPDATES
           setActiveOrder(forceOrderData);
@@ -698,8 +616,6 @@ export default function DriverDashboard() {
           
           // Force refetch
           refetch();
-          
-          console.log("✅ [CRITICAL] UI FORCED TO ACTIVE ORDER STATE");
         } else {
           // إذا كان لديه طلب نشط، أضف الطلب الجديد للقائمة
           setAvailableRequests(prev => {
@@ -721,16 +637,13 @@ export default function DriverDashboard() {
       
       // CRITICAL FIX: Handle order removal when admin transfers to another driver
       socket.on("order_removed_from_driver", (data: any) => {
-        console.log("🚨 [ADMIN TRANSFER] Order removed from this driver by admin:", data);
         // Check if the order being removed is the current active order
         if (activeOrder && activeOrder.id === data.orderId) {
-          console.log("🧹 [ADMIN TRANSFER] This driver's active order was transferred - IMMEDIATE UI clearance");
           
           // IMMEDIATE cleanup - BEFORE any other operations
           socket.emit("leave_order", data.orderId);
           localStorage.removeItem(`driver_active_order_${driverInfo?.id}`);
           localStorage.removeItem("sat7a_active_order_id");
-          console.log("🧹 [ADMIN TRANSFER] All localStorage keys cleared");
           
           // FORCE UI RESET TO AVAILABLE MODE IMMEDIATELY
           setActiveOrder(null);
@@ -749,16 +662,12 @@ export default function DriverDashboard() {
           setTimeout(() => {
             setNotification(n => ({ ...n, show: false }));
           }, 5000);
-          
-          console.log("✅ [ADMIN TRANSFER] Driver UI reset to available home screen - NO REFRESH REQUIRED");
         } else {
-          console.log("ℹ️ [ADMIN TRANSFER] Order removal event received but doesn't match active order");
         }
       });
       
       // Handle order deletion by admin
       socket.on("order_deleted_by_admin", (data: any) => {
-        console.log("[Driver] Order deleted by admin:", data);
         if (activeOrder && activeOrder.id === data.requestId) {
           setActiveOrder(null);
           setOrderStage("heading_to_pickup");
@@ -777,10 +686,8 @@ export default function DriverDashboard() {
       // Handle order cancellation by customer
       // CRITICAL: Listen for FINAL_CLEANUP event
       socket.on("FINAL_CLEANUP", (data: any) => {
-        console.log("🚨 [FINAL_CLEANUP] Received FINAL_CLEANUP event:", data);
         
         if (activeOrder && (data.orderId === activeOrder.id || data.orderId === Number(activeOrder.id))) {
-          console.log("🧹 [FINAL_CLEANUP] Forcing immediate state reset for driver");
           
           // FORCE RESET ALL STATE
           setActiveOrder(null);
@@ -790,20 +697,15 @@ export default function DriverDashboard() {
           // FORCE CLEANUP localStorage
           localStorage.removeItem(`driver_active_order_${driverInfo?.id}`);
           localStorage.removeItem("sat7a_active_order_id");
-          
-          console.log("✅ [FINAL_CLEANUP] Driver state forcefully reset to idle");
         }
       });
       
       socket.on("order_cancelled_by_customer", (data: any) => {
-        console.log("🚨 [DRIVER] Order cancelled by customer:", data);
         if (activeOrder && activeOrder.id === data.requestId) {
           // CRITICAL: Leave socket room and cleanup
-          console.log("🧹 [CLEANUP] Customer cancellation - starting cleanup");
           socket.emit("leave_order", data.requestId);
           localStorage.removeItem(`driver_active_order_${driverInfo?.id}`);
           localStorage.removeItem("sat7a_active_order_id");
-          console.log("🧹 [CLEANUP] All localStorage keys cleared");
           
           setActiveOrder(null);
           setOrderStage("heading_to_pickup");
@@ -821,14 +723,11 @@ export default function DriverDashboard() {
       
       // CRITICAL: Handle Admin Force Complete
       socket.on("ADMIN_FORCE_COMPLETE", (data: any) => {
-        console.log("🚨 [ADMIN] Force completing order:", data);
         if (activeOrder && activeOrder.id === data.requestId) {
           // CRITICAL: Leave socket room and cleanup ALL keys
-          console.log("🧹 [CLEANUP] Admin force complete - starting cleanup");
           socket.emit("leave_order", data.requestId);
           localStorage.removeItem(`driver_active_order_${driverInfo?.id}`);
           localStorage.removeItem("sat7a_active_order_id");
-          console.log("🧹 [CLEANUP] All localStorage keys cleared");
           
           // FORCE CLEAR activeOrder
           setActiveOrder(null);
@@ -867,13 +766,10 @@ export default function DriverDashboard() {
       
       // CRITICAL: Receive and merge customer info (including profile image) when order is accepted
       socket.on("customer_info", (customerData: any) => {
-        console.log("👤 [CUSTOMER INFO] Received customer data from server:", customerData);
-        console.log("👤 [CUSTOMER INFO] Customer Image URL:", customerData.image);
         
         // CRITICAL: Merge customer data into activeOrder state
         setActiveOrder((prevOrder: any) => {
           if (!prevOrder) {
-            console.log("⚠️ [CUSTOMER INFO] No active order to update");
             return prevOrder;
           }
           
@@ -889,10 +785,6 @@ export default function DriverDashboard() {
             pickupAddress: customerData.pickupAddress || prevOrder.pickupAddress,
             destination: customerData.dropoffAddress || prevOrder.destination
           };
-          
-          console.log("✅ [CUSTOMER INFO] Active order updated with customer image");
-          console.log("✅ [CUSTOMER INFO] Customer Name:", updated.customerName);
-          console.log("✅ [CUSTOMER INFO] Customer Image:", updated.customerImage);
           
           return updated;
         });

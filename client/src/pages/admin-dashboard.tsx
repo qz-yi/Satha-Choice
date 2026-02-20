@@ -151,10 +151,15 @@ export default function AdminDashboard() {
 
   // ── Socket events ─────────────────────────────────────────────────────────
   useEffect(() => {
-    socket.on("request_updated",  () => refetchRequests());
-    socket.on("request_deleted",  () => refetchRequests());
-    return () => { socket.off("request_updated"); socket.off("request_deleted"); };
-  }, [refetchRequests]);
+    socket.on("request_updated",        () => refetchRequests());
+    socket.on("request_deleted",        () => refetchRequests());
+    socket.on("new_driver_registration", () => refetchDrivers());
+    return () => {
+      socket.off("request_updated");
+      socket.off("request_deleted");
+      socket.off("new_driver_registration");
+    };
+  }, [refetchRequests, refetchDrivers]);
 
   useEffect(() => {
     socket.on("driver_location_broadcast", (d: { driverId: number; lat: number; lng: number }) => {

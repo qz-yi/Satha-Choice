@@ -64,7 +64,6 @@ import { RoutingPolyline } from "@/components/RoutingPolyline";
 let socket: any;
 if (typeof window !== "undefined") {
   socket = getSocket();
-  console.log("✅ [Socket] Customer socket initialized");
 }
 
 const getOrangeArrowIcon = (rotation: number) =>
@@ -286,10 +285,6 @@ export default function RequestFlow() {
         });
         if (response.ok) {
           const data = await response.json();
-          console.log(
-            "🔄 [REFRESH USER DATA] Fetched user data from API:",
-            data,
-          );
 
           const updatedProfile = {
             ...userProfile,
@@ -302,23 +297,15 @@ export default function RequestFlow() {
             image: data.image || userProfile.image || "", // CRITICAL: Include image from DB
           };
 
-          console.log(
-            "✅ [REFRESH USER DATA] Profile updated with image:",
-            updatedProfile.image ? "Yes" : "No",
-          );
-
           setUserProfile(updatedProfile);
           try {
             localStorage.setItem("sat7a_user", JSON.stringify(updatedProfile));
-            console.log("✅ [REFRESH USER DATA] Profile saved to localStorage");
           } catch (e) {
-            console.warn("⚠️ [localStorage] Quota exceeded, clearing old data");
             localStorage.removeItem("sat7a_user");
             localStorage.setItem("sat7a_user", JSON.stringify(updatedProfile));
           }
         }
       } catch (err) {
-        console.error("❌ [REFRESH USER DATA] Error:", err);
       }
     },
     [userProfile],
@@ -333,7 +320,7 @@ export default function RequestFlow() {
           setMessages(data);
           setTimeout(scrollChatToBottom, 100);
         })
-        .catch((err) => console.error("Error fetching messages:", err));
+        .catch(() => {});
     }
   }, [isChatOpen, activeOrderId]);
 
@@ -350,7 +337,6 @@ export default function RequestFlow() {
           setTripsHistory(completedTrips);
         })
         .catch((err) => {
-          console.error("Error fetching trip history:", err);
           toast({
             variant: "destructive",
             title: "فشل تحميل سجل الرحلات",
@@ -367,17 +353,8 @@ export default function RequestFlow() {
   useEffect(() => {
     // SINGLE-USE recovery check - prevent loops
     if (hasAttemptedRecovery.current) {
-      console.log("⏭️ [CUSTOMER RECOVERY] Already attempted, skipping");
       return;
     }
-
-    console.log(
-      "🚀 [CUSTOMER RECOVERY EMERGENCY] Starting MANDATORY recovery check on mount",
-    );
-    console.log(
-      "🚀 [CUSTOMER RECOVERY EMERGENCY] Current viewState:",
-      viewState,
-    );
     hasAttemptedRecovery.current = true;
 
     // FEATURE 3: Check for existing session and auto-login
@@ -387,11 +364,9 @@ export default function RequestFlow() {
     if (savedUser && sessionActive === "true") {
       try {
         const parsed = JSON.parse(savedUser);
-        console.log("🔐 [AUTO-LOGIN] Customer session found - auto-logging in");
         setUserProfile(parsed);
         setIsLoggedIn(true);
       } catch (e) {
-        console.error("❌ [AUTO-LOGIN] Failed to parse saved user");
       }
     }
 
@@ -416,30 +391,16 @@ export default function RequestFlow() {
             refreshUserData(parsed.phone, parsed.password);
           }
         } catch (e) {
-          console.error(
-            "❌ [CUSTOMER RECOVERY] Failed to parse saved user:",
-            e,
-          );
         }
       }
 
       // MANDATORY: Always check for active order if we have a phone
       if (phoneToCheck) {
-        console.log(
-          "📡 [CUSTOMER RECOVERY] Checking for active orders for phone:",
-          phoneToCheck,
-        );
         fetchActiveOrderFromAPI(phoneToCheck);
       } else {
-        console.log(
-          "⚠️ [CUSTOMER RECOVERY] No phone number available, aborting recovery",
-        );
         setIsCheckingRecovery(false);
       }
     } else {
-      console.log(
-        "⚠️ [CUSTOMER RECOVERY] No user data found, ending recovery check",
-      );
       setIsCheckingRecovery(false);
     }
   }, []); // Empty deps - runs ONCE on mount only
@@ -447,9 +408,6 @@ export default function RequestFlow() {
   // CRITICAL: Fetch latest balance whenever wallet is opened
   useEffect(() => {
     if (isWalletOpen && userProfile.phone) {
-      console.log(
-        "💰 [WALLET] Wallet opened - fetching latest balance from API",
-      );
 
       const fetchLatestBalance = async () => {
         try {
@@ -466,10 +424,6 @@ export default function RequestFlow() {
             const data = await response.json();
             const latestBalance = data.walletBalance?.toString() || "0";
 
-            console.log(
-              `💰 [WALLET] Latest balance fetched: ${latestBalance} IQD`,
-            );
-
             // Update state
             setUserProfile((prev) => {
               const updated = { ...prev, wallet: latestBalance };
@@ -478,20 +432,13 @@ export default function RequestFlow() {
               try {
                 localStorage.setItem("sat7a_user", JSON.stringify(updated));
               } catch (e) {
-                console.warn(
-                  "[localStorage] Failed to update wallet in localStorage",
-                );
               }
 
               return updated;
             });
-
-            console.log("✅ [WALLET] Balance synced successfully");
           } else {
-            console.warn("⚠️ [WALLET] Failed to fetch latest balance");
           }
         } catch (error) {
-          console.error("❌ [WALLET] Error fetching balance:", error);
         }
       };
 
@@ -502,35 +449,16 @@ export default function RequestFlow() {
   // CRITICAL: Customer-side order recovery from API
   const fetchActiveOrderFromAPI = async (customerPhone: string) => {
     try {
-      console.log(
-        "📡 [CUSTOMER RECOVERY] Attempting recovery for phone:",
-        customerPhone,
-      );
-      console.log("📡 [CUSTOMER RECOVERY] Step 1: Fetching orders from API...");
 
       // Use correct endpoint: /api/users/:phone/requests
       const response = await fetch(`/api/users/${customerPhone}/requests`);
 
       if (!response.ok) {
-        console.log(
-          "❌ [CUSTOMER RECOVERY] API request failed with status:",
-          response.status,
-        );
-        console.log("🔄 [CUSTOMER RECOVERY] Recovery aborted: API error");
         setIsCheckingRecovery(false); // CRITICAL: End loading state
         return;
       }
 
       const orders = await response.json();
-      console.log(
-        "✅ [CUSTOMER RECOVERY] Step 2: Fetched",
-        orders.length,
-        "orders from API",
-      );
-      console.log(
-        "📊 [CUSTOMER RECOVERY] Order statuses:",
-        orders.map((o: any) => ({ id: o.id, status: o.status })),
-      );
 
       // MANDATORY FIX: STRICT FILTERING with explicit completed/delivered/cancelled check
       const activeOrder = orders.find((order: any) => {
@@ -540,13 +468,6 @@ export default function RequestFlow() {
           order.status === "completed" ||
           order.status === "cancelled"
         ) {
-          console.log(
-            "🚫 [CUSTOMER RECOVERY] Skipping order",
-            order.id,
-            "- Status:",
-            order.status,
-            "(completed/delivered/cancelled)",
-          );
           return false;
         }
 
@@ -561,34 +482,16 @@ export default function RequestFlow() {
         const isValid = validStatuses.includes(order.status);
 
         if (!isValid) {
-          console.log(
-            "🚫 [CUSTOMER RECOVERY] Skipping order",
-            order.id,
-            "- Status:",
-            order.status,
-            "(invalid)",
-          );
         }
 
         return isValid;
       });
 
       if (!activeOrder) {
-        console.log("🔄 [CUSTOMER RECOVERY] No active orders found");
-        console.log("🧹 [CUSTOMER RECOVERY] Cleaning up stale localStorage");
         localStorage.removeItem("sat7a_active_order_id");
-        console.log(
-          "✅ [CUSTOMER RECOVERY] Recovery complete: No active order",
-        );
         setIsCheckingRecovery(false); // CRITICAL: End loading state - safe to show booking view
         return;
       }
-
-      console.log("✅ [CUSTOMER RECOVERY] Active order found:", {
-        id: activeOrder.id,
-        status: activeOrder.status,
-        driverId: activeOrder.driverId,
-      });
 
       // DOUBLE-CHECK: Verify status is truly active (redundant safety check)
       if (
@@ -596,77 +499,33 @@ export default function RequestFlow() {
         activeOrder.status === "completed" ||
         activeOrder.status === "cancelled"
       ) {
-        console.log(
-          "🚫 [CUSTOMER RECOVERY] Recovery aborted: Order is",
-          activeOrder.status,
-        );
-        console.log(
-          "🧹 [CUSTOMER RECOVERY] Clearing ALL LocalStorage for this order",
-        );
         localStorage.removeItem("sat7a_active_order_id");
         setIsCheckingRecovery(false); // CRITICAL: End loading state
         return; // ABORT restoration
       }
 
-      console.log("🔄 [CUSTOMER RECOVERY] Step 3: Starting state restoration");
-      console.log(
-        `📋 Restoring Customer State: Order ID ${activeOrder.id} - Status ${activeOrder.status}`,
-      );
-
       setActiveOrderId(activeOrder.id);
       setRequestStatus(activeOrder.status);
-      console.log(
-        "✅ [CUSTOMER RECOVERY] Set order ID:",
-        activeOrder.id,
-        "Status:",
-        activeOrder.status,
-      );
 
       // EMERGENCY FIX: Force correct view based on status
       if (activeOrder.status === "pending") {
-        console.log(
-          "🔄 [CUSTOMER RECOVERY EMERGENCY] Order is PENDING - setting to SUCCESS view",
-        );
         setViewState("success"); // Show "Searching for driver" state
       } else if (
         ["accepted", "arrived", "picked_up", "in_progress"].includes(
           activeOrder.status,
         )
       ) {
-        console.log(
-          "🔄 [CUSTOMER RECOVERY EMERGENCY] Order is ACTIVE - FORCING TRACKING VIEW",
-        );
         setViewState("tracking"); // Show tracking state with driver
         setRequestStatus(activeOrder.status); // CRITICAL: Set correct status
       } else {
-        console.log(
-          "⚠️ [CUSTOMER RECOVERY EMERGENCY] Unknown status, defaulting to tracking",
-        );
         setViewState("tracking");
       }
 
       // CRITICAL FIX: Hydrate driver data for ALL non-pending statuses (especially 'accepted')
       if (activeOrder.driverId) {
-        console.log(
-          "🔄 [CUSTOMER RECOVERY] Step 4: Driver assigned - hydrating driver data",
-        );
-        console.log("🔄 [CUSTOMER RECOVERY] Driver ID:", activeOrder.driverId);
 
         if (activeOrder.driver) {
           // BEST CASE: API response includes full driver object
-          console.log(
-            "✅ [CUSTOMER RECOVERY] Full driver object received from API",
-          );
-          console.log(
-            "✅ [CUSTOMER RECOVERY] Driver data:",
-            activeOrder.driver,
-          );
-          console.log("✅ [CUSTOMER RECOVERY] Driver coordinates:", {
-            lat: activeOrder.driver.lat,
-            lng: activeOrder.driver.lng,
-            lastLat: activeOrder.driver.lastLat,
-            lastLng: activeOrder.driver.lastLng,
-          });
 
           // IMMEDIATE STATE HYDRATION - Set ALL driver state from API response
           setDriverInfo({
@@ -677,57 +536,26 @@ export default function RequestFlow() {
             vehicleType: activeOrder.driver.vehicleType || "سطحة",
             plateNumber: activeOrder.driver.plateNumber || "",
           });
-          console.log(
-            "✅ [CUSTOMER RECOVERY] Driver info hydrated:",
-            activeOrder.driver.name,
-          );
 
           // CRITICAL: Restore driver's LIVE LOCATION for immediate tracking
           if (activeOrder.driver.lat && activeOrder.driver.lng) {
             const driverLat = Number(activeOrder.driver.lat);
             const driverLng = Number(activeOrder.driver.lng);
             setDriverLocation([driverLat, driverLng]);
-            console.log(
-              "✅ [CUSTOMER RECOVERY] Driver live location hydrated:",
-              { lat: driverLat, lng: driverLng },
-            );
           } else if (activeOrder.driver.lastLat && activeOrder.driver.lastLng) {
             const driverLat = Number(activeOrder.driver.lastLat);
             const driverLng = Number(activeOrder.driver.lastLng);
             setDriverLocation([driverLat, driverLng]);
-            console.log(
-              "✅ [CUSTOMER RECOVERY] Driver live location hydrated (from lastLat/lastLng):",
-              { lat: driverLat, lng: driverLng },
-            );
           } else {
-            console.log(
-              "⚠️ [CUSTOMER RECOVERY] No live location available in driver object",
-            );
           }
-
-          console.log(
-            "🎉 [CUSTOMER RECOVERY] Complete driver state hydration successful!",
-          );
         } else {
           // MANDATORY FALLBACK: If driver object is missing from API, fetch separately
-          console.warn(
-            "⚠️ [CUSTOMER RECOVERY] Driver object missing from API response - initiating fallback fetch",
-          );
-          console.log(
-            "🔄 [CUSTOMER RECOVERY] Fetching driver",
-            activeOrder.driverId,
-            "separately",
-          );
 
           const driverResponse = await fetch(
             `/api/drivers/${activeOrder.driverId}`,
           );
           if (driverResponse.ok) {
             const driverData = await driverResponse.json();
-            console.log(
-              "✅ [CUSTOMER RECOVERY] Driver data fetched via fallback",
-            );
-            console.log("✅ [CUSTOMER RECOVERY] Driver:", driverData);
 
             setDriverInfo({
               id: driverData.id,
@@ -737,41 +565,23 @@ export default function RequestFlow() {
               vehicleType: driverData.vehicleType || "سطحة",
               plateNumber: driverData.plateNumber || "",
             });
-            console.log(
-              "✅ [CUSTOMER RECOVERY] Driver info restored (fallback):",
-              driverData.name,
-            );
 
             if (driverData.lat && driverData.lng) {
               const driverLat = Number(driverData.lat);
               const driverLng = Number(driverData.lng);
               setDriverLocation([driverLat, driverLng]);
-              console.log(
-                "✅ [CUSTOMER RECOVERY] Driver live location restored (fallback):",
-                { lat: driverLat, lng: driverLng },
-              );
             } else if (driverData.lastLat && driverData.lastLng) {
               const driverLat = Number(driverData.lastLat);
               const driverLng = Number(driverData.lastLng);
               setDriverLocation([driverLat, driverLng]);
-              console.log(
-                "✅ [CUSTOMER RECOVERY] Driver location restored from lastLat/lastLng",
-              );
             }
           } else {
-            console.error(
-              "❌ [CUSTOMER RECOVERY] Fallback fetch failed - driver info unavailable",
-            );
           }
         }
       } else {
-        console.log(
-          "ℹ️ [CUSTOMER RECOVERY] No driver assigned yet (status: pending)",
-        );
       }
 
       // Restore form data for map display
-      console.log("🔄 [CUSTOMER RECOVERY] Step 5: Restoring map coordinates");
       setFormData((prev) => ({
         ...prev,
         pickupLat: activeOrder.pickupLat,
@@ -781,48 +591,26 @@ export default function RequestFlow() {
         location: activeOrder.pickupAddress || activeOrder.location,
         destination: activeOrder.destination || activeOrder.destAddress,
       }));
-      console.log("✅ [CUSTOMER RECOVERY] Map data restored");
 
       // Rejoin socket room for live updates
-      console.log("🔄 [CUSTOMER RECOVERY] Step 6: Rejoining socket room");
       socket.emit("join_order", activeOrder.id);
-      console.log(
-        "✅ [CUSTOMER RECOVERY] Socket room joined - will receive live updates",
-      );
 
       // CRITICAL: Emit customer_ready event to notify server/driver that customer is back online
       socket.emit("customer_ready", {
         orderId: activeOrder.id,
         customerPhone: customerPhone,
       });
-      console.log(
-        "✅ [CUSTOMER RECOVERY] Notified server that customer is ready",
-      );
 
       // Store order ID in localStorage for persistence
       try {
         localStorage.setItem("sat7a_active_order_id", String(activeOrder.id));
-        console.log("✅ [CUSTOMER RECOVERY] Order ID saved to localStorage");
       } catch (e) {
-        console.warn("[localStorage] Quota exceeded for active order ID");
       }
-
-      console.log("🎉 [CUSTOMER RECOVERY] Recovery complete successfully!");
-      console.log("📊 [CUSTOMER RECOVERY] Final state:", {
-        viewState: activeOrder.status === "pending" ? "success" : "tracking",
-        orderId: activeOrder.id,
-        status: activeOrder.status,
-        hasDriver: !!activeOrder.driverId,
-        driverLocation: driverLocation,
-      });
 
       // CRITICAL: Use setTimeout to ensure ALL state updates are flushed before ending loading
       // This prevents any flash of the booking view
       // CRITICAL: Immediately end loading state - React batches state updates
       setIsCheckingRecovery(false);
-      console.log(
-        "✅ [CUSTOMER RECOVERY] Loading state ended - UI will now render recovered view",
-      );
 
       // Show success toast
       toast({
@@ -831,33 +619,25 @@ export default function RequestFlow() {
         className: "bg-green-600 text-white font-black rounded-[24px]",
       });
     } catch (error) {
-      console.error(
-        "❌ [CUSTOMER RECOVERY] Error fetching active order:",
-        error,
-      );
       setIsCheckingRecovery(false); // CRITICAL: End loading state even on error
     }
   };
 
   useEffect(() => {
     if (activeOrderId) {
-      console.log("🔌 [SOCKET] Joining order room:", activeOrderId);
       socket.emit("join_order", activeOrderId);
       try {
         localStorage.setItem("sat7a_active_order_id", activeOrderId.toString());
       } catch (e) {
-        console.warn("[localStorage] Quota exceeded for active order ID");
       }
 
       // CRITICAL: Listen for FINAL_CLEANUP event from server
       socket.on("FINAL_CLEANUP", (data: any) => {
-        console.log("🚨 [FINAL_CLEANUP] Received FINAL_CLEANUP event:", data);
 
         if (
           data.orderId === activeOrderId ||
           data.orderId === Number(activeOrderId)
         ) {
-          console.log("🧹 [FINAL_CLEANUP] Forcing immediate state reset");
 
           // FORCE RESET ALL STATE
           setActiveOrderId(null);
@@ -873,17 +653,11 @@ export default function RequestFlow() {
 
           // FORCE VIEW RESET
           setViewState("booking");
-
-          console.log("✅ [FINAL_CLEANUP] State forcefully reset to idle");
         }
       });
 
       const handleStatusChange = (data: any) => {
         if (data.status) {
-          console.log(
-            "📡 [STATUS_CHANGE] Received status update:",
-            data.status,
-          );
           setRequestStatus(data.status);
 
           if (
@@ -892,9 +666,6 @@ export default function RequestFlow() {
             data.status === "arrived" ||
             data.status === "picked_up"
           ) {
-            console.log(
-              "🎉 [STATUS_CHANGE EMERGENCY] Order accepted - forcing tracking view",
-            );
             setViewState("tracking");
 
             const info = data.driverInfo || data;
@@ -907,19 +678,10 @@ export default function RequestFlow() {
               vehicleType: info.vehicleType || "سطحة هيدروليك",
               plateNumber: info.plateNumber || "أربيل - 12345",
             };
-
-            console.log(
-              "✅ [STATUS_CHANGE EMERGENCY] Setting driver data:",
-              driverData,
-            );
             setDriverInfo(driverData);
 
             if (info.lat && info.lng) {
               setDriverLocation([Number(info.lat), Number(info.lng)]);
-              console.log("📍 [STATUS_CHANGE EMERGENCY] Driver location set:", [
-                info.lat,
-                info.lng,
-              ]);
             }
 
             if (data.status === "accepted") {
@@ -933,9 +695,6 @@ export default function RequestFlow() {
 
             // CRITICAL: System Notification when driver arrives
             if (data.status === "arrived") {
-              console.log(
-                "🔔 [NOTIFICATION] Driver arrived - triggering system notification",
-              );
 
               if ("Notification" in window) {
                 Notification.requestPermission().then((permission) => {
@@ -954,23 +713,16 @@ export default function RequestFlow() {
                       const audio = new Audio("/notification.mp3");
                       audio
                         .play()
-                        .catch((e) => console.log("Audio play failed:", e));
+                        .catch(() => {});
                     } catch (e) {
-                      console.log("Audio creation failed:", e);
                     }
 
                     // Auto-close after 10 seconds
                     setTimeout(() => notification.close(), 10000);
-
-                    console.log(
-                      "✅ [NOTIFICATION] System notification sent to customer",
-                    );
                   } else {
-                    console.log("⚠️ [NOTIFICATION] Permission denied");
                   }
                 });
               } else {
-                console.log("⚠️ [NOTIFICATION] Notification API not available");
               }
 
               // Also show in-app toast
@@ -984,12 +736,8 @@ export default function RequestFlow() {
           }
 
           if (data.status === "completed") {
-            console.log(
-              "🚀 [ORDER COMPLETE] Customer side - Order completed, cleaning up",
-            );
 
             // IMMEDIATE STATE CLEANUP - Prevent any restoration attempts
-            console.log("🧹 [CLEANUP] Step 1: Clearing all state IMMEDIATELY");
             setActiveOrderId(null);
             setDriverInfo(null);
             setRequestStatus("pending");
@@ -997,23 +745,19 @@ export default function RequestFlow() {
             setDriverLocation(null);
 
             // IMMEDIATE localStorage cleanup - BOTH keys
-            console.log("🧹 [CLEANUP] Step 2: Removing ALL localStorage keys");
             localStorage.removeItem("sat7a_active_order_id");
             localStorage.removeItem(`driver_active_order_${data.driverId}`); // Driver-side key
 
             // IMMEDIATE socket room cleanup
             if (activeOrderId) {
-              console.log("🧹 [CLEANUP] Step 3: Leaving socket room");
               socket.emit("leave_order", activeOrderId);
             }
 
             // CRITICAL: Close ALL modals
-            console.log("🧹 [CLEANUP] Step 4: Closing modals");
             setShowCancelModal(false);
             setIsChatOpen(false);
 
             // IMMEDIATE view reset
-            console.log("🧹 [CLEANUP] Step 5: Resetting view to booking");
             setViewState("booking");
 
             // Show completion toast AFTER cleanup
@@ -1021,8 +765,6 @@ export default function RequestFlow() {
               title: "وصلت بالسلامة",
               description: "تم إكمال الطلب بنجاح",
             });
-
-            console.log("✅ [ORDER COMPLETE] Customer cleanup complete");
           }
         }
       };
@@ -1031,11 +773,6 @@ export default function RequestFlow() {
       socket.on("status_changed", handleStatusChange);
       socket.on(`order_status_${activeOrderId}`, handleStatusChange);
       socket.on("order_accepted", handleStatusChange); // CRITICAL: Explicit order_accepted listener
-
-      console.log(
-        "✅ [SOCKET EMERGENCY] All order listeners attached for order:",
-        activeOrderId,
-      );
 
       socket.on("driver_location_update", (data: any) => {
         if (Number(data.orderId) === Number(activeOrderId)) {
@@ -1047,11 +784,6 @@ export default function RequestFlow() {
       // CRITICAL: Handle real-time wallet updates from admin
       if (userProfile.id) {
         socket.on(`customer_wallet_updated_${userProfile.id}`, (data: any) => {
-          console.log(
-            "💰 [WALLET UPDATE] Received real-time balance update from admin:",
-            data,
-          );
-          console.log(`💰 [WALLET UPDATE] New Balance: ${data.newBalance} IQD`);
 
           // IMMEDIATE state update
           setUserProfile((prev) => {
@@ -1071,9 +803,6 @@ export default function RequestFlow() {
                 );
               }
             } catch (e) {
-              console.warn(
-                "[localStorage] Failed to update wallet in localStorage",
-              );
             }
 
             return updated;
@@ -1088,23 +817,13 @@ export default function RequestFlow() {
             className:
               "bg-green-600 text-white font-black rounded-[24px] shadow-2xl",
           });
-
-          console.log("✅ [WALLET UPDATE] Balance updated successfully in UI");
         });
-
-        console.log(
-          `🔌 [SOCKET] Listening for wallet updates on: customer_wallet_updated_${userProfile.id}`,
-        );
       }
 
       // CRITICAL FIX: Handle order deletion by admin
       socket.on("order_deleted_by_admin", (data: any) => {
-        console.log(
-          "🚀 [ADMIN DELETE] Order deleted by admin, immediate cleanup",
-        );
 
         // IMMEDIATE STATE CLEANUP
-        console.log("🧹 [CLEANUP] Step 1: Clearing all state IMMEDIATELY");
         const orderIdToLeave = activeOrderId; // Capture before clearing
         setActiveOrderId(null);
         setDriverInfo(null);
@@ -1113,22 +832,18 @@ export default function RequestFlow() {
         setDriverLocation(null);
 
         // IMMEDIATE localStorage cleanup
-        console.log("🧹 [CLEANUP] Step 2: Removing from localStorage");
         localStorage.removeItem("sat7a_active_order_id");
 
         // IMMEDIATE socket room cleanup
         if (orderIdToLeave) {
-          console.log("🧹 [CLEANUP] Step 3: Leaving socket room");
           socket.emit("leave_order", orderIdToLeave);
         }
 
         // CRITICAL: Close ALL modals
-        console.log("🧹 [CLEANUP] Step 4: Closing modals");
         setShowCancelModal(false);
         setIsChatOpen(false);
 
         // IMMEDIATE view reset
-        console.log("🧹 [CLEANUP] Step 5: Resetting view to booking");
         setViewState("booking");
 
         // Show notification AFTER cleanup
@@ -1137,8 +852,6 @@ export default function RequestFlow() {
           title: "تم إلغاء الطلب",
           description: data.message || "تم إلغاء طلبك من قبل الإدارة",
         });
-
-        console.log("✅ [ADMIN DELETE] Customer cleanup complete");
       });
 
       return () => {
@@ -1188,7 +901,6 @@ export default function RequestFlow() {
   useEffect(() => {
     if (requestStatus !== "pending" && driverInfo) {
       setIsSheetExpanded(true); // Driver found - show full details
-      console.log("📐 [BOTTOM SHEET] Driver found - expanding sheet");
     }
   }, [requestStatus, driverInfo]);
 
@@ -1223,8 +935,6 @@ export default function RequestFlow() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "فشل التسجيل");
 
-      console.log("📝 [SIGNUP] User data received from server:", data);
-
       const completeProfile = {
         ...userProfile,
         id: data.id,
@@ -1233,18 +943,11 @@ export default function RequestFlow() {
         image: data.image || userProfile.image || "", // CRITICAL: Preserve image during signup
       };
 
-      console.log(
-        "✅ [SIGNUP] Profile created with image:",
-        completeProfile.image ? "Yes" : "No",
-      );
-
       setUserProfile(completeProfile);
       try {
         localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
         localStorage.setItem("sat7a_session_active", "true");
-        console.log("✅ [SIGNUP] Profile saved to localStorage");
       } catch (e) {
-        console.warn("⚠️ [localStorage] Quota exceeded during signup");
         localStorage.clear();
         localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
         localStorage.setItem("sat7a_session_active", "true");
@@ -1270,8 +973,6 @@ export default function RequestFlow() {
       if (!response.ok)
         throw new Error(data.message || "بيانات الدخول غير صحيحة");
 
-      console.log("🔐 [LOGIN] User data received from server:", data);
-
       const completeProfile = {
         ...userProfile,
         id: data.id,
@@ -1281,18 +982,11 @@ export default function RequestFlow() {
         image: data.image || "", // CRITICAL: Load image from database
       };
 
-      console.log(
-        "✅ [LOGIN] Profile hydrated with image:",
-        completeProfile.image ? "Yes" : "No",
-      );
-
       setUserProfile(completeProfile);
       try {
         localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
         localStorage.setItem("sat7a_session_active", "true");
-        console.log("✅ [LOGIN] Profile saved to localStorage with image");
       } catch (e) {
-        console.warn("⚠️ [localStorage] Quota exceeded during login");
       }
       setIsLoggedIn(true);
     } catch (err: any) {
@@ -1316,18 +1010,13 @@ export default function RequestFlow() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    console.log("📸 [PROFILE IMAGE] Customer uploading profile image");
-
     try {
       const reader = new FileReader();
       reader.onloadend = async () => {
         const base64 = reader.result as string;
 
-        console.log("📸 [PROFILE IMAGE] Image converted to base64");
-
         // CRITICAL: Save to database immediately for persistence
         if (userProfile.phone) {
-          console.log("📸 [PROFILE IMAGE] Uploading to database...");
 
           const uploadRes = await fetch(
             `/api/users/${userProfile.phone}/update-image`,
@@ -1339,9 +1028,6 @@ export default function RequestFlow() {
           );
 
           if (uploadRes.ok) {
-            console.log(
-              "✅ [PROFILE IMAGE] Image saved to database successfully",
-            );
 
             // Update state
             setUserProfile((prev) => {
@@ -1350,9 +1036,7 @@ export default function RequestFlow() {
               // Update localStorage
               try {
                 localStorage.setItem("sat7a_user", JSON.stringify(updated));
-                console.log("✅ [PROFILE IMAGE] Image saved to localStorage");
               } catch (e) {
-                console.warn("⚠️ [PROFILE IMAGE] localStorage quota exceeded");
               }
 
               return updated;
@@ -1364,7 +1048,6 @@ export default function RequestFlow() {
               className: "bg-green-600 text-white font-black rounded-[24px]",
             });
           } else {
-            console.error("❌ [PROFILE IMAGE] Failed to upload to database");
             toast({
               variant: "destructive",
               title: "فشل التحميل",
@@ -1373,15 +1056,11 @@ export default function RequestFlow() {
           }
         } else {
           // Fallback: Just save to state and localStorage if not logged in yet
-          console.log(
-            "⚠️ [PROFILE IMAGE] User not logged in, saving temporarily",
-          );
           setUserProfile((prev) => ({ ...prev, image: base64 }));
         }
       };
       reader.readAsDataURL(file);
     } catch (err) {
-      console.error("❌ [PROFILE IMAGE] Error:", err);
       toast({
         variant: "destructive",
         title: "خطأ",
@@ -1394,17 +1073,12 @@ export default function RequestFlow() {
   const handleCancelTrip = async () => {
     try {
       if (!activeOrderId) {
-        console.error("[Cancel] No active order ID");
         setShowCancelModal(false);
         return;
       }
 
       // CRITICAL: Only allow cancellation if status is pending
       if (requestStatus !== "pending") {
-        console.error(
-          "[Cancel] Cannot cancel - order status is:",
-          requestStatus,
-        );
         setShowCancelModal(false);
         toast({
           variant: "destructive",
@@ -1413,10 +1087,6 @@ export default function RequestFlow() {
         });
         return;
       }
-
-      console.log(
-        `[Cancel] Deleting order ${activeOrderId}, status: ${requestStatus}`,
-      );
 
       const response = await fetch(`/api/requests/${activeOrderId}`, {
         method: "DELETE",
@@ -1427,14 +1097,8 @@ export default function RequestFlow() {
         throw new Error(error.message || "فشل في إلغاء الطلب");
       }
 
-      console.log("[Cancel] Order deleted successfully");
-
       // CRITICAL: Leave socket room and cleanup
       socket.emit("leave_order", activeOrderId);
-      console.log(
-        "🧹 [CLEANUP] Customer cancelled order - left room:",
-        activeOrderId,
-      );
 
       // CLOSE modal only after success
       setShowCancelModal(false);
@@ -1454,7 +1118,6 @@ export default function RequestFlow() {
         className: "bg-green-600 text-white",
       });
     } catch (error: any) {
-      console.error("[Cancel] Error:", error);
       setShowCancelModal(false);
       toast({
         variant: "destructive",
@@ -1474,7 +1137,6 @@ export default function RequestFlow() {
       const data = await res.json();
       setSearchResults(data);
     } catch (error) {
-      console.error(error);
     } finally {
       setIsSearching(false);
     }
@@ -1503,7 +1165,6 @@ export default function RequestFlow() {
         }));
       }
     } catch (err) {
-      console.error("فشل في تحديد العنوان:", err);
     }
   };
 
@@ -1517,15 +1178,9 @@ export default function RequestFlow() {
       return;
     }
 
-    console.log("📍 [GPS] Getting current location with high accuracy...");
-
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        console.log("✅ [GPS] Position acquired:", {
-          lat: latitude,
-          lng: longitude,
-        });
 
         // Update formData state FIRST
         if (step === "pickup") {
@@ -1551,7 +1206,6 @@ export default function RequestFlow() {
         });
       },
       (error) => {
-        console.error("❌ [GPS] Error:", error);
         toast({
           variant: "destructive",
           title: "فشل تحديد الموقع",
@@ -1663,7 +1317,6 @@ export default function RequestFlow() {
       formData.destLat &&
       formData.destLng
     ) {
-      console.log("💰 [PRICING] Triggering fare calculation");
 
       const calculateFare = async () => {
         setIsPriceCalculating(true); // CRITICAL: Show loading
@@ -1694,9 +1347,6 @@ export default function RequestFlow() {
               durationMinutes =
                 (element.duration_in_traffic?.value || element.duration.value) /
                 60;
-              console.log(
-                `✅ [PRICING] Google Maps data: ${distanceKm}km, ${durationMinutes}min`,
-              );
             } else {
               throw new Error("Google API returned non-OK status");
             }
@@ -1717,7 +1367,6 @@ export default function RequestFlow() {
 
           if (fareResponse.ok) {
             const fareData = await fareResponse.json();
-            console.log(`✅ [PRICING] Calculated fare:`, fareData);
 
             // Use Number() to handle both string and numeric responses from API
             const finalPrice = Math.round(Number(fareData.finalPrice) || 0);
@@ -1737,7 +1386,6 @@ export default function RequestFlow() {
             setIsPriceCalculating(false);
           }
         } catch (error) {
-          console.warn("⚠️ [PRICING] Primary path failed, falling back:", error);
 
           // ── Haversine fallback ──────────────────────────────────────────────
           try {
@@ -1784,7 +1432,6 @@ export default function RequestFlow() {
               setFormData((prev) => ({ ...prev, price: clientPrice.toString() }));
             }
           } catch (haversineError) {
-            console.error("❌ [PRICING] All paths failed:", haversineError);
             const minFare = getClientMinFare(formData.vehicleType);
             setCalculatedPrice(minFare);
             setFormData((prev) => ({ ...prev, price: minFare.toString() }));
@@ -2276,12 +1923,10 @@ export default function RequestFlow() {
           dragElastic={0.1}
           animate={{
             y: (() => {
-              // Searching state: Fixed at comfortable viewing height with cancel button visible
               if (requestStatus === "pending" || !driverInfo) {
-                return "calc(100% - 240px)"; // Show ~240px of content (increased for cancel button)
+                return "calc(100% - 380px)";
               }
-              // Driver found: Toggle between minimized and expanded
-              return isSheetExpanded ? 0 : "calc(100% - 120px)"; // Expanded: Full | Minimized: 120px peek
+              return isSheetExpanded ? 0 : "calc(100% - 120px)";
             })(),
           }}
           onDragEnd={(e, info) => {
@@ -2309,44 +1954,94 @@ export default function RequestFlow() {
             </div>
 
             <div className="px-6 pb-16 space-y-5">
-              {/* STATUS HEADER */}
-              <div className="text-center pt-2">
-                <div className="flex items-center justify-center gap-2 mb-1">
-                  {requestStatus === "pending" && (
-                    <Loader2 className="w-5 h-5 animate-spin text-orange-500" />
-                  )}
-                  <h3 className="text-lg font-black text-gray-800">
-                    {requestStatus === "pending"
-                      ? "جاري البحث..."
-                      : requestStatus === "accepted"
+
+              {/* ── SEARCHING STATE ── Professional animated bottom sheet */}
+              {requestStatus === "pending" && !driverInfo ? (
+                <div className="space-y-4 pt-1">
+                  {/* Animated radar / pulse rings */}
+                  <div className="flex justify-center py-2">
+                    <div className="relative w-24 h-24 flex items-center justify-center">
+                      {[1, 2, 3].map(i => (
+                        <motion.div
+                          key={i}
+                          className="absolute rounded-full border-2 border-orange-400"
+                          initial={{ width: 32, height: 32, opacity: 0.8 }}
+                          animate={{ width: 96, height: 96, opacity: 0 }}
+                          transition={{ duration: 1.8, repeat: Infinity, delay: i * 0.5, ease: "easeOut" }}
+                        />
+                      ))}
+                      <div className="w-14 h-14 bg-gradient-to-br from-orange-500 to-orange-600 rounded-full flex items-center justify-center shadow-lg shadow-orange-200 z-10">
+                        <Truck className="w-7 h-7 text-white" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Title */}
+                  <div className="text-center">
+                    <h3 className="text-xl font-black text-gray-900">جاري البحث عن سائق</h3>
+                    <p className="text-sm text-gray-400 font-bold mt-1">نبحث لك عن أقرب كابتن متاح...</p>
+                  </div>
+
+                  {/* Order summary chips */}
+                  <div className="flex items-center justify-center gap-2 flex-wrap">
+                    {calculatedPrice > 0 && (
+                      <div className="flex items-center gap-1.5 bg-orange-50 border border-orange-100 rounded-2xl px-3 py-1.5">
+                        <DollarSign className="w-3.5 h-3.5 text-orange-500" />
+                        <span className="text-xs font-black text-orange-600">{calculatedPrice.toLocaleString()} د.ع</span>
+                      </div>
+                    )}
+                    {safeDistance > 0 && (
+                      <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-100 rounded-2xl px-3 py-1.5">
+                        <Navigation className="w-3.5 h-3.5 text-blue-500" />
+                        <span className="text-xs font-black text-blue-600">{safeDistance.toFixed(1)} كم</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 rounded-2xl px-3 py-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-gray-500" />
+                      <span className="text-xs font-black text-gray-600">{formData.vehicleType || "سطحة"}</span>
+                    </div>
+                  </div>
+
+                  {/* Animated progress dots */}
+                  <div className="flex items-center justify-center gap-2 py-1">
+                    {[0, 0.3, 0.6].map((delay, i) => (
+                      <motion.div
+                        key={i}
+                        className="w-2 h-2 bg-orange-400 rounded-full"
+                        animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
+                        transition={{ duration: 1.2, repeat: Infinity, delay }}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Cancel button */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowCancelModal(true); }}
+                    className="w-full py-3.5 rounded-[20px] border-2 border-red-100 bg-red-50 text-red-500 font-black text-sm active:scale-95 transition-transform"
+                    style={{ pointerEvents: "auto" }}
+                  >
+                    إلغاء الطلب
+                  </button>
+                </div>
+
+              ) : (
+                <>
+                {/* ── DRIVER FOUND STATE ── Status header */}
+                <div className="text-center pt-2">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <h3 className="text-lg font-black text-gray-800">
+                      {requestStatus === "accepted"
                         ? "الكابتن قادم"
                         : requestStatus === "arrived"
                           ? "وصل الكابتن"
                           : "في الطريق"}
-                  </h3>
-                  {/* Cancel button during pending */}
-                  {requestStatus === "pending" && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowCancelModal(true);
-                      }}
-                      className="text-red-500 text-xs font-bold underline px-2"
-                      style={{ pointerEvents: "auto" }}
-                    >
-                      إلغاء
-                    </button>
-                  )}
-                </div>
-                {requestStatus !== "pending" && (
+                    </h3>
+                  </div>
                   <div className="inline-flex items-center gap-1 bg-orange-50 px-3 py-1 rounded-full">
                     <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
-                    <span className="text-[11px] font-black text-orange-600">
-                      مباشر
-                    </span>
+                    <span className="text-[11px] font-black text-orange-600">مباشر</span>
                   </div>
-                )}
-              </div>
+                </div>
 
               {driverInfo && (
                 <>
@@ -2478,6 +2173,8 @@ export default function RequestFlow() {
                     </>
                   )}
                 </>
+              )}
+              </>
               )}
             </div>
           </div>
