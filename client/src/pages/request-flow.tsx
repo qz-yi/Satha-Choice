@@ -693,39 +693,13 @@ export default function RequestFlow() {
               });
             }
 
-            // CRITICAL: System Notification when driver arrives
+            // In-app toast when driver arrives
             if (data.status === "arrived") {
+              try {
+                const audio = new Audio("/notification.mp3");
+                audio.play().catch(() => {});
+              } catch (e) {}
 
-              if ("Notification" in window) {
-                Notification.requestPermission().then((permission) => {
-                  if (permission === "granted") {
-                    const notification = new Notification("SATHA - سطحة", {
-                      body: "الكابتن وصل للموقع",
-                      icon: "/logo.png",
-                      badge: "/logo.png",
-                      tag: "driver-arrived",
-                      requireInteraction: true,
-                      vibrate: [200, 100, 200],
-                    });
-
-                    // Play notification sound
-                    try {
-                      const audio = new Audio("/notification.mp3");
-                      audio
-                        .play()
-                        .catch(() => {});
-                    } catch (e) {
-                    }
-
-                    // Auto-close after 10 seconds
-                    setTimeout(() => notification.close(), 10000);
-                  } else {
-                  }
-                });
-              } else {
-              }
-
-              // Also show in-app toast
               toast({
                 title: "📍 الكابتن وصل للموقع",
                 description: "الرجاء التوجه للموقع المحدد",

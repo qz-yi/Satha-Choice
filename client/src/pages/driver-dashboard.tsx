@@ -1287,19 +1287,6 @@ export default function DriverDashboard() {
 
                   setOrderStage(nextStage);
                   
-                  // CRITICAL: Trigger System Notification when driver arrives
-                  if (nextStatus === "arrived" && "Notification" in window) {
-                    Notification.requestPermission().then(permission => {
-                      if (permission === "granted") {
-                        new Notification("SATHA - سطحة", {
-                          body: "تم تحديث حالة الطلب",
-                          icon: "/logo.png",
-                          badge: "/logo.png"
-                        });
-                      }
-                    });
-                  }
-                  
                   socket.emit("update_order_status", { 
                     orderId: activeOrder.id, 
                     status: nextStatus, 

@@ -3,14 +3,11 @@
  * Production-ready API client with environment-based URLs
  */
 
-// Get API URL from environment or default to current origin in production
-export const API_URL = import.meta.env.VITE_API_URL || 
-  (import.meta.env.PROD ? window.location.origin : 'http://localhost:5000');
+// Always use the current origin so the APK works regardless of port
+export const API_URL = import.meta.env.VITE_API_URL ||
+  (typeof window !== 'undefined' ? window.location.origin : '');
 
 export const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || API_URL;
-
-console.log('🌐 [API] Configured API_URL:', API_URL);
-console.log('🔌 [API] Configured SOCKET_URL:', SOCKET_URL);
 
 /**
  * Make an API request with automatic base URL handling

@@ -120,12 +120,12 @@ export default function AdminDashboard() {
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data: allDrivers = [], refetch: refetchDrivers }   = useQuery<Driver[]>({
     queryKey: ["/api/drivers"],
-    refetchInterval: 5000,
+    staleTime: 30_000,
   });
 
   const { data: allRequests = [], refetch: refetchRequests } = useQuery<Request[]>({
     queryKey: ["/api/requests?role=admin"],
-    refetchInterval: 3000,
+    staleTime: 30_000,
   });
 
   const { data: specificOrder } = useQuery<Request>({
@@ -135,8 +135,8 @@ export default function AdminDashboard() {
       const res = await apiRequest("GET", `/api/requests/${selectedOrderId}`);
       return res.json();
     },
-    enabled:         !!selectedOrderId,
-    refetchInterval: 2000,
+    enabled:   !!selectedOrderId,
+    staleTime: 10_000,
   });
 
   const { data: allTransactions = [] } = useQuery<any[]>({
@@ -151,15 +151,25 @@ export default function AdminDashboard() {
 
   // ── Socket events ─────────────────────────────────────────────────────────
   useEffect(() => {
-    socket.on("request_updated",        () => refetchRequests());
-    socket.on("request_deleted",        () => refetchRequests());
+    const onRequestUpdated = () => {
+      refetchRequests();
+      if (selectedOrderId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/requests", selectedOrderId] });
+      }
+    };
+    socket.on("request_updated",         onRequestUpdated);
+    socket.on("request_deleted",         () => refetchRequests());
     socket.on("new_driver_registration", () => refetchDrivers());
+    socket.on("order_accepted",          () => { refetchRequests(); refetchDrivers(); });
+    socket.on("order_completed",         () => { refetchRequests(); refetchDrivers(); });
     return () => {
       socket.off("request_updated");
       socket.off("request_deleted");
       socket.off("new_driver_registration");
+      socket.off("order_accepted");
+      socket.off("order_completed");
     };
-  }, [refetchRequests, refetchDrivers]);
+  }, [refetchRequests, refetchDrivers, selectedOrderId]);
 
   useEffect(() => {
     socket.on("driver_location_broadcast", (d: { driverId: number; lat: number; lng: number }) => {
