@@ -1,3 +1,4 @@
+import { API_BASE } from '@/lib/http';
 /**
  * PROFESSIONAL MAP SERVICE
  * Centralized Google Maps integration for distance/duration calculations
@@ -73,7 +74,7 @@ export async function getDistanceAndDuration(
     console.log('🌐 [MAP SERVICE] Calling Google Distance Matrix API...');
     
     // CRITICAL: Call via backend proxy to avoid CORS issues
-    const response = await fetch('/api/distance-matrix', {
+    const response = await fetch(`${API_BASE}/api/distance-matrix`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ origin, destination })
@@ -154,7 +155,7 @@ export async function getRoutePoints(
     console.log('🗺️ [MAP SERVICE] Getting route points for navigation');
     
     // Try to get route from backend (using OSRM or Google Directions)
-    const response = await fetch('/api/route', {
+    const response = await fetch(`${API_BASE}/api/route`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

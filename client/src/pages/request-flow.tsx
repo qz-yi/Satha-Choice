@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, memo, useRef } from "react";
+import { API_BASE } from "@/lib/http";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -278,7 +279,7 @@ export default function RequestFlow() {
   const refreshUserData = useCallback(
     async (phone: string, pass: string) => {
       try {
-        const response = await fetch(`/api/login`, {
+        const response = await fetch(`${API_BASE}/api/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ phone: phone, password: pass }),
@@ -314,7 +315,7 @@ export default function RequestFlow() {
   // جلب الرسائل القديمة عند فتح الدردشة
   useEffect(() => {
     if (isChatOpen && activeOrderId) {
-      fetch(`/api/requests/${activeOrderId}/messages`)
+      fetch(`${API_BASE}/api/requests/${activeOrderId}/messages`)
         .then((res) => res.json())
         .then((data) => {
           setMessages(data);
@@ -327,7 +328,7 @@ export default function RequestFlow() {
   // جلب سجل الرحلات عند فتح القائمة
   useEffect(() => {
     if (isHistoryOpen && userProfile.phone) {
-      fetch(`/api/users/${userProfile.phone}/requests`)
+      fetch(`${API_BASE}/api/users/${userProfile.phone}/requests`)
         .then((res) => res.json())
         .then((data) => {
           // فلترة الرحلات المكتملة فقط
@@ -411,7 +412,7 @@ export default function RequestFlow() {
 
       const fetchLatestBalance = async () => {
         try {
-          const response = await fetch(`/api/login`, {
+          const response = await fetch(`${API_BASE}/api/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -451,7 +452,7 @@ export default function RequestFlow() {
     try {
 
       // Use correct endpoint: /api/users/:phone/requests
-      const response = await fetch(`/api/users/${customerPhone}/requests`);
+      const response = await fetch(`${API_BASE}/api/users/${customerPhone}/requests`);
 
       if (!response.ok) {
         setIsCheckingRecovery(false); // CRITICAL: End loading state
@@ -552,7 +553,7 @@ export default function RequestFlow() {
           // MANDATORY FALLBACK: If driver object is missing from API, fetch separately
 
           const driverResponse = await fetch(
-            `/api/drivers/${activeOrder.driverId}`,
+            `${API_BASE}/api/drivers/${activeOrder.driverId}`,
           );
           if (driverResponse.ok) {
             const driverData = await driverResponse.json();
@@ -896,7 +897,7 @@ export default function RequestFlow() {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch("/api/register", {
+      const response = await fetch(`${API_BASE}/api/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -935,7 +936,7 @@ export default function RequestFlow() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch("/api/login", {
+      const response = await fetch(`${API_BASE}/api/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -993,7 +994,7 @@ export default function RequestFlow() {
         if (userProfile.phone) {
 
           const uploadRes = await fetch(
-            `/api/users/${userProfile.phone}/update-image`,
+            `${API_BASE}/api/users/${userProfile.phone}/update-image`,
             {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
@@ -1062,7 +1063,7 @@ export default function RequestFlow() {
         return;
       }
 
-      const response = await fetch(`/api/requests/${activeOrderId}`, {
+      const response = await fetch(`${API_BASE}/api/requests/${activeOrderId}`, {
         method: "DELETE",
       });
 
@@ -1248,7 +1249,7 @@ export default function RequestFlow() {
 
     setIsDepositing(true);
     try {
-      const response = await fetch("/api/zaincash/initiate", {
+      const response = await fetch(`${API_BASE}/api/zaincash/initiate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1298,7 +1299,7 @@ export default function RequestFlow() {
 
         try {
           // Call backend to get traffic-aware pricing
-          const response = await fetch("/api/distance-matrix", {
+          const response = await fetch(`${API_BASE}/api/distance-matrix`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -1329,7 +1330,7 @@ export default function RequestFlow() {
           }
 
           // Calculate fare using backend pricing engine
-          const fareResponse = await fetch("/api/calculate-fare", {
+          const fareResponse = await fetch(`${API_BASE}/api/calculate-fare`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -1374,7 +1375,7 @@ export default function RequestFlow() {
 
             // Try calling the backend again with the Haversine distance
             try {
-              const fareResponse = await fetch("/api/calculate-fare", {
+              const fareResponse = await fetch(`${API_BASE}/api/calculate-fare`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -1480,7 +1481,7 @@ export default function RequestFlow() {
         customerId: userProfile.id,
       };
 
-      const response = await fetch("/api/requests", {
+      const response = await fetch(`${API_BASE}/api/requests`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(orderPayload),

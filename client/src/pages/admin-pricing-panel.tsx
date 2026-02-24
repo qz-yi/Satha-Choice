@@ -3,6 +3,7 @@
  * Full control over vehicle pricing + surge multiplier
  */
 
+import { API_BASE } from "@/lib/http";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -105,7 +106,7 @@ export default function AdminPricingPanel() {
       setIsSaving(true);
 
       // Always save surge (even if unchanged — ensures DB is in sync)
-      const surgeRes = await fetch("/api/admin/pricing/surge", {
+      const surgeRes = await fetch(`${API_BASE}/api/admin/pricing/surge`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ surgeMultiplier }),
@@ -116,7 +117,7 @@ export default function AdminPricingPanel() {
       // Save vehicle pricing changes
       for (const [vt, changes] of Object.entries(editedPricing)) {
         if (Object.keys(changes).length === 0) continue;
-        const res = await fetch(`/api/admin/pricing/vehicles/${vt}`, {
+        const res = await fetch(`${API_BASE}/api/admin/pricing/vehicles/${vt}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(changes),

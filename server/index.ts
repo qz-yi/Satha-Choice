@@ -6,7 +6,48 @@ import { createServer } from "http";
 import cors from 'cors';
 
 const app = express();
-app.use(cors());
+
+// ── CORS ────────────────────────────────────────────────────────────────────
+// Must be the VERY FIRST middleware so OPTIONS preflight requests are answered
+// before any route or body-parser runs.
+const ALLOWED_ORIGINS = [
+  // Production domain
+  "https://satha-iq.com",
+  "http://satha-iq.com",
+  "https://www.satha-iq.com",
+  "http://www.satha-iq.com",
+  // Capacitor APK WebView origins
+  "capacitor://localhost",
+  "https://localhost",
+  "http://localhost",
+  // Local development
+  "http://localhost:5000",
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:5000",
+];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, Postman)
+      if (!origin) return callback(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+      // Allow any subdomain of satha-iq.com
+      if (/^https?:\/\/([a-z0-9-]+\.)?satha-iq\.com$/.test(origin)) {
+        return callback(null, true);
+      }
+      console.warn(`[CORS] Blocked origin: ${origin}`);
+      return callback(new Error(`CORS blocked: ${origin}`));
+    },
+    credentials: true,                   // allow cookies / Authorization header
+    methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
+    allowedHeaders: ["Content-Type","Authorization","Accept","X-Requested-With"],
+    exposedHeaders: ["Set-Cookie"],
+    optionsSuccessStatus: 200,           // some older browsers choke on 204
+  })
+);
+
 const httpServer = createServer(app);
 
 declare module "http" {

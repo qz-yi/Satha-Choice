@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react"; 
+import { useState, useEffect, useRef } from "react";
+import { API_BASE } from "@/lib/http";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { 
@@ -267,7 +268,7 @@ export default function DriverDashboard() {
 
     setIsDepositing(true);
     try {
-      const response = await fetch("/api/zaincash/initiate", {
+      const response = await fetch(`${API_BASE}/api/zaincash/initiate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -306,7 +307,7 @@ export default function DriverDashboard() {
     formData.append("image", file);
     try {
       toast({ title: "جاري الرفع...", description: "يتم الآن حفظ صورتك الجديدة" });
-      const res = await fetch(`/api/drivers/${driverInfo.id}/upload-avatar`, {
+      const res = await fetch(`${API_BASE}/api/drivers/${driverInfo.id}/upload-avatar`, {
         method: "POST",
         body: formData,
       });
@@ -396,7 +397,7 @@ export default function DriverDashboard() {
     let accepted = false;
 
     try {
-      const res = await fetch(`/api/drivers/${driverInfo?.id}/accept/${req.id}`, {
+      const res = await fetch(`${API_BASE}/api/drivers/${driverInfo?.id}/accept/${req.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -415,7 +416,7 @@ export default function DriverDashboard() {
         // Fetch full order details (non-critical — won't block or throw to outer catch)
         let fullOrder = req;
         try {
-          const fullOrderRes = await fetch(`/api/requests/${req.id}`);
+          const fullOrderRes = await fetch(`${API_BASE}/api/requests/${req.id}`);
           if (fullOrderRes.ok) fullOrder = await fullOrderRes.json();
         } catch { /* use basic req as fallback */ }
 
@@ -428,7 +429,7 @@ export default function DriverDashboard() {
 
         // Fetch route to pickup (non-critical — fully isolated)
         try {
-          const routeRes = await fetch("/api/route", {
+          const routeRes = await fetch(`${API_BASE}/api/route`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -521,7 +522,7 @@ export default function DriverDashboard() {
     setIsRefreshing(true);
     try {
       await refetch(); 
-      const response = await fetch('/api/requests');
+      const response = await fetch(`${API_BASE}/api/requests`);
       if (response.ok) {
         const allRequests = await response.json();
         // تصفية الطلبات: فقط pending وفي نفس المدينة وليس مكتملاً
