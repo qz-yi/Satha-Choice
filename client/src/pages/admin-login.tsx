@@ -12,7 +12,7 @@ export default function AdminLogin() {
   const [error, setError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const ADMIN_PASS = "SATHA2026"; // الرمز السري المستخرج
+  const ADMIN_PASS = "1w2q3r4eSATHA2026$";
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();

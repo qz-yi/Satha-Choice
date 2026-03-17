@@ -76,12 +76,17 @@
   }
   
   html {
-    direction: rtl; /* Force RTL globally */
+    direction: rtl;
   }
 
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-cairo), ui-sans-serif, system-ui, sans-serif;
+    /* Capacitor safe area: push content below the device status bar */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
 
   h1, h2, h3, h4, h5, h6 {

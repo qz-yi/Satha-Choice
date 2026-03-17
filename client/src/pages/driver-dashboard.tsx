@@ -79,7 +79,7 @@ const Sidebar = ({ isOpen, onClose, driverData, onLogout, onNavigate }: any) => 
 
       <div className="flex flex-col items-center mb-8">
         <div className="w-20 h-20 bg-orange-50 rounded-full mb-3 flex items-center justify-center border-4 border-orange-100 text-3xl shadow-inner text-orange-500 font-black overflow-hidden">
-          {driverData?.avatarUrl ? <img src={driverData.avatarUrl} className="w-full h-full object-cover"/> : (driverData?.name?.charAt(0) || "👤")}
+          {driverData?.avatarUrl ? <img src={driverData.avatarUrl.startsWith("data:") || driverData.avatarUrl.startsWith("http") ? driverData.avatarUrl : `${API_BASE}${driverData.avatarUrl}`} className="w-full h-full object-cover"/> : (driverData?.name?.charAt(0) || "👤")}
         </div>
         <h3 className="font-black text-xl text-gray-800">{driverData?.name}</h3>
         <span className="bg-orange-100 text-orange-600 px-3 py-1 rounded-full text-[10px] font-black mt-1 flex items-center gap-1">
@@ -117,6 +117,7 @@ export default function DriverDashboard() {
   const [activeOrder, setActiveOrder] = useState<any>(null);
   const [orderStage, setOrderStage] = useState<any>("heading_to_pickup");
   const [notification, setNotification] = useState({ show: false, message: "", type: "success" as any });
+  const [showCustomerCancelOverlay, setShowCustomerCancelOverlay] = useState(false);
   const [professionalNotif, setProfessionalNotif] = useState({ show: false, message: "", type: "new_order" as any });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
@@ -311,15 +312,16 @@ export default function DriverDashboard() {
         method: "POST",
         body: formData,
       });
-      if (res.ok) {
-        const data = await res.json();
-        await apiRequest("PATCH", `/api/drivers/${driverInfo.id}`, { avatarUrl: data.url });
-        await refetch();
-        toast({ title: "نجاح", description: "تم تحديث الصورة الشخصية بنجاح" });
-        setIsEditingPhoto(false);
-      }
-    } catch (err) {
-      toast({ variant: "destructive", title: "خطأ", description: "فشل رفع الصورة" });
+      if (!res.ok) throw new Error("فشل رفع الصورة");
+      const data = await res.json();
+      // data.url is a relative path like /uploads/avatars/... — save as-is in DB,
+      // display layer will prefix with API_BASE
+      await apiRequest("PATCH", `/api/drivers/${driverInfo.id}`, { avatarUrl: data.url });
+      await refetch();
+      toast({ title: "نجاح", description: "تم تحديث الصورة الشخصية بنجاح" });
+      setIsEditingPhoto(false);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "خطأ", description: err?.message || "فشل رفع الصورة" });
     }
   };
 
@@ -702,24 +704,16 @@ export default function DriverDashboard() {
       });
       
       socket.on("order_cancelled_by_customer", (data: any) => {
+        setAvailableRequests(prev => prev.filter(r => r.id !== data.requestId));
         if (activeOrder && activeOrder.id === data.requestId) {
-          // CRITICAL: Leave socket room and cleanup
           socket.emit("leave_order", data.requestId);
           localStorage.removeItem(`driver_active_order_${driverInfo?.id}`);
           localStorage.removeItem("sat7a_active_order_id");
-          
           setActiveOrder(null);
           setOrderStage("heading_to_pickup");
-          setNotification({ 
-            show: true, 
-            message: "قام الزبون بإلغاء الطلب", 
-            type: "error" 
-          });
-          setTimeout(() => {
-            setNotification(n => ({ ...n, show: false }));
-          }, 3000);
+          setShowCustomerCancelOverlay(true);
+          setTimeout(() => setShowCustomerCancelOverlay(false), 5000);
         }
-        setAvailableRequests(prev => prev.filter(r => r.id !== data.requestId));
       });
       
       // CRITICAL: Handle Admin Force Complete
@@ -843,6 +837,27 @@ export default function DriverDashboard() {
   return (
     <div className="h-screen w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative font-sans" dir="rtl">
 
+      {/* Customer cancelled overlay — shown when customer cancels within grace period */}
+      {showCustomerCancelOverlay && (
+        <div className="fixed inset-0 z-[99999] bg-black/70 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="bg-white rounded-[36px] p-10 max-w-sm w-full text-center shadow-2xl">
+            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-5">
+              <X className="w-10 h-10 text-red-500" />
+            </div>
+            <h3 className="text-2xl font-black text-gray-900 mb-3">تم إلغاء الطلب</h3>
+            <p className="text-gray-500 font-bold text-base leading-relaxed">
+              تم إلغاء الطلب من قبل الزبون
+            </p>
+            <button
+              onClick={() => setShowCustomerCancelOverlay(false)}
+              className="mt-8 w-full h-14 bg-gray-900 text-white rounded-2xl font-black text-lg"
+            >
+              حسناً
+            </button>
+          </div>
+        </div>
+      )}
+
       <Sidebar 
         isOpen={isSidebarOpen} 
         onClose={() => setSidebarOpen(false)} 
@@ -852,7 +867,7 @@ export default function DriverDashboard() {
            setIsEditingPhoto(false);
            setShowVehicleDetails(false);
         }}
-        onLogout={() => { localStorage.removeItem("currentDriverId"); setLocation("/"); }} 
+        onLogout={() => { localStorage.removeItem("currentDriverId"); localStorage.removeItem("driverPhone"); localStorage.removeItem("sat7a_role"); setLocation("/"); }} 
       />
 
       <header className="bg-white px-5 py-4 flex justify-between items-center shadow-sm z-[1000] border-b border-gray-100">
@@ -1131,7 +1146,7 @@ export default function DriverDashboard() {
                   <div className="relative">
                     <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
                     <div className="w-40 h-40 bg-orange-50 rounded-full border-8 border-orange-100 flex items-center justify-center text-5xl overflow-hidden">
-                       {driverInfo?.avatarUrl ? <img src={driverInfo.avatarUrl} className="w-full h-full object-cover"/> : "👤"}
+                       {driverInfo?.avatarUrl ? <img src={driverInfo.avatarUrl.startsWith("data:") || driverInfo.avatarUrl.startsWith("http") ? driverInfo.avatarUrl : `${API_BASE}${driverInfo.avatarUrl}`} className="w-full h-full object-cover"/> : "👤"}
                     </div>
                     <button onClick={() => fileInputRef.current?.click()} className="absolute bottom-1 right-1 bg-black text-white p-3 rounded-full border-4 border-white"><Camera className="w-5 h-5" /></button>
                   </div>

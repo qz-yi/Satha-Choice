@@ -61,6 +61,13 @@ import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { RoutingPolyline } from "@/components/RoutingPolyline";
 
+// Resolve image URLs — relative paths (/uploads/...) need API_BASE in Capacitor
+const resolveImageUrl = (url: string | null | undefined): string => {
+  if (!url) return "";
+  if (url.startsWith("data:") || url.startsWith("http")) return url;
+  return `${API_BASE}${url}`;
+};
+
 // CRITICAL: Use singleton socket instance
 let socket: any;
 if (typeof window !== "undefined") {
@@ -78,6 +85,19 @@ const getOrangeArrowIcon = (rotation: number) =>
     className: "",
     iconSize: [45, 45],
     iconAnchor: [22.5, 22.5],
+  });
+
+// Custom pin icon for a confirmed pickup point visible during destination selection
+const getPickupPinIcon = () =>
+  L.divIcon({
+    html: `<div style="display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0px 3px 6px rgba(0,0,0,0.35))">
+      <div style="background:#f97316;color:#fff;font-size:11px;font-weight:900;padding:3px 8px;border-radius:10px;white-space:nowrap;font-family:sans-serif;">تحميل من هنا</div>
+      <div style="width:3px;height:16px;background:#f97316;border-radius:2px"></div>
+      <div style="width:10px;height:10px;background:#f97316;border-radius:50%;margin-top:-2px"></div>
+    </div>`,
+    className: "",
+    iconSize: [90, 48],
+    iconAnchor: [45, 48],
   });
 
 const normalizeCity = (city: string): string => {
@@ -219,6 +239,8 @@ export default function RequestFlow() {
   const [messages, setMessages] = useState<any[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
+  const [isSupportOpen, setIsSupportOpen] = useState(false);
+  const [isSidebarSheetOpen, setIsSidebarSheetOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "wallet">("cash");
   const [tripsHistory, setTripsHistory] = useState<any[]>([]);
   const [chargeAmount, setChargeAmount] = useState("");
@@ -230,6 +252,7 @@ export default function RequestFlow() {
   >(null);
   const [depositAmount, setDepositAmount] = useState<string>("25000");
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [orderAcceptedAt, setOrderAcceptedAt] = useState<number | null>(null); // timestamp when driver accepted
 
   // Bottom Sheet Smart Handle State
   const [isSheetExpanded, setIsSheetExpanded] = useState(true); // true = expanded (50%), false = minimized (15%)
@@ -241,6 +264,7 @@ export default function RequestFlow() {
   const [isPriceCalculating, setIsPriceCalculating] = useState(false); // CRITICAL FIX #2: Loading state for price
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const signupFileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [formData, setFormData] = useState({
     location: "",
@@ -686,6 +710,7 @@ export default function RequestFlow() {
             }
 
             if (data.status === "accepted") {
+              setOrderAcceptedAt(Date.now()); // Record acceptance time for 2-min cancel window
               toast({
                 title: "✅ تم قبول طلبك",
                 description: `الكابتن ${info.username || info.name || "قادم"} في الطريق إليك`,
@@ -716,6 +741,7 @@ export default function RequestFlow() {
             setActiveOrderId(null);
             setDriverInfo(null);
             setRequestStatus("pending");
+            setOrderAcceptedAt(null);
             setMessages([]);
             setDriverLocation(null);
 
@@ -922,10 +948,12 @@ export default function RequestFlow() {
       try {
         localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
         localStorage.setItem("sat7a_session_active", "true");
+        localStorage.setItem("sat7a_role", "customer");
       } catch (e) {
         localStorage.clear();
         localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
         localStorage.setItem("sat7a_session_active", "true");
+        localStorage.setItem("sat7a_role", "customer");
       }
       setIsLoggedIn(true);
     } catch (err: any) {
@@ -961,6 +989,7 @@ export default function RequestFlow() {
       try {
         localStorage.setItem("sat7a_user", JSON.stringify(completeProfile));
         localStorage.setItem("sat7a_session_active", "true");
+        localStorage.setItem("sat7a_role", "customer");
       } catch (e) {
       }
       setIsLoggedIn(true);
@@ -976,14 +1005,40 @@ export default function RequestFlow() {
   const handleLogout = () => {
     localStorage.removeItem("sat7a_session_active");
     localStorage.removeItem("sat7a_active_order_id");
+    localStorage.removeItem("sat7a_user");
+    localStorage.removeItem("sat7a_role");
     setIsLoggedIn(false);
     setAuthMode("choice");
     setActiveOrderId(null);
+    // Reset profile so phone/password fields are blank on next visit
+    setUserProfile({
+      id: null,
+      username: "",
+      phone: "",
+      password: "",
+      address: "قيد التحديد",
+      image: null,
+      wallet: "0",
+      trips: "0",
+    });
   };
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Reset input value so the same file can be re-selected
+    e.target.value = "";
+
+    // Validate file type & size (max 5 MB)
+    if (!file.type.startsWith("image/")) {
+      toast({ variant: "destructive", title: "خطأ", description: "يرجى اختيار صورة صحيحة" });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ variant: "destructive", title: "الصورة كبيرة جداً", description: "يجب أن لا تتجاوز الصورة 5 ميغابايت" });
+      return;
+    }
 
     try {
       const reader = new FileReader();
@@ -1052,8 +1107,13 @@ export default function RequestFlow() {
         return;
       }
 
-      // CRITICAL: Only allow cancellation if status is pending
-      if (requestStatus !== "pending") {
+      // Allow cancel if: pending, OR accepted within the first 2 minutes
+      const withinGracePeriod =
+        requestStatus === "accepted" &&
+        orderAcceptedAt !== null &&
+        Date.now() - orderAcceptedAt < 2 * 60 * 1000;
+
+      if (requestStatus !== "pending" && !withinGracePeriod) {
         setShowCancelModal(false);
         toast({
           variant: "destructive",
@@ -1072,6 +1132,14 @@ export default function RequestFlow() {
         throw new Error(error.message || "فشل في إلغاء الطلب");
       }
 
+      // Notify driver if they already accepted (2-min grace period)
+      if (withinGracePeriod && driverInfo?.id) {
+        socket.emit("customer_cancelled_after_accept", {
+          orderId: activeOrderId,
+          driverId: driverInfo.id,
+        });
+      }
+
       // CRITICAL: Leave socket room and cleanup
       socket.emit("leave_order", activeOrderId);
 
@@ -1084,6 +1152,7 @@ export default function RequestFlow() {
       setActiveOrderId(null);
       setDriverInfo(null);
       setRequestStatus("pending");
+      setOrderAcceptedAt(null);
       setMessages([]);
       setDriverLocation(null);
 
@@ -1107,7 +1176,7 @@ export default function RequestFlow() {
     setIsSearching(true);
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5&countrycodes=iq`,
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5&countrycodes=iq&accept-language=ar`,
       );
       const data = await res.json();
       setSearchResults(data);
@@ -1117,10 +1186,29 @@ export default function RequestFlow() {
     }
   };
 
+  // Extract the most meaningful Arabic location label from Nominatim address
+  const extractArabicLabel = (data: any): string => {
+    const addr = data.address || {};
+    return (
+      addr.neighbourhood ||
+      addr.suburb ||
+      addr.quarter ||
+      addr.road ||
+      addr.city_district ||
+      addr.town ||
+      addr.village ||
+      addr.city ||
+      addr.county ||
+      addr.state ||
+      data.display_name?.split(",")[0] ||
+      "موقع محدد"
+    );
+  };
+
   const reverseGeocode = async (lat: number, lng: number) => {
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`,
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1&accept-language=ar`,
       );
       const data = await res.json();
       if (data.address) {
@@ -1130,7 +1218,7 @@ export default function RequestFlow() {
           data.address.province ||
           data.address.governorate ||
           "بابل";
-        const locationName = data.display_name.split(",")[0];
+        const locationName = extractArabicLabel(data);
         setFormData((prev) => ({
           ...prev,
           city: normalizeCity(detectedCity),
@@ -1206,12 +1294,13 @@ export default function RequestFlow() {
       "بابل";
 
     setShouldFly(true);
+    const locationLabel = extractArabicLabel(result);
     if (step === "pickup") {
       setFormData((p) => ({
         ...p,
         pickupLat: lat,
         pickupLng: lon,
-        location: result.display_name.split(",")[0],
+        location: locationLabel,
         city: normalizeCity(resultCity),
       }));
     } else {
@@ -1219,7 +1308,7 @@ export default function RequestFlow() {
         ...p,
         destLat: lat,
         destLng: lon,
-        destination: result.display_name.split(",")[0],
+        destination: locationLabel,
       }));
     }
     setIsSearchOpen(false);
@@ -1568,13 +1657,7 @@ export default function RequestFlow() {
                 <div className="flex flex-col items-center mb-6">
                   <div className="relative group">
                     <div
-                      onClick={() => {
-                        const input = document.createElement("input");
-                        input.type = "file";
-                        input.accept = "image/*";
-                        input.onchange = (e) => handleImageChange(e as any);
-                        input.click();
-                      }}
+                      onClick={() => signupFileInputRef.current?.click()}
                       className="w-24 h-24 bg-gray-50 rounded-[35px] border-4 border-white flex items-center justify-center overflow-hidden shadow-2xl ring-2 ring-orange-100 cursor-pointer hover:ring-orange-300 transition-all"
                     >
                       {userProfile.image ? (
@@ -1586,6 +1669,14 @@ export default function RequestFlow() {
                         <User className="text-orange-200 w-10 h-10" />
                       )}
                     </div>
+                    {/* Hidden file input — avoids dynamic createElement which is blocked in Capacitor */}
+                    <input
+                      ref={signupFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleImageChange}
+                    />
                     <div className="absolute -bottom-1 -right-1 bg-black text-white p-2 rounded-xl shadow-lg border-2 border-white pointer-events-none">
                       <Camera className="w-4 h-4" />
                     </div>
@@ -1822,7 +1913,7 @@ export default function RequestFlow() {
                   <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center font-black text-orange-600 overflow-hidden">
                     {driverInfo?.avatarUrl ? (
                       <img
-                        src={driverInfo.avatarUrl}
+                        src={resolveImageUrl(driverInfo.avatarUrl)}
                         className="w-full h-full object-cover"
                       />
                     ) : (
@@ -2046,7 +2137,7 @@ export default function RequestFlow() {
                       <div className="w-20 h-20 rounded-full border-4 border-orange-500 overflow-hidden shadow-lg bg-white">
                         {driverInfo.avatarUrl ? (
                           <img
-                            src={driverInfo.avatarUrl}
+                            src={resolveImageUrl(driverInfo.avatarUrl)}
                             className="w-full h-full object-cover"
                             onError={(e) => {
                               (e.target as any).src =
@@ -2164,7 +2255,12 @@ export default function RequestFlow() {
         </AnimatePresence>
 
         {/* Professional Cancel Confirmation Modal - INSIDE TRACKING VIEW */}
-        {showCancelModal && (
+        {showCancelModal && (() => {
+          const inGrace =
+            requestStatus === "accepted" &&
+            orderAcceptedAt !== null &&
+            Date.now() - orderAcceptedAt < 2 * 60 * 1000;
+          return (
           <div
             className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6"
             style={{ zIndex: 99999, pointerEvents: "auto" }}
@@ -2182,8 +2278,9 @@ export default function RequestFlow() {
                   إلغاء الرحلة؟
                 </h3>
                 <p className="text-center text-gray-600 font-bold text-sm leading-relaxed mb-8">
-                  هل أنت متأكد من إلغاء هذا الطلب؟ سيتم حذف الطلب نهائياً ولن
-                  يتم إشعار السائق.
+                  {inGrace
+                    ? "يمكنك الإلغاء الآن دون أي رسوم — الكابتن سيتلقى إشعاراً فورياً."
+                    : "هل أنت متأكد من إلغاء هذا الطلب؟ سيتم حذف الطلب نهائياً."}
                 </p>
                 <div className="flex gap-3">
                   <button
@@ -2208,7 +2305,8 @@ export default function RequestFlow() {
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
       </div>
     );
 
@@ -2219,12 +2317,13 @@ export default function RequestFlow() {
     >
       <header className="absolute top-0 inset-x-0 z-[4000] p-6 flex flex-col gap-3">
         <div className="flex items-start gap-3 w-full">
-          <Sheet>
+          <Sheet open={isSidebarSheetOpen} onOpenChange={setIsSidebarSheetOpen}>
             <SheetTrigger asChild>
               <Button
                 variant="secondary"
                 size="icon"
                 className="rounded-2xl shadow-xl bg-white text-black w-14 h-14 border-none hover:bg-gray-50"
+                onClick={() => setIsSidebarSheetOpen(true)}
               >
                 <Menu className="w-6 h-6" />
               </Button>
@@ -2273,13 +2372,13 @@ export default function RequestFlow() {
 
               <div className="p-6 pt-10 flex-1 overflow-y-auto">
                 <SidebarLink
-                  onClick={() => !isWalletOpen && setIsHistoryOpen(true)}
+                  onClick={() => { setIsSidebarSheetOpen(false); setTimeout(() => setIsHistoryOpen(true), 200); }}
                   icon={<History className="w-5 h-5" />}
                   label="سجل الرحلات"
                   extra={`${userProfile.trips} رحلة`}
                 />
                 <SidebarLink
-                  onClick={() => !isHistoryOpen && setIsWalletOpen(true)}
+                  onClick={() => { setIsSidebarSheetOpen(false); setTimeout(() => setIsWalletOpen(true), 200); }}
                   icon={<Wallet className="w-5 h-5" />}
                   label="المحفظة"
                   extra={`${userProfile.wallet} د.ع`}
@@ -2294,6 +2393,7 @@ export default function RequestFlow() {
                   extraColor="bg-yellow-50 text-yellow-700"
                 />
                 <SidebarLink
+                  onClick={() => { setIsSidebarSheetOpen(false); setTimeout(() => setIsSupportOpen(true), 200); }}
                   icon={<Phone className="w-5 h-5" />}
                   label="الدعم الفني"
                   color="text-blue-600"
@@ -2304,7 +2404,7 @@ export default function RequestFlow() {
                 <Button
                   variant="ghost"
                   className="w-full justify-start gap-4 text-red-500 font-black h-14 rounded-2xl hover:bg-red-50 transition-all"
-                  onClick={handleLogout}
+                  onClick={() => { setIsSidebarSheetOpen(false); handleLogout(); }}
                 >
                   <div className="bg-red-50 p-2.5 rounded-xl">
                     <LogOut className="w-5 h-5" />
@@ -2362,6 +2462,13 @@ export default function RequestFlow() {
                 }
                 shouldFly={shouldFly}
               />
+              {/* Persistent pickup marker — visible while user selects destination */}
+              {step === "dropoff" && formData.location && (
+                <Marker
+                  position={[formData.pickupLat, formData.pickupLng]}
+                  icon={getPickupPinIcon()}
+                />
+              )}
               <MapEventsHandler
                 onMove={(center) => {
                   setShouldFly(false);
@@ -2877,6 +2984,73 @@ export default function RequestFlow() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ══════════════════════════════════════════════════
+          TECHNICAL SUPPORT PANEL
+          ══════════════════════════════════════════════════ */}
+      <AnimatePresence>
+        {isSupportOpen && (
+          <motion.div
+            initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
+            transition={{ type: "spring", damping: 22, stiffness: 260 }}
+            className="fixed inset-0 z-[9000] bg-white flex flex-col"
+            style={{ pointerEvents: "auto" }}
+          >
+            {/* Header */}
+            <div className="p-6 flex items-center justify-between border-b border-gray-100">
+              <Button variant="ghost" size="icon" onClick={() => setIsSupportOpen(false)} className="rounded-full bg-gray-100 h-10 w-10">
+                <X className="w-5 h-5" />
+              </Button>
+              <h2 className="text-xl font-black text-gray-800">الدعم الفني</h2>
+              <div className="w-10" />
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              <p className="text-center text-gray-400 font-bold text-sm pb-2">
+                تواصل معنا عبر الاتصال أو واتساب
+              </p>
+
+              {[
+                { name: "علي كريم", phone: "07719820537" },
+                { name: "منتظر كريم", phone: "07882992284" },
+              ].map((contact) => (
+                <div key={contact.phone} className="bg-gray-50 rounded-[28px] p-6 space-y-4 border border-gray-100">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center">
+                      <Phone className="w-7 h-7 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="font-black text-gray-900 text-lg">{contact.name}</p>
+                      <p className="text-gray-400 font-bold text-sm tracking-widest">{contact.phone}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <a
+                      href={`tel:${contact.phone}`}
+                      className="flex-1 h-13 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-sm shadow-md shadow-blue-200 transition-all active:scale-95 py-3"
+                    >
+                      <Phone className="w-4 h-4" />
+                      اتصال
+                    </a>
+                    <a
+                      href={`https://wa.me/${contact.phone.replace(/^0/, "964")}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 h-13 flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white rounded-2xl font-black text-sm shadow-md shadow-green-200 transition-all active:scale-95 py-3"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                      </svg>
+                      واتساب
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

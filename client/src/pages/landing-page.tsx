@@ -15,39 +15,38 @@ export default function LandingPage() {
     
     const checkAuth = () => {
       try {
-        // Check for customer session
+        // Check for active customer session
         const savedUser = localStorage.getItem("sat7a_user");
         const sessionActive = localStorage.getItem("sat7a_session_active");
         
         if (savedUser && sessionActive === "true") {
-          const user = JSON.parse(savedUser);
-          console.log("✅ [AUTH CHECK] Customer session found - redirecting to map");
           setLocation("/request");
           return;
         }
         
-        // Check for driver session
+        // Check for active driver session
         const driverId = localStorage.getItem("currentDriverId");
         const driverPhone = localStorage.getItem("driverPhone");
         
         if (driverId && driverPhone) {
-          console.log("✅ [AUTH CHECK] Driver session found - redirecting to dashboard");
-          setLocation("/driver-dashboard");
+          setLocation("/driver");
           return;
         }
         
-        // Check for admin session
-        const adminToken = localStorage.getItem("adminToken");
-        if (adminToken) {
-          console.log("✅ [AUTH CHECK] Admin session found - redirecting to admin");
-          setLocation("/admin");
+        // No active session — but if a role was previously chosen, skip the
+        // selection screen and send the user directly to their login page.
+        const savedRole = localStorage.getItem("sat7a_role");
+        if (savedRole === "customer") {
+          setLocation("/request");
+          return;
+        }
+        if (savedRole === "driver") {
+          setLocation("/driver-signup");
           return;
         }
         
-        console.log("ℹ️ [AUTH CHECK] No active session - showing landing page");
         setIsChecking(false);
       } catch (error) {
-        console.error("❌ [AUTH CHECK] Error checking session:", error);
         setIsChecking(false);
       }
     };
@@ -127,7 +126,7 @@ export default function LandingPage() {
             variants={itemVariants}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => setLocation("/request")}
+            onClick={() => { localStorage.setItem("sat7a_role", "customer"); setLocation("/request"); }}
           >
             <Card className="group cursor-pointer transition-all border-none bg-white rounded-[35px] shadow-xl shadow-gray-200/50 hover:shadow-orange-500/10 overflow-hidden relative border-2 border-transparent hover:border-orange-500/20">
               <CardContent className="p-8 flex items-center gap-6">
@@ -150,7 +149,7 @@ export default function LandingPage() {
             variants={itemVariants}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => setLocation("/driver-signup")}
+            onClick={() => { localStorage.setItem("sat7a_role", "driver"); setLocation("/driver-signup"); }}
           >
             <Card className="group cursor-pointer transition-all border-none bg-slate-900 rounded-[35px] shadow-xl shadow-slate-900/20 overflow-hidden relative border-2 border-transparent hover:border-orange-500/40">
               <CardContent className="p-8 flex items-center gap-6">

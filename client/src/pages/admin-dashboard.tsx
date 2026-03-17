@@ -112,6 +112,7 @@ export default function AdminDashboard() {
   const [showConfirmModal, setShowConfirmModal]       = useState(false);
   const [selectedOrderId, setSelectedOrderId]         = useState<number | null>(null);
   const [customerWalletAmount, setCustomerWalletAmount] = useState("");
+  const [driverToDelete, setDriverToDelete]           = useState<number | null>(null);
   const [driverLocations, setDriverLocations]         = useState<Record<number, { lat: number; lng: number }>>({});
 
   const [, setLocation] = useLocation();
@@ -286,8 +287,10 @@ export default function AdminDashboard() {
     mutationFn: (id: number) => apiRequest("DELETE", `/api/drivers/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/drivers"] });
-      toast({ variant: "destructive", title: "تم الحذف" });
+      refetchDrivers();
+      toast({ title: "تم حذف الكابتن", description: "تم حذف الحساب بنجاح", className: "bg-red-600 text-white" });
     },
+    onError: (e: any) => toast({ variant: "destructive", title: "فشل الحذف", description: e?.message || "حاول مرة أخرى" }),
   });
 
   const deleteRequest = useMutation({
@@ -395,7 +398,7 @@ export default function AdminDashboard() {
               </div>
               {/* Delete */}
               <button
-                onClick={() => { if (confirm("حذف الكابتن نهائياً؟")) deleteMutation.mutate(driver.id); }}
+                onClick={() => setDriverToDelete(driver.id)}
                 className="w-8 h-8 rounded-xl flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 transition-all"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -475,10 +478,18 @@ export default function AdminDashboard() {
     <div className="flex h-screen bg-[#F3F4F6] overflow-hidden" dir="rtl">
 
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
+      {/* Mobile backdrop: tap outside to close */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-[4999] bg-black/40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
       <AnimatePresence>
-        {(sidebarOpen || true) && (
-          <aside className={`
-            ${sidebarOpen ? "translate-x-0" : "translate-x-full"}
+        {/* Always render on md+; on mobile only render when open to avoid
+            the translated-off-screen overlay that blocks all touch events */}
+        <aside className={`
+            ${sidebarOpen ? "translate-x-0 pointer-events-auto" : "translate-x-full pointer-events-none md:pointer-events-auto"}
             md:translate-x-0 fixed md:relative z-[5000] w-72 h-full
             bg-[#0C1427] text-white flex flex-col py-8 px-5 shadow-2xl
             transition-transform duration-300
@@ -531,7 +542,6 @@ export default function AdminDashboard() {
               <LogOut className="w-4 h-4" /> تسجيل الخروج
             </button>
           </aside>
-        )}
       </AnimatePresence>
 
       {/* ── Main ────────────────────────────────────────────────────────── */}
@@ -745,7 +755,7 @@ export default function AdminDashboard() {
                           >
                             {approveMutation.isPending ? <Loader2 className="animate-spin w-4 h-4" /> : "✓ قبول"}
                           </Button>
-                          <Button onClick={() => { if (confirm("رفض الطلب؟")) deleteMutation.mutate(driver.id); }}
+                          <Button onClick={() => setDriverToDelete(driver.id)}
                             variant="ghost" className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl hover:bg-red-100">
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -1044,6 +1054,36 @@ export default function AdminDashboard() {
                   {assignMutation.isPending ? <Loader2 className="animate-spin" /> : "تأكيد الآن"}
                 </Button>
                 <Button onClick={() => setShowConfirmModal(false)} variant="outline" className="flex-1 h-14 rounded-2xl font-black">
+                  إلغاء
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Delete driver confirmation modal */}
+        {driverToDelete !== null && (
+          <div className="fixed inset-0 z-[8000] bg-black/60 backdrop-blur-md flex items-center justify-center p-6">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+              className="bg-white p-8 rounded-[36px] shadow-2xl max-w-sm w-full text-center"
+            >
+              <div className="w-16 h-16 bg-red-50 rounded-3xl flex items-center justify-center mx-auto mb-5">
+                <Trash2 className="w-8 h-8 text-red-500" />
+              </div>
+              <h4 className="text-xl font-black text-slate-900 mb-2">حذف الكابتن نهائياً؟</h4>
+              <p className="text-gray-500 text-sm font-bold mb-8 leading-relaxed">
+                لا يمكن التراجع عن هذه العملية. سيتم حذف حساب الكابتن وجميع بياناته بشكل نهائي.
+              </p>
+              <div className="flex gap-3">
+                <Button
+                  onClick={() => { deleteMutation.mutate(driverToDelete!); setDriverToDelete(null); }}
+                  disabled={deleteMutation.isPending}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white h-14 rounded-2xl font-black"
+                >
+                  {deleteMutation.isPending ? <Loader2 className="animate-spin" /> : "تأكيد الحذف"}
+                </Button>
+                <Button onClick={() => setDriverToDelete(null)} variant="outline" className="flex-1 h-14 rounded-2xl font-black">
                   إلغاء
                 </Button>
               </div>

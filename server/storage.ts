@@ -257,6 +257,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteDriver(id: number): Promise<void> {
+    // Force-delete: nullify FK references before removing the driver row
+    // so that foreign-key constraints on requests and transactions don't block the delete.
+    await db
+      .update(requests)
+      .set({ driverId: null })
+      .where(eq(requests.driverId, id));
+
+    await db
+      .update(transactions)
+      .set({ driverId: null })
+      .where(eq(transactions.driverId, id));
+
     await db.delete(drivers).where(eq(drivers.id, id));
   }
 

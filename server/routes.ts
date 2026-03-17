@@ -672,10 +672,12 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
   app.delete("/api/drivers/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "معرّف السائق غير صحيح" });
       await storage.deleteDriver(id);
       res.status(204).end();
     } catch (err: any) {
-      res.status(400).json({ message: "فشل حذف حساب السائق" });
+      console.error("[DELETE driver]", err);
+      res.status(500).json({ message: err?.message || "فشل حذف حساب السائق" });
     }
   });
 
@@ -1361,7 +1363,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       if (driverId) {
         io.to(`driver_${driverId}`).emit("order_cancelled_by_customer", { 
           requestId,
-          message: "قام الزبون بإلغاء الطلب"
+          message: "تم إلغاء الطلب من قبل الزبون"
         });
       }
       
