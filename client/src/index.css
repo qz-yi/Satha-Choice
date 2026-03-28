@@ -77,6 +77,8 @@
   
   html {
     direction: rtl;
+    height: 100%;
+    overflow: hidden;
   }
 
   body {
@@ -87,10 +89,50 @@
     padding-bottom: env(safe-area-inset-bottom);
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
+    height: 100%;
+    overflow: hidden;
+  }
+
+  #root {
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-cairo), ui-sans-serif, system-ui, sans-serif;
     @apply font-bold tracking-tight;
   }
+}
+
+/* ── Leaflet map tile rendering fix (prevents white gap lines in APK) ────── */
+.leaflet-container {
+  backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+}
+
+.leaflet-tile-container {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+}
+
+.leaflet-tile {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  image-rendering: -webkit-optimize-contrast;
+  margin: 0;
+  padding: 0;
+  border: 0 !important;
+  outline: none !important;
+}
+
+.leaflet-pane {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }

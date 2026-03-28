@@ -802,7 +802,7 @@ export default function DriverDashboard() {
   }, [driverInfo?.isOnline, activeOrder, driverInfo?.status, isChatOpen, driverInfo?.city]);
 
   if (isLoading) return (
-    <div className="h-screen flex flex-col items-center justify-center bg-white">
+    <div className="h-full flex flex-col items-center justify-center bg-white">
       <Loader2 className="w-12 h-12 animate-spin text-orange-500" />
       <p className="mt-4 font-bold text-gray-400 font-sans">جاري تحميل عالمك الجميل...</p>
     </div>
@@ -811,7 +811,7 @@ export default function DriverDashboard() {
   if (!driverInfo || driverInfo.status !== "approved") {
     const isBlocked = driverInfo?.status === "blocked";
     return (
-      <div className="h-screen flex flex-col items-center justify-center p-8 text-center bg-[#F3F4F6] font-sans" dir="rtl">
+      <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-[#F3F4F6] font-sans" dir="rtl">
         <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} 
           className={`bg-white p-10 rounded-[45px] shadow-2xl max-w-md w-full border-t-[12px] ${isBlocked ? 'border-red-500' : 'border-orange-500'}`}>
           <div className={`w-24 h-24 ${isBlocked ? 'bg-red-50' : 'bg-orange-50'} rounded-full flex items-center justify-center mx-auto mb-6`}>
@@ -835,7 +835,7 @@ export default function DriverDashboard() {
   }
 
   return (
-    <div className="h-screen w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative font-sans" dir="rtl">
+    <div className="h-full w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative font-sans" dir="rtl">
 
       {/* Customer cancelled overlay — shown when customer cancels within grace period */}
       {showCustomerCancelOverlay && (

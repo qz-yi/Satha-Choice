@@ -1596,13 +1596,18 @@ export default function RequestFlow() {
   if (!isLoggedIn) {
     return (
       <div
-        className="min-h-screen bg-white flex flex-col p-6 relative overflow-hidden font-sans"
+        className="h-full bg-white flex flex-col p-6 relative overflow-hidden font-sans"
         dir="rtl"
       >
         <motion.button
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
-          onClick={() => setLocation("/")}
+          onClick={(e) => {
+            e.stopPropagation();
+            localStorage.removeItem("sat7a_role");
+            localStorage.removeItem("sat7a_session_active");
+            setLocation("/");
+          }}
           className="absolute top-8 right-8 z-[50] bg-white p-3 px-5 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-2 hover:bg-gray-50 active:scale-95 transition-all text-gray-900 font-black"
         >
           <Home className="w-5 h-5 text-orange-500" />
@@ -1781,7 +1786,7 @@ export default function RequestFlow() {
   if (isCheckingRecovery) {
     return (
       <div
-        className="min-h-screen bg-white flex flex-col items-center justify-center p-8"
+        className="h-full bg-white flex flex-col items-center justify-center p-8"
         dir="rtl"
       >
         <motion.div
@@ -1810,7 +1815,7 @@ export default function RequestFlow() {
   if (viewState === "success")
     return (
       <div
-        className="min-h-screen bg-white flex flex-col items-center justify-center p-8 text-center"
+        className="h-full bg-white flex flex-col items-center justify-center p-8 text-center"
         dir="rtl"
       >
         <motion.div
@@ -1845,7 +1850,7 @@ export default function RequestFlow() {
   if (viewState === "tracking")
     return (
       <div
-        className="h-screen w-full bg-slate-50 flex flex-col relative"
+        className="h-full w-full bg-slate-50 flex flex-col relative"
         dir="rtl"
       >
         <div className="absolute inset-0 z-0">
@@ -2312,7 +2317,7 @@ export default function RequestFlow() {
 
   return (
     <div
-      className="h-screen w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative"
+      className="h-full w-full bg-[#F3F4F6] flex flex-col overflow-hidden relative"
       dir="rtl"
     >
       <header className="absolute top-0 inset-x-0 z-[4000] p-6 flex flex-col gap-3">

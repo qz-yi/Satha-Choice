@@ -62,7 +62,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <div dir="rtl" className="font-sans antialiased min-h-screen bg-background text-foreground">
+        <div dir="rtl" className="font-sans antialiased h-full flex flex-col bg-background text-foreground overflow-hidden">
           {showSplash ? <SplashScreen /> : <Router />}
           <Toaster />
         </div>

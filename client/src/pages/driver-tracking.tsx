@@ -89,7 +89,7 @@ export default function DriverDashboard() {
   }, [pendingRequest, countdown]);
 
   return (
-    <div className="h-screen w-full bg-slate-50 flex flex-col overflow-hidden relative" dir="rtl">
+    <div className="h-full w-full bg-slate-50 flex flex-col overflow-hidden relative" dir="rtl">
       {!activeRequest && (
         <header className="bg-[#FFD700] px-4 py-4 flex justify-between items-center shadow-md z-[1001]">
           <div className="flex items-center gap-3">

@@ -7,15 +7,13 @@ import { motion } from "framer-motion";
 
 export default function LandingPage() {
   const [, setLocation] = useLocation();
-  const [isChecking, setIsChecking] = useState(true); // FEATURE 3: Check auth on mount
+  const [isChecking, setIsChecking] = useState(true);
 
-  // FEATURE 3: Persistent Auth & Auto-Redirect
   useEffect(() => {
     console.log("🔐 [AUTH CHECK] Checking for existing session...");
     
     const checkAuth = () => {
       try {
-        // Check for active customer session
         const savedUser = localStorage.getItem("sat7a_user");
         const sessionActive = localStorage.getItem("sat7a_session_active");
         
@@ -24,7 +22,6 @@ export default function LandingPage() {
           return;
         }
         
-        // Check for active driver session
         const driverId = localStorage.getItem("currentDriverId");
         const driverPhone = localStorage.getItem("driverPhone");
         
@@ -33,8 +30,6 @@ export default function LandingPage() {
           return;
         }
         
-        // No active session — but if a role was previously chosen, skip the
-        // selection screen and send the user directly to their login page.
         const savedRole = localStorage.getItem("sat7a_role");
         if (savedRole === "customer") {
           setLocation("/request");
@@ -54,10 +49,9 @@ export default function LandingPage() {
     checkAuth();
   }, [setLocation]);
 
-  // FEATURE 3: Show loading while checking auth
   if (isChecking) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-500 via-orange-400 to-yellow-400 flex items-center justify-center">
+      <div className="h-full flex items-center justify-center bg-gradient-to-br from-orange-500 via-orange-400 to-yellow-400">
         <div className="text-center">
           <Loader2 className="w-16 h-16 text-white animate-spin mx-auto mb-4" />
           <p className="text-white font-black text-xl">جاري التحميل...</p>
@@ -80,9 +74,9 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F3F4F6] flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans" dir="rtl">
+    <div className="h-full bg-[#F3F4F6] flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans" dir="rtl">
       
-      {/* لمسة خلفية جمالية */}
+      {/* خلفية جمالية */}
       <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-[-10%] left-[-10%] w-64 h-64 bg-black/5 rounded-full blur-3xl pointer-events-none" />
 
@@ -102,7 +96,6 @@ export default function LandingPage() {
              >
                 <Truck className="w-12 h-12 text-white" />
              </motion.div>
-             {/* أيقونة الدرع تفتح لوحة المدير */}
              <div 
                 onClick={() => setLocation("/admin-login")}
                 className="absolute -bottom-2 -right-2 bg-black text-white p-1.5 rounded-xl border-4 border-[#F3F4F6] cursor-pointer hover:bg-orange-600 transition-colors"
@@ -144,7 +137,7 @@ export default function LandingPage() {
             </Card>
           </motion.div>
 
-          {/* كرت السائق ✅ تم التحديث للمسار الجديد */}
+          {/* كرت السائق */}
           <motion.div 
             variants={itemVariants}
             whileHover={{ scale: 1.02 }}
