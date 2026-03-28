@@ -117,7 +117,7 @@ app.use((req, res, next) => {
   });
 
   // ── تحسين تشغيل الملفات الثابتة (حل مشكلة الشاشة البيضاء) ──────────────────
-  if (process.env.NODE_ENV === "production" || process.env.REPL_ID) {
+  if (process.env.NODE_ENV === "production") {
     // تحديد المسار بدقة، والبحث في dist أو dist/public
     const distPath = path.resolve(process.cwd(), "dist");
     const publicPath = path.resolve(distPath, "public");
