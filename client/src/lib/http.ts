@@ -15,7 +15,8 @@ import { Capacitor } from "@capacitor/core";
 function resolveBaseUrl(): string {
   // Native device (APK / IPA) — must use absolute URL
   if (Capacitor.isNativePlatform()) {
-    const url = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
+    // @ts-ignore
+const url = (process.env.VITE_API_URL  (typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_API_URL : ""))  "";
     if (!url) {
       console.warn(
         "[HTTP] Native platform detected but VITE_API_URL is not set. " +
