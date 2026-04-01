@@ -13,24 +13,20 @@ import { Capacitor } from "@capacitor/core";
 // ── Base URL resolution ───────────────────────────────────────────────────
 
 function resolveBaseUrl(): string {
-  // Native device (APK / IPA) — must use absolute URL
+  // للاندرويد والايفون: نستخدم process.env حصراً
   if (Capacitor.isNativePlatform()) {
-    // @ts-ignore
-const url = (process.env.VITE_API_URL  (typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_API_URL : ""))  "";
+    const url = process.env.VITE_API_URL || "https://satha-iq.com";
+    
     if (!url) {
-      console.warn(
-        "[HTTP] Native platform detected but VITE_API_URL is not set. " +
-          "Set VITE_API_URL=https://satha-iq.com in client/.env.production"
-      );
+      console.warn("[HTTP] Native platform detected but URL is not set.");
     }
     return url.replace(/\/$/, "");
   }
 
-  // Browser: return empty string → all fetch("/api/...") calls are same-origin.
-  // The web server / nginx handles routing to port 5000 transparently.
-  // This avoids any CORS issues and any http/https mismatch.
+  // للويب: نتركها فارغة ليعمل الـ Proxy
   return "";
 }
+  
 
 export const API_BASE = resolveBaseUrl();
 
