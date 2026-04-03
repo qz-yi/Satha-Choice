@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Satha App",
-    "slug": "satha-app",
+    "slug": "rest-express",
     "version": "1.0.0",
     "android": {
       "package": "com.satha.app", 
