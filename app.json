@@ -1,5 +1,12 @@
 {
   "expo": {
+    "name": "Satha App",
+    "slug": "satha-app",
+    "version": "1.0.0",
+    "android": {
+      "package": "com.satha.app", 
+      "versionCode": 1
+    },
     "extra": {
       "eas": {
         "projectId": "30084bec-a365-4cb7-acd9-318a8cd63ae3"
