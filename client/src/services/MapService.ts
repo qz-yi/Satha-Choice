@@ -59,7 +59,7 @@ export async function getDistanceAndDuration(
   
   try {
     // Try Google Maps Distance Matrix API first (traffic-aware)
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_KEY;
+    const apiKey = process.env.VITE_GOOGLE_MAPS_KEY;
     
     if (!apiKey || apiKey === '') {
       console.log('⚠️ [MAP SERVICE] No Google Maps API key - using Haversine fallback');
