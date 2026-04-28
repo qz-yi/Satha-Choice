@@ -1867,8 +1867,9 @@ export default function RequestFlow() {
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
               subdomains={["a", "b", "c", "d"]}
               detectRetina={true}
-              keepBuffer={2}
+              keepBuffer={10}
               tileSize={256}
+              className="map-vibrant"
             />
             {driverLocation && (
               <Marker
@@ -2462,8 +2463,9 @@ export default function RequestFlow() {
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
                 subdomains={["a", "b", "c", "d"]}
                 detectRetina={true}
-                keepBuffer={2}
+                keepBuffer={10}
                 tileSize={256}
+                className="map-vibrant"
               />
               <FlyToMarker
                 center={

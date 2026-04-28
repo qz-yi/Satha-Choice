@@ -136,3 +136,11 @@
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
+
+/* Vibrant, modern map style — boost contrast and saturation slightly,
+   pull a touch of brightness, and apply a very mild hue shift so the
+   greens/blues read clean and punchy without going neon. */
+.leaflet-tile-pane.map-vibrant {
+  filter: contrast(1.12) saturate(1.18) brightness(1.02);
+  -webkit-filter: contrast(1.12) saturate(1.18) brightness(1.02);
+}

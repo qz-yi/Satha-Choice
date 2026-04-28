@@ -529,11 +529,12 @@ export default function DriverDashboard() {
       const response = await fetch(`${API_BASE}/api/requests`);
       if (response.ok) {
         const allRequests = await response.json();
-        // تصفية الطلبات: فقط pending وفي نفس المدينة وليس مكتملاً
-        const myCityRequests = allRequests.filter((req: any) => 
-          req.city?.trim() === driverInfo?.city?.trim() && 
+        // تصفية صارمة: فقط pending، نفس المدينة، نفس نوع المركبة
+        const myCityRequests = allRequests.filter((req: any) =>
+          req.city?.trim() === driverInfo?.city?.trim() &&
           (req.status === "pending" || req.status === "confirmed") &&
-          req.status !== "completed"
+          req.status !== "completed" &&
+          req.vehicleType?.trim() === driverInfo?.vehicleType?.trim()
         );
         setAvailableRequests(myCityRequests);
       }
@@ -550,7 +551,11 @@ export default function DriverDashboard() {
     if (driverInfo?.isOnline && driverInfo?.status === "approved") {
       // 1. استقبال طلبات جديدة - WITH PROFESSIONAL NOTIFICATION
       socket.on("new_request_available", (data: any) => { 
-        if (!activeOrder && data.city?.trim() === driverInfo?.city?.trim()) {
+        if (
+          !activeOrder &&
+          data.city?.trim() === driverInfo?.city?.trim() &&
+          data.vehicleType?.trim() === driverInfo?.vehicleType?.trim()
+        ) {
           setAvailableRequests(prev => {
              if (prev.find(r => r.id === data.id)) return prev;
              return [data, ...prev];
@@ -898,7 +903,8 @@ export default function DriverDashboard() {
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
                   subdomains={["a", "b", "c", "d"]}
                   detectRetina={true}
-                  keepBuffer={2}
+                  keepBuffer={10}
+                  className="map-vibrant"
                 />
                 {currentCoords && (
                   <Marker position={currentCoords} icon={getOrangeArrowIcon(heading)}>
@@ -991,33 +997,95 @@ export default function DriverDashboard() {
                     <Button onClick={handleRefresh} variant="ghost" disabled={isRefreshing} className="bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-2xl gap-2 font-bold px-4"><RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} /> تحديث</Button>
                   </div>
 
-                  <div className="overflow-y-auto px-6 pb-12 space-y-4">
-                    {availableRequests.length === 0 ? (
-                      <div className="py-10 text-center opacity-40"><Navigation className="w-12 h-12 mx-auto mb-2 text-gray-300" /><p className="font-bold text-gray-400">لا توجد طلبات حالياً، اضغط تحديث</p></div>
-                    ) : (
-                      availableRequests.map((req) => (
-                        <div key={req.id} className="bg-gray-50 border border-gray-100 p-5 rounded-[32px] flex items-center justify-between group">
-                          <div className="flex-1 ml-4 space-y-3 text-right">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <div className="w-2.5 h-2.5 rounded-full bg-orange-500" />
-                                <span className="text-sm font-black text-gray-700">{req.pickupAddress || req.location}</span>
-                              </div>
-                              <div className="bg-green-50 px-2 py-0.5 rounded-lg border border-green-100 flex items-center gap-1">
-                                <DollarSign className="w-3 h-3 text-green-600" />
-                                <span className="text-green-700 font-black text-xs">{Number(req.price || 0).toLocaleString()}</span>
-                              </div>
+                  <div className="overflow-y-auto px-5 pb-12 space-y-5">
+                    {(() => {
+                      // ⛔️ فلتر صارم في طبقة العرض: لا يظهر للسائق إلا الطلبات
+                      // التي تطابق نوع مركبته بالضبط (سطحة / سحب / هيدروليك).
+                      const myType = driverInfo?.vehicleType?.trim();
+                      const matchedRequests = availableRequests.filter(
+                        (r) => r.vehicleType?.trim() === myType,
+                      );
+                      if (matchedRequests.length === 0) {
+                        return (
+                          <div className="py-12 text-center opacity-50">
+                            <Navigation className="w-14 h-14 mx-auto mb-3 text-gray-300" />
+                            <p className="font-black text-gray-500 text-base">لا توجد طلبات حالياً</p>
+                            <p className="font-bold text-gray-400 text-xs mt-1">سيتم عرض طلبات نوع "{myType}" فقط</p>
+                          </div>
+                        );
+                      }
+                      return matchedRequests.map((req) => (
+                        <div
+                          key={req.id}
+                          className="bg-white border-2 border-gray-100 p-6 rounded-[32px] shadow-sm space-y-5"
+                          data-testid={`card-request-${req.id}`}
+                        >
+                          {/* السعر + نوع السطحة المطلوبة */}
+                          <div className="flex items-center justify-between">
+                            <div className="bg-orange-500 text-white px-4 py-2 rounded-2xl flex items-center gap-2 shadow-md shadow-orange-500/30">
+                              <span
+                                className="font-black text-sm"
+                                data-testid={`text-vehicle-type-${req.id}`}
+                              >
+                                {req.vehicleType || myType}
+                              </span>
                             </div>
-                            <div className="flex items-center gap-3 pr-1">
-                              <div className="w-2 h-2 rounded-full bg-gray-300" />
-                              <span className="text-xs text-gray-400 font-bold">{req.destination || "موقع محدد"}</span>
+                            <div className="bg-green-50 border-2 border-green-100 px-4 py-2 rounded-2xl flex items-center gap-2">
+                              <DollarSign className="w-5 h-5 text-green-600" />
+                              <span
+                                className="text-green-700 font-black text-xl"
+                                data-testid={`text-price-${req.id}`}
+                              >
+                                {Number(req.price || 0).toLocaleString()}
+                              </span>
+                              <span className="text-green-600 font-bold text-xs">د.ع</span>
                             </div>
                           </div>
-                          <div className="hidden flex-col items-center gap-2 border-r pr-5 border-gray-200 min-w-[100px]"><span className="text-xl font-black text-orange-600">{req.price}</span><Button onClick={() => handleAcceptOrder(req)} className="bg-black hover:bg-orange-600 text-white rounded-2xl h-10 px-6 font-black text-xs transition-all">قبول</Button></div>
-                          <Button onClick={() => handleAcceptOrder(req)} className="bg-black hover:bg-orange-600 text-white rounded-2xl h-10 px-6 font-black text-xs transition-all shrink-0">قبول</Button>
+
+                          {/* موقع الانطلاق */}
+                          <div className="space-y-3 text-right">
+                            <div className="flex items-start gap-3">
+                              <div className="w-4 h-4 rounded-full bg-orange-500 mt-1 shrink-0 ring-4 ring-orange-100" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] font-black text-gray-400 mb-0.5">نقطة الانطلاق</p>
+                                <p
+                                  className="text-base font-black text-gray-800 leading-snug break-words"
+                                  data-testid={`text-pickup-${req.id}`}
+                                >
+                                  {req.pickupAddress || req.location || "غير محدد"}
+                                </p>
+                                <p className="text-xs font-bold text-orange-600 mt-1">
+                                  نوع السطحة المطلوبة: {req.vehicleType || myType}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* الوجهة */}
+                            <div className="flex items-start gap-3 pr-0.5">
+                              <div className="w-4 h-4 rounded-full bg-gray-400 mt-1 shrink-0 ring-4 ring-gray-100" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] font-black text-gray-400 mb-0.5">الوجهة</p>
+                                <p
+                                  className="text-sm font-bold text-gray-600 leading-snug break-words"
+                                  data-testid={`text-destination-${req.id}`}
+                                >
+                                  {req.destination || "موقع محدد"}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* زر القبول الكبير */}
+                          <Button
+                            onClick={() => handleAcceptOrder(req)}
+                            data-testid={`button-accept-${req.id}`}
+                            className="w-full bg-black hover:bg-orange-600 text-white rounded-2xl h-14 font-black text-lg shadow-lg transition-all"
+                          >
+                            قبول الطلب
+                          </Button>
                         </div>
-                      ))
-                    )}
+                      ));
+                    })()}
                   </div>
                 </motion.div>
               )}
