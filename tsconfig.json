@@ -39,6 +39,5 @@
         "./shared/*"
       ]
     }
-  },
-  "extends": "expo/tsconfig.base"
+  }
 }

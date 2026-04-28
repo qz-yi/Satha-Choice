@@ -66,3 +66,18 @@ The `shared/` directory contains code used by both client and server:
 ### Development Tools
 - Replit-specific Vite plugins for development experience
 - Runtime error overlay for debugging
+
+## Mobile App (Android)
+- **Wrapper**: Capacitor (`@capacitor/core`, `@capacitor/android`, `@capacitor/cli`, `@capacitor/geolocation`)
+- **Build path**: `npm run build` → `npx cap sync android` → open `android/` in Android Studio
+- The native Android project lives in `android/`. Capacitor wraps the Vite-built web bundle (`dist/public`) into a WebView app.
+- We do **not** use Expo, EAS, or React Native. Those packages and their config files (`eas.json`, `App.js`, `app.json`, `babel.config.cjs`) were removed during migration.
+
+## Payment Status
+The wallet **balance display, debit, and admin manual credit/debit** continue to work normally (managed via the admin dashboard).
+
+Electronic top-up gateways (Zain Cash, Master Card / Visa, in-checkout wallet payment) are **not yet integrated**. To avoid showing a broken flow, the customer and driver wallet UIs surface a branded "coming soon" modal (`client/src/components/PaymentComingSoonDialog.tsx`) instead of attempting to call missing payment providers. Wired into:
+- Customer checkout — selecting "wallet" as payment method (`client/src/pages/request-flow.tsx`)
+- Customer wallet sheet — Zain Cash / Master Card buttons + "تأكيد عملية الشحن"
+- Driver wallet tab — Zain Cash / Master Card buttons + "تأكيد عملية الشحن" (`client/src/pages/driver-dashboard.tsx`)
+The admin's manual wallet adjustment flow in `admin-dashboard.tsx` is intentionally untouched and remains fully functional.

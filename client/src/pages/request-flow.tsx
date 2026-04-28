@@ -60,6 +60,7 @@ import { getSocket } from "@/lib/socket";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { RoutingPolyline } from "@/components/RoutingPolyline";
+import { PaymentComingSoonDialog } from "@/components/PaymentComingSoonDialog";
 
 // Resolve image URLs — relative paths (/uploads/...) need API_BASE in Capacitor
 const resolveImageUrl = (url: string | null | undefined): string => {
@@ -239,6 +240,7 @@ export default function RequestFlow() {
   const [messages, setMessages] = useState<any[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isWalletOpen, setIsWalletOpen] = useState(false);
+  const [showPaymentSoonModal, setShowPaymentSoonModal] = useState(false);
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [isSidebarSheetOpen, setIsSidebarSheetOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "wallet">("cash");
@@ -2585,7 +2587,8 @@ export default function RequestFlow() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPaymentMethod("wallet")}
+                    onClick={() => setShowPaymentSoonModal(true)}
+                    data-testid="button-pay-with-wallet"
                     className={`flex-1 h-12 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 ${paymentMethod === "wallet" ? "bg-orange-500 text-white shadow-md" : "bg-gray-50 text-gray-400"}`}
                   >
                     <Wallet className="w-4 h-4" /> المحفظة
@@ -2806,7 +2809,8 @@ export default function RequestFlow() {
                   وسائل الشحن
                 </h4>
                 <button
-                  onClick={() => setWalletPaymentMethod("zain")}
+                  onClick={() => setShowPaymentSoonModal(true)}
+                  data-testid="button-deposit-zain"
                   className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${walletPaymentMethod === "zain" ? "border-orange-500 bg-orange-50/20" : "border-gray-100"}`}
                   style={{ pointerEvents: "auto" }}
                 >
@@ -2832,7 +2836,8 @@ export default function RequestFlow() {
                 </button>
 
                 <button
-                  onClick={() => setWalletPaymentMethod("card")}
+                  onClick={() => setShowPaymentSoonModal(true)}
+                  data-testid="button-deposit-card"
                   className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${walletPaymentMethod === "card" ? "border-blue-500 bg-blue-50/20" : "border-gray-100"}`}
                   style={{ pointerEvents: "auto" }}
                 >
@@ -2888,12 +2893,9 @@ export default function RequestFlow() {
               style={{ pointerEvents: "auto" }}
             >
               <Button
-                disabled={isDepositing || !walletPaymentMethod}
-                onClick={() =>
-                  handleCustomerDeposit(
-                    walletPaymentMethod === "card" ? "master" : "zain",
-                  )
-                }
+                disabled={isDepositing}
+                onClick={() => setShowPaymentSoonModal(true)}
+                data-testid="button-confirm-deposit"
                 className="w-full h-16 rounded-[22px] bg-orange-500 text-white text-xl font-black shadow-lg hover:bg-orange-600 disabled:opacity-50"
                 style={{ pointerEvents: "auto" }}
               >
@@ -2907,6 +2909,11 @@ export default function RequestFlow() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <PaymentComingSoonDialog
+        open={showPaymentSoonModal}
+        onOpenChange={setShowPaymentSoonModal}
+      />
 
       {/* CRITICAL FIX #2: Professional Price Confirmation Modal */}
       <Dialog

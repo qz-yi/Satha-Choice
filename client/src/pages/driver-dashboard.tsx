@@ -20,6 +20,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { RoutingPolyline } from "@/components/RoutingPolyline";
 import { ProfessionalNotification } from "@/components/ProfessionalNotification"; 
+import { PaymentComingSoonDialog } from "@/components/PaymentComingSoonDialog";
 
 const getOrangeArrowIcon = (rotation: number) => L.divIcon({
   html: `
@@ -133,6 +134,7 @@ export default function DriverDashboard() {
   const [showVehicleDetails, setShowVehicleDetails] = useState(false);
   const [isDepositing, setIsDepositing] = useState(false); 
   const [paymentMethod, setPaymentMethod] = useState<'zain' | 'card' | null>(null);
+  const [showPaymentSoonModal, setShowPaymentSoonModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState<string>("25000"); 
 
   const [isFollowMode, setIsFollowMode] = useState(true); 
@@ -1072,7 +1074,8 @@ export default function DriverDashboard() {
               <div className="space-y-4">
                 <h4 className="text-gray-800 font-black text-lg pr-2">وسائل الشحن</h4>
                 <button 
-                  onClick={() => setPaymentMethod('zain')}
+                  onClick={() => setShowPaymentSoonModal(true)}
+                  data-testid="button-driver-deposit-zain"
                   className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${paymentMethod === 'zain' ? 'border-orange-500 bg-orange-50/20' : 'border-gray-100'}`}
                 >
                   <div className="flex items-center gap-4">
@@ -1084,7 +1087,8 @@ export default function DriverDashboard() {
                   </div>
                 </button>
                 <button 
-                  onClick={() => setPaymentMethod('card')}
+                  onClick={() => setShowPaymentSoonModal(true)}
+                  data-testid="button-driver-deposit-card"
                   className={`w-full p-5 bg-white border-2 rounded-[25px] flex items-center justify-between transition-all ${paymentMethod === 'card' ? 'border-blue-500 bg-blue-50/20' : 'border-gray-100'}`}
                 >
                   <div className="flex items-center gap-4">
@@ -1117,8 +1121,9 @@ export default function DriverDashboard() {
 
             <div className="p-6 bg-white border-t border-gray-50 pb-8">
               <Button 
-                disabled={isDepositing || !paymentMethod}
-                onClick={() => handleDeposit(paymentMethod === 'card' ? 'master' : 'zain')}
+                disabled={isDepositing}
+                onClick={() => setShowPaymentSoonModal(true)}
+                data-testid="button-driver-confirm-deposit"
                 className="w-full h-16 rounded-[22px] bg-orange-500 text-white text-xl font-black shadow-lg"
               >
                 {isDepositing ? <Loader2 className="w-6 h-6 animate-spin" /> : "تأكيد عملية الشحن"}
@@ -1464,6 +1469,11 @@ export default function DriverDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <PaymentComingSoonDialog
+        open={showPaymentSoonModal}
+        onOpenChange={setShowPaymentSoonModal}
+      />
     </div>
   );
 }
