@@ -893,7 +893,13 @@ export default function DriverDashboard() {
                 zoomControl={false}
                 onDragstart={() => setIsFollowMode(false)}
               >
-                <TileLayer url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" attribution="© Google Maps" detectRetina={true} />
+                <TileLayer
+                  url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                  subdomains={["a", "b", "c", "d"]}
+                  detectRetina={true}
+                  updateWhenIdle={true}
+                />
                 {currentCoords && (
                   <Marker position={currentCoords} icon={getOrangeArrowIcon(heading)}>
                     <Popup><div className="text-right font-black font-sans">أنت هنا كابتن {driverInfo.name} <br/><span className="text-orange-500 text-[10px]">جاري تتبع موقعك المباشر</span></div></Popup>
