@@ -54,10 +54,13 @@ The `shared/` directory contains code used by both client and server:
 - Session storage with `connect-pg-simple`
 
 ### Maps & Geolocation
-- Leaflet for map rendering
-- **CartoDB Positron** (`light_all`) tiles for a Baly-style minimal/light theme — paired with a `.map-vibrant` CSS filter (`brightness(1.04) contrast(0.95) saturate(0.85)`) defined in `client/src/index.css`. All 5 TileLayers in the app use `keepBuffer={10}` + `className="map-vibrant"`.
-- Browser Geolocation API for current location
-- **Geocoding/Search**: Nominatim with POI-aware ranking. Customer search (`searchLocation` in `client/src/pages/request-flow.tsx`) uses `countrycodes=iq`, an Iraq `viewbox`, `bounded=1`, `namedetails=1`, and `limit=25`, then re-ranks results to prioritize POI classes (amenity, shop, tourism, leisure, office, building, highway, historic, railway, man_made, natural, place) over generic addresses, returning the top 15.
+- **Unified map component**: All 5 in-app maps render through `client/src/components/SathaMap.tsx`. This wrapper centralises tile source, bounds, performance flags, and post-mount `invalidateSize()` calls so swapping the engine later (e.g. to `@capacitor/google-maps`) only touches one file.
+- **Tile source**: CartoDB Positron (`https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png`) — clean Baly-style look. **No CSS filter** is applied.
+- **Performance flags**: `preferCanvas: true` (GPU rendering on mobile), `keepBuffer: 10` (preloads 10 extra tile rings for smooth panning), `detectRetina: true`, `tileSize: 256`.
+- **Iraq bounds lock**: `IRAQ_BOUNDS = [[29.0, 38.8], [37.4, 48.6]]` exported from `SathaMap.tsx` and applied as `maxBounds` with `maxBoundsViscosity: 1.0` on every map — physically prevents panning outside Iraq, eliminates gray voids, reduces tile load.
+- **Persistent tile caching**: Service Worker at `client/public/sw.js` (registered in `client/src/main.tsx` only when `import.meta.env.PROD`) caches every Carto tile request in a dedicated `satha-tiles-v1` Cache Storage with a cache-first strategy and a 4000-tile cap. Provides true offline-first behavior inside the Capacitor WebView and the browser PWA.
+- Browser Geolocation API for current location.
+- **Geocoding/Search**: Nominatim with POI-aware ranking. `searchLocation` in `client/src/pages/request-flow.tsx` uses `countrycodes=iq`, an Iraq `viewbox`, `bounded=1`, `namedetails=1`, and `limit=25`, then re-ranks results to prioritize POI classes (amenity, shop, tourism, leisure, office, building, highway, historic, railway, man_made, natural, place) over generic addresses, returning the top 15.
 
 ### UI Component Libraries
 - Full shadcn/ui component set (Radix UI primitives)

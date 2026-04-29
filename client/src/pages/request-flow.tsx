@@ -47,13 +47,12 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
-  MapContainer,
-  TileLayer,
   useMapEvents,
   Marker,
   useMap,
   Popup,
 } from "react-leaflet";
+import { SathaMap } from "@/components/SathaMap";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { getSocket } from "@/lib/socket";
@@ -1887,21 +1886,10 @@ export default function RequestFlow() {
         dir="rtl"
       >
         <div className="absolute inset-0 z-0">
-          <MapContainer
+          <SathaMap
             center={[formData.pickupLat, formData.pickupLng]}
             zoom={15}
-            style={{ height: "100%", width: "100%" }}
-            zoomControl={false}
           >
-            <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-              subdomains={["a", "b", "c", "d"]}
-              detectRetina={true}
-              keepBuffer={10}
-              tileSize={256}
-              className="map-vibrant"
-            />
             {driverLocation && (
               <Marker
                 position={driverLocation}
@@ -1931,7 +1919,7 @@ export default function RequestFlow() {
               }
               shouldFly={!!driverLocation}
             />
-          </MapContainer>
+          </SathaMap>
         </div>
         <header className="absolute top-6 inset-x-6 z-[1000] flex justify-between items-center">
           <div className="w-12"></div>
@@ -2483,21 +2471,10 @@ export default function RequestFlow() {
       <div className="flex-1 relative z-0 flex flex-col">
         {(step === "pickup" || step === "dropoff") && (
           <div className="flex-1 relative">
-            <MapContainer
+            <SathaMap
               center={[formData.pickupLat, formData.pickupLng]}
               zoom={15}
-              style={{ height: "100%", width: "100%" }}
-              zoomControl={false}
             >
-              <TileLayer
-                url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                subdomains={["a", "b", "c", "d"]}
-                detectRetina={true}
-                keepBuffer={10}
-                tileSize={256}
-                className="map-vibrant"
-              />
               <FlyToMarker
                 center={
                   step === "pickup"
@@ -2533,7 +2510,7 @@ export default function RequestFlow() {
                   }
                 }}
               />
-            </MapContainer>
+            </SathaMap>
             <Button
               onClick={handleGetCurrentLocation}
               className="absolute bottom-40 right-6 z-[1000] w-14 h-14 rounded-2xl bg-white text-orange-500 shadow-2xl border-none active:scale-90 transition-transform"

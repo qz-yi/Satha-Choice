@@ -137,10 +137,7 @@
   -webkit-backface-visibility: hidden;
 }
 
-/* Baly-style minimal map: very light, almost grayscale background with
-   muted greens for parks and soft gray roads. Designed to pair with
-   CartoDB Positron tiles for a clean, modern, distraction-free look. */
-.leaflet-tile-pane.map-vibrant {
-  filter: brightness(1.04) contrast(0.95) saturate(0.85);
-  -webkit-filter: brightness(1.04) contrast(0.95) saturate(0.85);
-}
+/* Map tiles render natively with CartoDB Positron's clean, vibrant Baly-style
+   look. No CSS filter is applied — tiles keep their original sharp colors and
+   crisp text labels. The .map-vibrant class name is kept for backward
+   compatibility but no longer dims the map. */

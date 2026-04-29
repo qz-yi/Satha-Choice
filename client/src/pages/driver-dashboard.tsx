@@ -10,7 +10,8 @@ import {
   PlusCircle, CreditCard, Info, ShieldCheck, Receipt, DollarSign, ArrowDownCircle
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapContainer, TileLayer, useMap, Marker, Popup, Polyline } from "react-leaflet"; 
+import { useMap, Marker, Popup, Polyline } from "react-leaflet";
+import { SathaMap } from "@/components/SathaMap";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { getSocket } from "@/lib/socket";
@@ -891,21 +892,11 @@ export default function DriverDashboard() {
         {activeTab === "map" && (
           <>
             <div className={`absolute inset-0 z-0 transition-all duration-1000 ${driverInfo.isOnline ? 'opacity-100' : 'opacity-40 grayscale'}`}>
-              <MapContainer 
-                center={[33.3152, 44.3661]} 
-                zoom={15} 
-                style={{ height: "100%", width: "100%" }} 
-                zoomControl={false}
+              <SathaMap
+                center={[33.3152, 44.3661]}
+                zoom={15}
                 onDragstart={() => setIsFollowMode(false)}
               >
-                <TileLayer
-                  url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                  subdomains={["a", "b", "c", "d"]}
-                  detectRetina={true}
-                  keepBuffer={10}
-                  className="map-vibrant"
-                />
                 {currentCoords && (
                   <Marker position={currentCoords} icon={getOrangeArrowIcon(heading)}>
                     <Popup><div className="text-right font-black font-sans">أنت هنا كابتن {driverInfo.name} <br/><span className="text-orange-500 text-[10px]">جاري تتبع موقعك المباشر</span></div></Popup>
@@ -943,7 +934,7 @@ export default function DriverDashboard() {
                   </Marker>
                 )}
                 <MapViewHandler center={currentCoords || [33.3152, 44.3661]} isFollowMode={isFollowMode} />
-              </MapContainer>
+              </SathaMap>
             </div>
 
             <Button 

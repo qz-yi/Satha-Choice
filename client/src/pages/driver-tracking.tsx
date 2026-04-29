@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Truck, LogOut, Wallet, X, Phone, User, Navigation } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapContainer, TileLayer, Marker } from "react-leaflet";
+import { Marker } from "react-leaflet";
+import { SathaMap } from "@/components/SathaMap";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -105,17 +106,9 @@ export default function DriverDashboard() {
 
       <div className="flex-1 relative">
         <div className="absolute inset-0 z-0">
-          <MapContainer center={[33.3152, 44.3661]} zoom={13} style={{ height: "100%", width: "100%" }} zoomControl={false}>
-            <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-              subdomains={["a", "b", "c", "d"]}
-              detectRetina={true}
-              keepBuffer={10}
-              className="map-vibrant"
-            />
+          <SathaMap center={[33.3152, 44.3661]} zoom={13}>
             <Marker position={[33.3152, 44.3661]} />
-          </MapContainer>
+          </SathaMap>
         </div>
 
         <AnimatePresence>

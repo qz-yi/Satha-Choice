@@ -9,7 +9,8 @@ import {
   Star, Zap, Navigation
 } from "lucide-react";
 import AdminPricingPanel from "./admin-pricing-panel";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { Marker, Popup } from "react-leaflet";
+import { SathaMap } from "@/components/SathaMap";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { motion, AnimatePresence } from "framer-motion";
@@ -625,15 +626,7 @@ export default function AdminDashboard() {
                 className="bg-white rounded-[40px] overflow-hidden border-[10px] border-white shadow-2xl"
                 style={{ height: "560px" }}
               >
-                <MapContainer center={[33.3152, 44.3661]} zoom={11} style={{ height: "100%", width: "100%" }}>
-                  <TileLayer
-                    url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                    subdomains={["a", "b", "c", "d"]}
-                    detectRetina={true}
-                    keepBuffer={10}
-                    className="map-vibrant"
-                  />
+                <SathaMap center={[33.3152, 44.3661]} zoom={11} zoomControl={true}>
                   {onlineDrivers.map(driver => {
                     const loc = driverLocations[driver.id];
                     const lat = loc?.lat || parseFloat(driver.lastLat || "");
@@ -669,7 +662,7 @@ export default function AdminDashboard() {
                       </Marker>
                     );
                   })}
-                </MapContainer>
+                </SathaMap>
               </motion.div>
             )}
 
