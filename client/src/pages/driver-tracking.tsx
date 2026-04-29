@@ -6,18 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Truck, LogOut, Wallet, X, Phone, User, Navigation } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
-import { Marker } from "react-leaflet";
-import { SathaMap } from "@/components/SathaMap";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
-
-// 1. إصلاح رابط الأيقونات (تم التصحيح هنا)
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker.png", // تم تصحيح الامتداد
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
+import { Marker, SathaMap } from "@/components/SathaMap";
 
 // --- مكون التبديل بتصميم عريض ومنظم ---
 const StatusToggle = memo(({ isOnline, onToggle }: any) => (

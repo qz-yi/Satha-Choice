@@ -10,10 +10,7 @@ import {
   PlusCircle, CreditCard, Info, ShieldCheck, Receipt, DollarSign, ArrowDownCircle
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useMap, Marker, Popup, Polyline } from "react-leaflet";
-import { SathaMap } from "@/components/SathaMap";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import { useMap, Marker, Popup, Polyline, SathaMap, L } from "@/components/SathaMap";
 import { getSocket } from "@/lib/socket";
 import { useQuery } from "@tanstack/react-query"; 
 import { Driver } from "@shared/schema";

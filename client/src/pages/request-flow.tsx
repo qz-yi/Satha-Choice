@@ -51,10 +51,9 @@ import {
   Marker,
   useMap,
   Popup,
-} from "react-leaflet";
-import { SathaMap } from "@/components/SathaMap";
-import "leaflet/dist/leaflet.css";
-import L from "leaflet";
+  SathaMap,
+  L,
+} from "@/components/SathaMap";
 import { getSocket } from "@/lib/socket";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -3081,7 +3080,7 @@ export default function RequestFlow() {
   );
 }
 
-function MapEventsHandler({ onMove }: { onMove: (center: L.LatLng) => void }) {
+function MapEventsHandler({ onMove }: { onMove: (center: { lat: number; lng: number }) => void }) {
   const map = useMapEvents({ moveend: () => onMove(map.getCenter()) });
   return null;
 }

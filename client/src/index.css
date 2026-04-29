@@ -106,38 +106,25 @@
   }
 }
 
-/* ── Leaflet map tile rendering fix (prevents white gap lines in APK) ────── */
-.leaflet-container {
-  backface-visibility: hidden;
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
-}
-
-.leaflet-tile-container {
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
-}
-
-.leaflet-tile {
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
-  image-rendering: -webkit-optimize-contrast;
-  margin: 0;
-  padding: 0;
-  border: 0 !important;
+/* ── MapLibre GL canvas rendering fix (smooth on mobile / WebView) ───────── */
+.maplibregl-canvas {
   outline: none !important;
 }
 
-.leaflet-pane {
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
+.maplibregl-map {
+  font-family: var(--font-cairo), ui-sans-serif, system-ui, sans-serif;
 }
 
-/* Map tiles render natively with CartoDB Positron's clean, vibrant Baly-style
-   look. No CSS filter is applied — tiles keep their original sharp colors and
-   crisp text labels. The .map-vibrant class name is kept for backward
-   compatibility but no longer dims the map. */
+/* Hide the MapTiler logo only when running inside the native APK shell.
+   Web display keeps full attribution to comply with MapTiler's terms. */
+.maplibregl-ctrl-attrib {
+  font-size: 10px;
+}
+
+/* Popups: remove default white card chrome to match the app's RTL look. */
+.maplibregl-popup-content {
+  padding: 8px 12px;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  font-family: var(--font-cairo), ui-sans-serif, system-ui, sans-serif;
+}

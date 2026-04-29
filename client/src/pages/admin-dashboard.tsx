@@ -9,10 +9,7 @@ import {
   Star, Zap, Navigation
 } from "lucide-react";
 import AdminPricingPanel from "./admin-pricing-panel";
-import { Marker, Popup } from "react-leaflet";
-import { SathaMap } from "@/components/SathaMap";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import { Marker, Popup, SathaMap, L } from "@/components/SathaMap";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
