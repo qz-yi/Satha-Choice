@@ -17,7 +17,7 @@ Preferred communication style: Simple, everyday language.
 - **Forms**: React Hook Form with Zod validation via @hookform/resolvers
 - **Styling**: Tailwind CSS with shadcn/ui component library (New York style)
 - **Animations**: Framer Motion for smooth transitions
-- **Maps**: React Leaflet for interactive location picking
+- **Maps**: MapLibre GL JS rendering offline vector tiles from a local PMTiles archive (`client/src/assets/maps/south_iraq.pmtiles`), served via symlink at `/maps/south_iraq.pmtiles`. The shared `<SathaMap>` component (`client/src/components/SathaMap.tsx`) registers the `pmtiles://` protocol, applies a custom Minimal Light style with Arabic (RTL) labels (`sathaMapStyle.ts`), locks the viewport to Iraq bounds, defaults to Hilla `[44.42, 32.48]` at zoom 12, and exposes a thin Leaflet-compatible shim (`Marker`/`Popup`/`Polyline`/`useMap`/`useMapEvents`/`L.divIcon`) so existing pages keep their original API. Hardware acceleration is enabled (antialias + `translate3d` on the canvas). Pickup/dropoff selection uses a fixed center crosshair (CSS overlay) plus a real geographic marker placed on confirm, so markers stick to the ground while the targeting pin stays centered.
 - **Build Tool**: Vite with custom path aliases (@/, @shared/, @assets/)
 
 ### Backend Architecture

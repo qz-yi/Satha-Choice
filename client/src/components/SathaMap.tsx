@@ -20,14 +20,39 @@ import maplibregl, {
   LngLatLike,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { Protocol } from "pmtiles";
+import { buildMinimalLightStyle } from "./sathaMapStyle";
 
 /**
- * 🗺️ MapTiler vector style (Streets v4) — يوفّر مظهراً احترافياً عالي الدقة
- * بديلاً عن بلاطات Leaflet/Carto. الأنماط vector فيتم رسمها client-side،
- * مما يعني وضوح أعلى وحجم تنزيل أقل.
+ * 🗺️ ملف PMTiles محلي يغطي جنوب العراق — يعمل أوفلاين بالكامل.
+ *  • يُخدَّم من /maps/south_iraq.pmtiles (symlink إلى client/src/assets/maps/)
+ *  • Vite يدعم HTTP Range Requests على الملفات الثابتة، وهو ما يحتاجه PMTiles.
  */
-const MAPTILER_KEY = "ZgzumFORbF7swvFCViRi";
-export const MAPTILER_STYLE_URL = `https://api.maptiler.com/maps/streets-v4/style.json?key=${MAPTILER_KEY}`;
+export const PMTILES_URL = "/maps/south_iraq.pmtiles";
+
+/**
+ * تسجيل بروتوكول pmtiles مع MapLibre — مرة واحدة على مستوى التطبيق.
+ * يجب استدعاؤه قبل إنشاء أي خريطة.
+ *
+ * كذلك يفعّل دعم RTL لأسماء الشوارع العربية في بابل والمناطق الجنوبية.
+ */
+let pmtilesRegistered = false;
+function ensurePmtilesProtocol() {
+  if (pmtilesRegistered) return;
+  const protocol = new Protocol();
+  maplibregl.addProtocol("pmtiles", protocol.tile);
+  // Arabic shaping for proper RTL street labels
+  if (typeof maplibregl.getRTLTextPluginStatus === "function") {
+    const status = maplibregl.getRTLTextPluginStatus();
+    if (status === "unavailable") {
+      maplibregl.setRTLTextPlugin(
+        "https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.min.js",
+        true,
+      );
+    }
+  }
+  pmtilesRegistered = true;
+}
 
 /**
  * 🇮🇶 حدود العراق — تُمرَّر إلى maxBounds لقفل الخريطة داخل العراق فقط.
@@ -39,6 +64,9 @@ export const IRAQ_BOUNDS: LngLatBoundsLike = [
   [38.8, 29.0], // SW (lng, lat)
   [48.6, 37.4], // NE (lng, lat)
 ];
+
+/** الإحداثيات الافتراضية: مدينة الحلة، محافظة بابل ([lng, lat]) */
+export const HILLA_CENTER: [number, number] = [44.42, 32.48];
 
 // ── Map context & useMap hook ──────────────────────────────────────────────
 const MapContext = createContext<MlMap | null>(null);
@@ -375,7 +403,8 @@ export function Polyline({
 
 // ── SathaMap container ──────────────────────────────────────────────────────
 interface SathaMapProps {
-  center: [number, number]; // [lat, lng]
+  /** [lat, lng] على نمط Leaflet — اختياري، الافتراضي مدينة الحلة. */
+  center?: [number, number];
   zoom?: number;
   minZoom?: number;
   maxZoom?: number;
@@ -388,18 +417,20 @@ interface SathaMapProps {
 }
 
 /**
- * مكوّن الخريطة الموحّد — مبني الآن على MapLibre GL JS + MapTiler Streets v4.
+ * مكوّن الخريطة الموحّد — مبني على MapLibre GL JS + PMTiles المحلية (أوفلاين).
  *
  * المزايا المُفعَّلة:
- *  - Vector tiles عبر MapTiler (مظهر احترافي وعالي الدقة)
+ *  - Vector tiles من ملف south_iraq.pmtiles (لا اتصال بالإنترنت مطلوب للبلاطات)
+ *  - ستايل Minimal Light (شوارع بيضاء، خلفية رمادية فاتحة، أسماء عربية RTL)
  *  - maxBounds مقيّدة بحدود العراق
  *  - trackResize: true لضبط الحجم تلقائياً
- *  - antialias: true لرسم خطوط ناعمة بأعلى دقة
+ *  - antialias مفعّل عبر canvasContextAttributes (maplibre-gl v5)
+ *  - Hardware acceleration عبر translate3d على عنصر الـ canvas (انظر index.css)
  *  - shim يحاكي API الـ react-leaflet ليبقى كود الصفحات الحالي صالحاً
  */
 export function SathaMap({
   center,
-  zoom = 15,
+  zoom = 12,
   minZoom = 5,
   maxZoom = 19,
   zoomControl = false,
@@ -411,29 +442,50 @@ export function SathaMap({
 }: SathaMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [mapInstance, setMapInstance] = useState<MlMap | null>(null);
+  const [initError, setInitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: MAPTILER_STYLE_URL,
-      center: [center[1], center[0]], // [lng, lat]
-      zoom,
-      minZoom,
-      maxZoom,
-      maxBounds: IRAQ_BOUNDS,
-      trackResize: true,
-      // antialias مفعّل عبر WebGL context attributes في maplibre-gl v5
-      canvasContextAttributes: {
-        antialias: true,
-        powerPreference: "high-performance",
-      },
-      attributionControl: false,
-      cooperativeGestures: false,
-    });
+    // سجّل بروتوكول pmtiles + RTL plugin قبل إنشاء الخريطة
+    ensurePmtilesProtocol();
 
-    // Compact attribution control to keep the map clean
+    // Convert [lat, lng] from props → [lng, lat] for MapLibre, fallback to Hilla
+    const startCenter: [number, number] = center
+      ? [center[1], center[0]]
+      : HILLA_CENTER;
+
+    let map: MlMap;
+    try {
+      map = new maplibregl.Map({
+        container: containerRef.current,
+        style: buildMinimalLightStyle(PMTILES_URL),
+        center: startCenter,
+        zoom,
+        minZoom,
+        maxZoom,
+        maxBounds: IRAQ_BOUNDS,
+        trackResize: true,
+        canvasContextAttributes: {
+          antialias: true,
+          powerPreference: "high-performance",
+        },
+        attributionControl: false,
+        cooperativeGestures: false,
+        // مهم لتحسين الأداء على الموبايل
+        fadeDuration: 150,
+      });
+    } catch (err: any) {
+      // غالباً WebGL غير متوفر (محاكي/متصفح بدون GPU)
+      console.error("[SathaMap] WebGL/Map init failed:", err);
+      setInitError(
+        err?.message?.includes("WebGL")
+          ? "المتصفح لا يدعم تسريع الرسومات (WebGL). يرجى التحديث."
+          : "تعذّر تحميل الخريطة. يرجى المحاولة لاحقاً.",
+      );
+      return;
+    }
+
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-left");
 
     if (zoomControl) {
@@ -447,7 +499,11 @@ export function SathaMap({
 
     map.on("load", () => {
       onMapReady?.(map);
-      // Make sure the map fills its container after any animated parent.
+      // Hardware-acceleration hint على الـ canvas نفسه
+      const canvas = map.getCanvas();
+      canvas.style.willChange = "transform";
+      canvas.style.transform = "translate3d(0,0,0)";
+
       map.resize();
       setTimeout(() => map.resize(), 100);
       setTimeout(() => map.resize(), 400);
@@ -458,8 +514,6 @@ export function SathaMap({
       map.remove();
       setMapInstance(null);
     };
-    // We intentionally only run this once on mount — center/zoom updates are
-    // handled by consumers via the useMap()/flyTo()/setView() shim.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -467,8 +521,16 @@ export function SathaMap({
     <div
       ref={containerRef}
       className={className}
-      style={style ?? { height: "100%", width: "100%" }}
+      style={{ position: "relative", height: "100%", width: "100%", ...style }}
     >
+      {initError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-gray-700 text-center p-6">
+          <div>
+            <p className="font-bold text-lg mb-2">⚠️ تعذّر تحميل الخريطة</p>
+            <p className="text-sm">{initError}</p>
+          </div>
+        </div>
+      )}
       {mapInstance && (
         <MapContext.Provider value={mapInstance}>{children}</MapContext.Provider>
       )}

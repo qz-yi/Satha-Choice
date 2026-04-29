@@ -623,7 +623,7 @@ export default function AdminDashboard() {
                 className="bg-white rounded-[40px] overflow-hidden border-[10px] border-white shadow-2xl"
                 style={{ height: "560px" }}
               >
-                <SathaMap center={[33.3152, 44.3661]} zoom={11} zoomControl={true}>
+                <SathaMap center={[32.48, 44.42]} zoom={12} zoomControl={true}>
                   {onlineDrivers.map(driver => {
                     const loc = driverLocations[driver.id];
                     const lat = loc?.lat || parseFloat(driver.lastLat || "");

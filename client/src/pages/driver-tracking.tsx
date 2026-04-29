@@ -95,8 +95,8 @@ export default function DriverDashboard() {
 
       <div className="flex-1 relative">
         <div className="absolute inset-0 z-0">
-          <SathaMap center={[33.3152, 44.3661]} zoom={13}>
-            <Marker position={[33.3152, 44.3661]} />
+          <SathaMap center={[32.48, 44.42]} zoom={12}>
+            <Marker position={[32.48, 44.42]} />
           </SathaMap>
         </div>
 

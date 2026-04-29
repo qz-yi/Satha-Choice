@@ -890,7 +890,7 @@ export default function DriverDashboard() {
           <>
             <div className={`absolute inset-0 z-0 transition-all duration-1000 ${driverInfo.isOnline ? 'opacity-100' : 'opacity-40 grayscale'}`}>
               <SathaMap
-                center={[33.3152, 44.3661]}
+                center={[32.48, 44.42]}
                 zoom={15}
                 onDragstart={() => setIsFollowMode(false)}
               >
