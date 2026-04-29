@@ -55,8 +55,9 @@ The `shared/` directory contains code used by both client and server:
 
 ### Maps & Geolocation
 - Leaflet for map rendering
-- OpenStreetMap tile layer
+- **CartoDB Positron** (`light_all`) tiles for a Baly-style minimal/light theme — paired with a `.map-vibrant` CSS filter (`brightness(1.04) contrast(0.95) saturate(0.85)`) defined in `client/src/index.css`. All 5 TileLayers in the app use `keepBuffer={10}` + `className="map-vibrant"`.
 - Browser Geolocation API for current location
+- **Geocoding/Search**: Nominatim with POI-aware ranking. Customer search (`searchLocation` in `client/src/pages/request-flow.tsx`) uses `countrycodes=iq`, an Iraq `viewbox`, `bounded=1`, `namedetails=1`, and `limit=25`, then re-ranks results to prioritize POI classes (amenity, shop, tourism, leisure, office, building, highway, historic, railway, man_made, natural, place) over generic addresses, returning the top 15.
 
 ### UI Component Libraries
 - Full shadcn/ui component set (Radix UI primitives)
@@ -72,6 +73,16 @@ The `shared/` directory contains code used by both client and server:
 - **Build path**: `npm run build` → `npx cap sync android` → open `android/` in Android Studio
 - The native Android project lives in `android/`. Capacitor wraps the Vite-built web bundle (`dist/public`) into a WebView app.
 - We do **not** use Expo, EAS, or React Native. Those packages and their config files (`eas.json`, `App.js`, `app.json`, `babel.config.cjs`) were removed during migration.
+
+## Commission System (Percentage-based)
+The platform commission is **a percentage of the trip price** (not a fixed amount).
+- The `settings.commission_amount` column now stores a percentage value `0–100` (default `10` = 10%). The legacy fixed amount (1000) was migrated to `10` on 2026-04-29.
+- Admin UI: `client/src/pages/admin-dashboard.tsx` → Finance tab. Shows "نسبة العمولة الحالية" with a `%` suffix and a live example. Input is clamped 0–100.
+- Server-side fee calculation (`fee = round(tripPrice × percent / 100)`) is applied in three places in `server/routes.ts`:
+  - `POST /api/drivers/:id/accept/:requestId` — pre-check that driver wallet ≥ expected fee
+  - `POST /api/drivers/:id/complete/:requestId` — deduct fee on driver complete
+  - `POST /api/admin/requests/:requestId/force-complete` — deduct fee on admin force-complete
+  Same logic mirrored in `storage.acceptRequest`. The `/delete-without-commission` admin endpoint remains unchanged (deletes without fee).
 
 ## Payment Status
 The wallet **balance display, debit, and admin manual credit/debit** continue to work normally (managed via the admin dashboard).

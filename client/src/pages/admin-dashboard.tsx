@@ -627,7 +627,7 @@ export default function AdminDashboard() {
               >
                 <MapContainer center={[33.3152, 44.3661]} zoom={11} style={{ height: "100%", width: "100%" }}>
                   <TileLayer
-                    url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                    url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
                     subdomains={["a", "b", "c", "d"]}
                     detectRetina={true}
@@ -796,30 +796,42 @@ export default function AdminDashboard() {
                         </div>
                         <div>
                           <h4 className="font-black text-lg">عمولة النظام</h4>
-                          <p className="text-slate-500 text-xs font-bold">تُخصم من كل رحلة مكتملة</p>
+                          <p className="text-slate-500 text-xs font-bold">نسبة % تُخصم من سعر كل رحلة مكتملة</p>
                         </div>
                       </div>
-                      <p className="text-slate-400 text-xs font-bold mb-1 uppercase tracking-widest">القيمة الحالية</p>
-                      <div className="flex items-baseline gap-2 mb-8">
-                        <span className="text-5xl font-black text-orange-400">
-                          {systemSettings?.commissionAmount?.toLocaleString() || "1,000"}
+                      <p className="text-slate-400 text-xs font-bold mb-1 uppercase tracking-widest">نسبة العمولة الحالية</p>
+                      <div className="flex items-baseline gap-2 mb-2">
+                        <span className="text-5xl font-black text-orange-400" data-testid="text-commission-percent">
+                          {systemSettings?.commissionAmount ?? 10}
                         </span>
-                        <span className="text-slate-500 font-bold text-sm">د.ع / رحلة</span>
+                        <span className="text-orange-400 font-black text-3xl">%</span>
+                        <span className="text-slate-500 font-bold text-sm mr-2">من سعر الرحلة</span>
                       </div>
+                      <p className="text-slate-500 text-[11px] font-bold mb-6 leading-relaxed">
+                        مثال: رحلة 35,000 د.ع × {systemSettings?.commissionAmount ?? 10}% = خصم {Math.round(35000 * Number(systemSettings?.commissionAmount ?? 10) / 100).toLocaleString()} د.ع من محفظة السائق
+                      </p>
                       <div className="space-y-3">
                         <input
                           type="number"
+                          min={0}
+                          max={100}
+                          step={1}
                           value={newCommission}
                           onChange={e => setNewCommission(e.target.value)}
-                          placeholder="أدخل القيمة الجديدة..."
+                          placeholder="أدخل النسبة % (مثال: 2)"
+                          data-testid="input-commission-percent"
                           className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-5 text-sm font-black text-white placeholder:text-slate-600 focus:border-orange-500 outline-none transition-colors"
                         />
                         <Button
-                          disabled={updateCommission.isPending || !newCommission}
-                          onClick={() => { if (newCommission) updateCommission.mutate(Number(newCommission)); }}
+                          disabled={updateCommission.isPending || !newCommission || Number(newCommission) < 0 || Number(newCommission) > 100}
+                          onClick={() => {
+                            const v = Math.max(0, Math.min(100, Number(newCommission)));
+                            updateCommission.mutate(v);
+                          }}
+                          data-testid="button-update-commission"
                           className="w-full bg-gradient-to-r from-orange-500 to-orange-600 h-14 rounded-2xl font-black text-white shadow-xl shadow-orange-500/20 hover:shadow-2xl transition-all"
                         >
-                          {updateCommission.isPending ? <Loader2 className="animate-spin" /> : "تحديث العمولة الآن"}
+                          {updateCommission.isPending ? <Loader2 className="animate-spin" /> : "تحديث نسبة العمولة"}
                         </Button>
                       </div>
                     </div>

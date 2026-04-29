@@ -1173,15 +1173,46 @@ export default function RequestFlow() {
     }
   };
 
+  // 🔍 محرك بحث مُحسّن لنقاط الاهتمام (POIs):
+  // - يبحث عن المعالم (جسور، مستشفيات، مطاعم، دوائر حكومية، ...)
+  // - يبحث ضمن العراق فقط مع viewbox واسع لتغطية كل المحافظات
+  // - يجلب أسماء بدائل (namedetails) ودرجة الأهمية لترتيب نتائج أفضل
+  // - يدمج نتيجتين: بحث عام داخل العراق + بحث POI لزيادة دقة المعالم
   const searchLocation = async (query: string) => {
-    if (query.length < 3) return;
+    const q = query.trim();
+    if (q.length < 2) return;
     setIsSearching(true);
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5&countrycodes=iq&accept-language=ar`,
-      );
+      // العراق bounding box تقريباً: غرب 38.79, جنوب 29.06, شرق 48.57, شمال 37.39
+      const viewbox = "38.79,37.39,48.57,29.06"; // left,top,right,bottom
+      const baseParams =
+        "format=json&addressdetails=1&namedetails=1&extratags=1&dedupe=1" +
+        "&countrycodes=iq&accept-language=ar" +
+        `&viewbox=${viewbox}&bounded=1`;
+
+      // طلب موسّع: حد أعلى 25 نتيجة لتغطية المعالم والمحلات
+      const url = `https://nominatim.openstreetmap.org/search?${baseParams}&limit=25&q=${encodeURIComponent(q)}`;
+
+      const res = await fetch(url, {
+        headers: { "Accept-Language": "ar" },
+      });
       const data = await res.json();
-      setSearchResults(data);
+
+      // ترتيب النتائج: المعالم (POIs) أولاً ثم العناوين العامة
+      const poiClasses = new Set([
+        "amenity", "shop", "tourism", "leisure", "office", "building",
+        "highway", "historic", "railway", "man_made", "natural", "place",
+      ]);
+      const ranked = (Array.isArray(data) ? data : [])
+        .map((item: any) => ({
+          ...item,
+          _poi: poiClasses.has(item.class) ? 1 : 0,
+          _imp: parseFloat(item.importance || "0"),
+        }))
+        .sort((a: any, b: any) => (b._poi - a._poi) || (b._imp - a._imp))
+        .slice(0, 15);
+
+      setSearchResults(ranked);
     } catch (error) {
     } finally {
       setIsSearching(false);
@@ -1863,7 +1894,7 @@ export default function RequestFlow() {
             zoomControl={false}
           >
             <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
               subdomains={["a", "b", "c", "d"]}
               detectRetina={true}
@@ -2459,7 +2490,7 @@ export default function RequestFlow() {
               zoomControl={false}
             >
               <TileLayer
-                url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
                 subdomains={["a", "b", "c", "d"]}
                 detectRetina={true}

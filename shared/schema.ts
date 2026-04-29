@@ -6,7 +6,9 @@ import { sql } from "drizzle-orm";
 // === 1. إعدادات النظام (Settings) ===
 export const settings = pgTable("settings", {
   id: serial("id").primaryKey(),
-  commissionAmount: integer("commission_amount").notNull().default(1000),
+  // ⚠️ هذا الحقل أصبح يمثل "نسبة العمولة" بالمئة (0–100) وليس مبلغاً ثابتاً.
+  // مثال: قيمة 10 تعني خصم 10% من سعر كل رحلة مكتملة من محفظة السائق.
+  commissionAmount: integer("commission_amount").notNull().default(10),
   surgeMultiplier: decimal("surge_multiplier", { precision: 3, scale: 2 }).default("1.00"), // FEATURE 1: Surge pricing
   updatedAt: timestamp("updated_at").defaultNow(),
 });

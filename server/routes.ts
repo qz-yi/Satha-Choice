@@ -881,13 +881,19 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       if (!driver) {
         return res.status(404).json({ message: "السائق غير موجود" });
       }
-      
-      const systemSettings = await storage.getSettings();
-      const currentCommission = Number(systemSettings?.commissionAmount || 1000);
 
-      if (Number(driver?.walletBalance) < currentCommission) {
-        return res.status(400).json({ 
-          message: `رصيدك غير كافٍ، يرجى شحن المحفظة (أقل رصيد مطلوب ${currentCommission} دينار).` 
+      // commissionAmount يمثل الآن نسبة العمولة % (0-100)
+      const systemSettings = await storage.getSettings();
+      const commissionPercent = Math.max(0, Math.min(100, Number(systemSettings?.commissionAmount ?? 10)));
+
+      // حساب العمولة المتوقعة لهذه الرحلة من سعرها
+      const reqRow = await storage.getRequest(requestId);
+      const tripPrice = parseFloat(reqRow?.price || "0");
+      const expectedFee = Math.round((tripPrice * commissionPercent) / 100);
+
+      if (Number(driver?.walletBalance) < expectedFee) {
+        return res.status(400).json({
+          message: `رصيدك غير كافٍ. عمولة هذه الرحلة ${expectedFee} د.ع — يرجى شحن المحفظة.`
         });
       }
 
@@ -973,8 +979,11 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const driver = await storage.getDriver(driverId);
       if (!driver) return res.status(404).json({ message: "بيانات السائق غير موجودة" });
 
+      // commissionAmount يمثل نسبة % — نحسب العمولة من سعر الرحلة
       const systemSettings = await storage.getSettings();
-      const fee = Number(systemSettings?.commissionAmount || 1000);
+      const commissionPercent = Math.max(0, Math.min(100, Number(systemSettings?.commissionAmount ?? 10)));
+      const tripPrice = parseFloat(request.price || "0");
+      const fee = Math.round((tripPrice * commissionPercent) / 100);
 
       await storage.updateRequestStatus(requestId, "completed");
 
@@ -1436,13 +1445,15 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         return res.status(404).json({ message: "السائق غير موجود" });
       }
       
-      // Get commission settings
+      // commissionAmount = نسبة % — نحسب القيمة الفعلية من سعر الرحلة
       const settingsData = await storage.getSettings();
-      const fee = parseFloat(settingsData.commissionAmount?.toString() || "0");
-      
+      const commissionPercent = Math.max(0, Math.min(100, Number(settingsData?.commissionAmount ?? 10)));
+      const tripPrice = parseFloat(request.price || "0");
+      const fee = Math.round((tripPrice * commissionPercent) / 100);
+
       // Update order status to completed
       await storage.updateRequestStatus(requestId, "completed");
-      
+
       // Deduct commission from driver
       const currentBalance = parseFloat(driver.walletBalance || "0");
       const newBalance = (currentBalance - fee).toFixed(2);

@@ -389,24 +389,28 @@ export class DatabaseStorage implements IStorage {
   // === التعديل الجوهري: تحسين دقة قبول الطلب ===
   async acceptRequest(driverId: number, requestId: number): Promise<{ request: Request; driver: Driver }> {
     return await db.transaction(async (tx) => {
-      // 1. جلب الإعدادات والعمولة
+      // 1. جلب الإعدادات: قيمة commissionAmount أصبحت تمثل نسبة % (0-100)
       const systemSettings = await this.getSettings();
-      const currentCommission = Number(systemSettings.commissionAmount);
+      const commissionPercent = Math.max(0, Math.min(100, Number(systemSettings.commissionAmount) || 0));
 
       // 2. جلب بيانات السائق مع قفل (Select for Update) لضمان دقة الرصيد
       const [driver] = await tx.select().from(drivers).where(eq(drivers.id, driverId));
       if (!driver) throw new Error("Driver not found");
 
-      const balance = parseFloat(driver.walletBalance || "0");
-
-      // 3. التحقق من الرصيد قبل السماح بالقبول
-      if (balance < currentCommission) {
-        throw new Error(`رصيدك غير كافٍ. يرجى شحن المحفظة (أقل رصيد مطلوب ${currentCommission} دينار).`);
-      }
-
-      // 4. جلب الطلب والتأكد من أنه لا يزال معلقاً
+      // 3. جلب الطلب والتأكد من أنه لا يزال معلقاً
       const [request] = await tx.select().from(requests).where(eq(requests.id, requestId));
       if (!request) throw new Error("الطلب غير موجود");
+
+      // 4. حساب العمولة المتوقعة لهذه الرحلة بناءً على نسبة العمولة وسعر الرحلة
+      const tripPrice = parseFloat(request.price || "0");
+      const expectedFee = Math.round((tripPrice * commissionPercent) / 100);
+
+      const balance = parseFloat(driver.walletBalance || "0");
+
+      // 5. التحقق من أن رصيد السائق يكفي لتغطية العمولة المتوقعة
+      if (balance < expectedFee) {
+        throw new Error(`رصيدك غير كافٍ. عمولة هذه الرحلة ${expectedFee} د.ع — يرجى شحن المحفظة.`);
+      }
 
       // السماح بالقبول إذا كان pending (من الزبون) أو confirmed (إذا أعاد السائق الضغط)
       if (request.status !== "pending" && request.driverId !== driverId) {
