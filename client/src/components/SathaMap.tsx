@@ -22,44 +22,29 @@ import maplibregl, {
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Protocol } from "pmtiles";
 import { buildMinimalLightStyle } from "./sathaMapStyle";
+
 // ── CSP-safe MapLibre worker ──────────────────────────────────────────────────
-// Capacitor's Android WebView blocks workers created via Blob: URLs — which is
-// MapLibre's default mechanism (new Worker(URL.createObjectURL(blob))).
-// Instead, we import the worker JS as a real asset URL via Vite's ?url suffix.
-// Vite copies the file to dist/assets/ and returns its content-hashed path.
-// We then call maplibregl.setWorkerUrl() to tell MapLibre to use this real URL
-// (e.g. /assets/maplibre-gl-csp-worker-xxxxxx.js) instead of a blob.
-//
-// ⚠️  setWorkerUrl() MUST be called before any Map is instantiated.
+// Capacitor Android WebView blocks Blob: URLs. We import the worker as a real
+// asset path via Vite's ?url suffix — it gets a content-hashed URL in dist/.
+// MUST be called before any Map is instantiated.
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-csp-worker?url";
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
-/**
- * 🗺️ ملف PMTiles محلي يغطي جنوب العراق — يعمل أوفلاين بالكامل.
- *  • يُخدَّم من /maps/south_iraq.pmtiles
- *  • Vite يدعم HTTP Range Requests على الملفات الثابتة وهو ما يحتاجه PMTiles.
- *  • Android: يجب أن يكون الملف غير مضغوط في APK (noCompress 'pmtiles' في build.gradle).
- */
+/** Local PMTiles file — served offline from bundled assets. */
 export const PMTILES_URL = "/maps/south_iraq.pmtiles";
 
 /**
- * مسار البرنامج المساعد لنصوص RTL (العربية/العبرية).
- *
- * ❌ النسخة القديمة كانت تحمّله من unpkg.com — يفشل داخل APK بدون اتصال.
- * ✅ النسخة الجديدة تحمّله من ملف محلي ضمن الـ APK نفسه (client/public/mapbox-gl-rtl-text.js).
+ * RTL text plugin — loaded from a local file bundled in the APK.
+ * The old version pointed to unpkg.com, which fails offline.
  */
 const RTL_PLUGIN_URL = "/mapbox-gl-rtl-text.js";
 
-/**
- * تسجيل بروتوكول pmtiles مع MapLibre — مرة واحدة على مستوى التطبيق.
- * يُضاف كذلك دعم RTL من ملف محلي (أوفلاين-صديق للـ APK).
- */
+// Register the pmtiles:// protocol + RTL plugin exactly once per page load.
 let pmtilesRegistered = false;
 function ensurePmtilesProtocol() {
   if (pmtilesRegistered) return;
   const protocol = new Protocol();
   maplibregl.addProtocol("pmtiles", protocol.tile);
-  // Arabic/RTL text shaping — load from local file (works offline in APK)
   if (typeof maplibregl.getRTLTextPluginStatus === "function") {
     const status = maplibregl.getRTLTextPluginStatus();
     if (status === "unavailable") {
@@ -69,28 +54,21 @@ function ensurePmtilesProtocol() {
   pmtilesRegistered = true;
 }
 
-/**
- * 🇮🇶 حدود العراق — تُمرَّر إلى maxBounds لقفل الخريطة داخل العراق فقط.
- *
- * ⚠️ MapLibre يستخدم تنسيق [lng, lat] (GeoJSON):
- *   [[west, south], [east, north]] = [[38.8, 29.0], [48.6, 37.4]]
- */
+/** Iraq bounding box for maplibre — [lng, lat] GeoJSON order. */
 export const IRAQ_BOUNDS: LngLatBoundsLike = [
-  [38.8, 29.0], // SW (lng, lat)
-  [48.6, 37.4], // NE (lng, lat)
+  [38.8, 29.0], // SW
+  [48.6, 37.4], // NE
 ];
 
-/** الإحداثيات الافتراضية: مدينة الحلة، محافظة بابل ([lng, lat]) */
+/** Default centre: Hilla city, Babylon Governorate ([lng, lat]) */
 export const HILLA_CENTER: [number, number] = [44.42, 32.48];
 
-// ── Map context & useMap hook ──────────────────────────────────────────────
+// ── Map context ───────────────────────────────────────────────────────────────
 const MapContext = createContext<MlMap | null>(null);
 
 /**
- * Shim يُحاكي واجهة Leaflet (`flyTo`, `setView`, `getCenter`, …) فوق MapLibre
- * ليبقى كود الصفحات الحالي يعمل بدون تعديل واسع.
- *
- * ⚠️ المدخلات بصيغة [lat, lng] (مثل Leaflet) — تُحوَّل داخلياً إلى [lng, lat].
+ * Shim that mirrors the Leaflet API ([lat, lng]) over MapLibre ([lng, lat]).
+ * Keeps every call-site in the pages working without a large refactor.
  */
 function buildMapShim(map: MlMap) {
   return {
@@ -134,13 +112,11 @@ export type SathaMapInstance = ReturnType<typeof buildMapShim>;
 
 export function useMap(): SathaMapInstance {
   const map = useContext(MapContext);
-  if (!map) {
-    throw new Error("useMap() must be used inside <SathaMap>");
-  }
+  if (!map) throw new Error("useMap() must be used inside <SathaMap>");
   return useMemo(() => buildMapShim(map), [map]);
 }
 
-// ── useMapEvents — subscribe to map events, returns shim ────────────────────
+// ── useMapEvents ──────────────────────────────────────────────────────────────
 type MapEventHandlers = {
   moveend?: () => void;
   movestart?: () => void;
@@ -155,10 +131,9 @@ export function useMapEvents(handlers: MapEventHandlers): SathaMapInstance {
   if (!map) throw new Error("useMapEvents() must be used inside <SathaMap>");
 
   useEffect(() => {
-    const entries = Object.entries(handlers).filter(([, fn]) => typeof fn === "function") as [
-      string,
-      (...a: any[]) => void,
-    ][];
+    const entries = Object.entries(handlers).filter(
+      ([, fn]) => typeof fn === "function",
+    ) as [string, (...a: any[]) => void][];
     entries.forEach(([ev, fn]) => map.on(ev as any, fn));
     return () => {
       entries.forEach(([ev, fn]) => map.off(ev as any, fn));
@@ -169,7 +144,7 @@ export function useMapEvents(handlers: MapEventHandlers): SathaMapInstance {
   return useMemo(() => buildMapShim(map), [map]);
 }
 
-// ── divIcon helper (Leaflet-compatible signature) ──────────────────────────
+// ── divIcon helper ────────────────────────────────────────────────────────────
 export interface DivIcon {
   __sathaIcon: true;
   html: string;
@@ -187,15 +162,13 @@ export function divIcon(opts: {
   return { __sathaIcon: true, ...opts };
 }
 
-// Leaflet-compatible facade: `import L from "@/components/SathaMap"` works
 export const L = { divIcon };
 
-// ── Popup component (must be a child of Marker) ─────────────────────────────
+// ── Popup ─────────────────────────────────────────────────────────────────────
 interface PopupProps {
   children?: ReactNode;
   minWidth?: number;
   maxWidth?: number;
-  // Internally injected by Marker:
   __mlMarker?: MlMarker;
   __map?: MlMap;
 }
@@ -223,10 +196,7 @@ export function Popup({ children, minWidth, maxWidth, __mlMarker, __map }: Popup
     __mlMarker.setPopup(popup);
 
     return () => {
-      // Detach popup so it doesn't linger after Marker unmount
-      try {
-        __mlMarker.setPopup(undefined as any);
-      } catch {}
+      try { __mlMarker.setPopup(undefined as any); } catch {}
       popup.remove();
     };
   }, [__mlMarker, __map, minWidth, maxWidth]);
@@ -235,7 +205,7 @@ export function Popup({ children, minWidth, maxWidth, __mlMarker, __map }: Popup
   return createPortal(<div dir="rtl">{children}</div>, containerRef.current);
 }
 
-// ── Marker component ────────────────────────────────────────────────────────
+// ── Marker ────────────────────────────────────────────────────────────────────
 interface MarkerProps {
   position: [number, number]; // [lat, lng] — Leaflet convention
   icon?: DivIcon;
@@ -253,7 +223,6 @@ export function Marker({ position, icon, draggable, eventHandlers, children }: M
   const markerRef = useRef<MlMarker | null>(null);
   const [, forceRerender] = useState(0);
 
-  // Build the marker once (or whenever icon identity changes)
   useEffect(() => {
     if (!map) return;
 
@@ -268,8 +237,6 @@ export function Marker({ position, icon, draggable, eventHandlers, children }: M
       element.style.cursor = draggable ? "grab" : "pointer";
       element.innerHTML = icon.html;
 
-      // Convert Leaflet iconAnchor (offset from top-left) to MapLibre offset
-      // (offset from element center where the geographical anchor sits).
       const [w, h] = icon.iconSize;
       const [ax, ay] = icon.iconAnchor ?? [w / 2, h / 2];
       offset = [w / 2 - ax, h / 2 - ay];
@@ -300,22 +267,19 @@ export function Marker({ position, icon, draggable, eventHandlers, children }: M
     }
 
     markerRef.current = marker;
-    forceRerender((n) => n + 1); // so Popup child can pick up the marker
+    forceRerender((n) => n + 1);
 
     return () => {
       marker.remove();
       markerRef.current = null;
     };
-    // We deliberately re-create the marker if icon or draggable change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, icon, draggable]);
 
-  // Update position without rebuilding the marker
   useEffect(() => {
     if (markerRef.current) markerRef.current.setLngLat([position[1], position[0]]);
   }, [position[0], position[1]]);
 
-  // Inject marker/map into <Popup> child(ren)
   if (!map || !markerRef.current) return null;
   return (
     <>
@@ -333,7 +297,7 @@ export function Marker({ position, icon, draggable, eventHandlers, children }: M
   );
 }
 
-// ── Polyline ────────────────────────────────────────────────────────────────
+// ── Polyline ──────────────────────────────────────────────────────────────────
 interface PolylineProps {
   positions: Array<[number, number]>; // [lat, lng]
   color?: string;
@@ -381,7 +345,6 @@ export function Polyline({
           "line-opacity": opacity,
         };
         if (dashArray) {
-          // crude conversion: "10, 10" → [2, 2]
           const parts = dashArray.split(/[\s,]+/).map((n) => parseFloat(n) / 5).filter((n) => !isNaN(n));
           if (parts.length) paint["line-dasharray"] = parts;
         }
@@ -416,10 +379,9 @@ export function Polyline({
   return null;
 }
 
-// ── SathaMap container ──────────────────────────────────────────────────────
+// ── SathaMap container ────────────────────────────────────────────────────────
 interface SathaMapProps {
-  /** [lat, lng] على نمط Leaflet — اختياري، الافتراضي مدينة الحلة. */
-  center?: [number, number];
+  center?: [number, number]; // [lat, lng] — Leaflet convention
   zoom?: number;
   minZoom?: number;
   maxZoom?: number;
@@ -432,16 +394,24 @@ interface SathaMapProps {
 }
 
 /**
- * مكوّن الخريطة الموحّد — مبني على MapLibre GL JS + PMTiles المحلية (أوفلاين).
+ * Unified map component — MapLibre GL JS + local PMTiles (fully offline).
  *
- * المزايا المُفعَّلة:
- *  - Vector tiles من ملف south_iraq.pmtiles (لا اتصال بالإنترنت مطلوب للبلاطات)
- *  - ستايل Minimal Light (شوارع بيضاء، خلفية رمادية فاتحة، أسماء عربية RTL)
- *  - maxBounds مقيّدة بحدود العراق
- *  - trackResize: true لضبط الحجم تلقائياً
- *  - antialias مفعّل عبر canvasContextAttributes (maplibre-gl v5)
- *  - Hardware acceleration عبر translate3d على عنصر الـ canvas (انظر index.css)
- *  - shim يحاكي API الـ react-leaflet ليبقى كود الصفحات الحالي صالحاً
+ * Android WebView hardening applied:
+ *  1. ResizeObserver deferred init — map is only created once the container
+ *     has actual pixel dimensions (> 0 × 0). This is the primary fix for the
+ *     blank white canvas on Android, where React's useEffect fires before the
+ *     browser completes flex/percentage layout.
+ *  2. antialias: false — halves GPU memory usage. Antialias is the #1 cause
+ *     of WebGL context creation failure on budget Android hardware.
+ *  3. powerPreference: "default" — "high-performance" causes context loss on
+ *     many Qualcomm/MediaTek GPUs when thermal throttling kicks in.
+ *  4. failIfMajorPerformanceCaveat: false — allows MapLibre to fall back to
+ *     software rendering instead of returning a null context.
+ *  5. webglcontextlost/restored — detect and recover from GPU context loss
+ *     (Android kills WebGL contexts under memory pressure).
+ *  6. Local glyphs + sprite — no CDN calls; works fully offline in the APK.
+ *  7. Multiple resize() calls with increasing delays to handle dynamic
+ *     viewport changes caused by the Android soft keyboard.
  */
 export function SathaMap({
   center,
@@ -456,77 +426,175 @@ export function SathaMap({
   onDragstart,
 }: SathaMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<MlMap | null>(null);
   const [mapInstance, setMapInstance] = useState<MlMap | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
+  const destroyedRef = useRef(false);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    destroyedRef.current = false;
+    const container = containerRef.current;
+    if (!container) return;
 
-    // سجّل بروتوكول pmtiles + RTL plugin قبل إنشاء الخريطة
     ensurePmtilesProtocol();
 
-    // Convert [lat, lng] from props → [lng, lat] for MapLibre, fallback to Hilla
     const startCenter: [number, number] = center
       ? [center[1], center[0]]
       : HILLA_CENTER;
 
-    let map: MlMap;
-    try {
-      map = new maplibregl.Map({
-        container: containerRef.current,
-        style: buildMinimalLightStyle(PMTILES_URL),
-        center: startCenter,
-        zoom,
-        minZoom,
-        maxZoom,
-        maxBounds: IRAQ_BOUNDS,
-        trackResize: true,
-        canvasContextAttributes: {
-          antialias: true,
-          powerPreference: "high-performance",
-        },
-        attributionControl: false,
-        cooperativeGestures: false,
-        // مهم لتحسين الأداء على الموبايل
-        fadeDuration: 150,
-      });
-    } catch (err: any) {
-      // غالباً WebGL غير متوفر (محاكي/متصفح بدون GPU)
-      console.error("[SathaMap] WebGL/Map init failed:", err);
-      setInitError(
-        err?.message?.includes("WebGL")
-          ? "المتصفح لا يدعم تسريع الرسومات (WebGL). يرجى التحديث."
-          : "تعذّر تحميل الخريطة. يرجى المحاولة لاحقاً.",
-      );
-      return;
-    }
+    // ── createMap: called once we know the container has real pixel size ──
+    function createMap() {
+      if (destroyedRef.current) return;
+      if (!container) return;
 
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-left");
+      const { width, height } = container.getBoundingClientRect();
+      if (width === 0 || height === 0) {
+        // Should not reach here normally (observer guards below), but be safe.
+        console.warn("[SathaMap] Container still 0×0 at createMap — retrying in 100ms");
+        setTimeout(createMap, 100);
+        return;
+      }
 
-    if (zoomControl) {
-      map.addControl(
-        new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }),
-        "top-left",
-      );
-    }
+      let map: MlMap;
+      try {
+        map = new maplibregl.Map({
+          container,
+          style: buildMinimalLightStyle(PMTILES_URL),
+          center: startCenter,
+          zoom,
+          minZoom,
+          maxZoom,
+          maxBounds: IRAQ_BOUNDS,
+          trackResize: true,
+          // ── WebGL context attributes hardened for Android WebView ─────
+          canvasContextAttributes: {
+            // antialias OFF: biggest single GPU-memory saving on mobile.
+            // With antialias ON many budget Qualcomm/MediaTek GPUs silently
+            // fail to create the WebGL context → blank white canvas.
+            antialias: false,
+            // Allow software-rendering fallback instead of null context.
+            failIfMajorPerformanceCaveat: false,
+            // "default" avoids triggering thermal throttle-kill on mid-range
+            // Android devices (which drops the GPU context entirely).
+            powerPreference: "default",
+          },
+          attributionControl: false,
+          cooperativeGestures: false,
+          fadeDuration: 150,
+        });
+      } catch (err: any) {
+        if (destroyedRef.current) return;
+        console.error("[SathaMap] Map init failed:", err);
+        setInitError(
+          err?.message?.includes("WebGL")
+            ? "المتصفح لا يدعم تسريع الرسومات (WebGL). يرجى التحديث."
+            : "تعذّر تحميل الخريطة. يرجى المحاولة لاحقاً.",
+        );
+        return;
+      }
 
-    map.on("dragstart", () => onDragstart?.());
+      mapRef.current = map;
 
-    map.on("load", () => {
-      onMapReady?.(map);
-      // Hardware-acceleration hint على الـ canvas نفسه
+      // ── WebGL context-loss recovery ───────────────────────────────────
+      // Android kills WebGL contexts under memory pressure. Without this
+      // handler the canvas turns permanently white after any memory spike.
       const canvas = map.getCanvas();
-      canvas.style.willChange = "transform";
-      canvas.style.transform = "translate3d(0,0,0)";
 
-      map.resize();
-      setTimeout(() => map.resize(), 100);
-      setTimeout(() => map.resize(), 400);
-      setMapInstance(map);
-    });
+      const onContextLost = (e: Event) => {
+        e.preventDefault();
+        console.warn("[SathaMap] WebGL context lost — will attempt restore");
+      };
+      const onContextRestored = () => {
+        console.info("[SathaMap] WebGL context restored — triggering map resize");
+        map.resize();
+      };
+      canvas.addEventListener("webglcontextlost", onContextLost);
+      canvas.addEventListener("webglcontextrestored", onContextRestored);
 
+      map.addControl(
+        new maplibregl.AttributionControl({ compact: true }),
+        "bottom-left",
+      );
+
+      if (zoomControl) {
+        map.addControl(
+          new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }),
+          "top-left",
+        );
+      }
+
+      map.on("dragstart", () => onDragstart?.());
+
+      map.on("load", () => {
+        if (destroyedRef.current) {
+          map.remove();
+          return;
+        }
+
+        onMapReady?.(map);
+
+        // Hardware-acceleration hint on the canvas element
+        canvas.style.willChange = "transform";
+        canvas.style.transform = "translate3d(0,0,0)";
+
+        // Staggered resize() calls handle dynamic viewport changes on Android
+        // (e.g. soft keyboard appearing, status-bar animation, Capacitor safe-area).
+        map.resize();
+        setTimeout(() => { if (!destroyedRef.current) map.resize(); }, 150);
+        setTimeout(() => { if (!destroyedRef.current) map.resize(); }, 500);
+        setTimeout(() => { if (!destroyedRef.current) map.resize(); }, 1200);
+
+        if (!destroyedRef.current) setMapInstance(map);
+      });
+    }
+
+    // ── ResizeObserver: only init the map once the container has pixels ───
+    // On Android WebView, React's useEffect fires BEFORE the browser has
+    // calculated percentage-based heights. The container may be 0×0 at this
+    // point. We observe it and create the map as soon as it has real size.
+    const { width, height } = container.getBoundingClientRect();
+
+    if (width > 0 && height > 0) {
+      // Container already has size — create map immediately.
+      createMap();
+    } else {
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const { width: w, height: h } = entry.contentRect;
+          if (w > 0 && h > 0) {
+            ro.disconnect();
+            createMap();
+            break;
+          }
+        }
+      });
+      ro.observe(container);
+
+      // Absolute fallback: if ResizeObserver never fires within 2s, try anyway.
+      const fallbackTimer = setTimeout(() => {
+        ro.disconnect();
+        createMap();
+      }, 2000);
+
+      return () => {
+        destroyedRef.current = true;
+        ro.disconnect();
+        clearTimeout(fallbackTimer);
+        if (mapRef.current) {
+          mapRef.current.remove();
+          mapRef.current = null;
+        }
+        setMapInstance(null);
+      };
+    }
+
+    // Cleanup for the "already has size" path
     return () => {
-      map.remove();
+      destroyedRef.current = true;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
       setMapInstance(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -536,13 +604,37 @@ export function SathaMap({
     <div
       ref={containerRef}
       className={className}
-      style={{ position: "relative", height: "100%", width: "100%", ...style }}
+      style={{
+        position: "relative",
+        // Explicit inset-fill for Android WebView — do not use height:100% alone,
+        // it may resolve to 0 if the flex parent hasn't completed layout yet.
+        // "100%" on width is safe; height is forced via flex-grow in the wrapper.
+        width: "100%",
+        height: "100%",
+        overflow: "hidden",
+        ...style,
+      }}
     >
       {initError && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-gray-700 text-center p-6">
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "#f3f4f6",
+            color: "#374151",
+            textAlign: "center",
+            padding: 24,
+            zIndex: 10,
+          }}
+        >
           <div>
-            <p className="font-bold text-lg mb-2">⚠️ تعذّر تحميل الخريطة</p>
-            <p className="text-sm">{initError}</p>
+            <p style={{ fontWeight: "bold", fontSize: 18, marginBottom: 8 }}>
+              ⚠️ تعذّر تحميل الخريطة
+            </p>
+            <p style={{ fontSize: 14 }}>{initError}</p>
           </div>
         </div>
       )}

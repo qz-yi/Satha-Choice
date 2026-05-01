@@ -1,20 +1,16 @@
 import type { StyleSpecification } from "maplibre-gl";
 
 /**
- * Minimal Light style for SATHA — مظهر هادئ يشبه Apple Maps:
- *  • خلفية رمادية فاتحة جداً
- *  • شوارع بيضاء بحدود رمادية رفيعة (اللون يتغير حسب نوع الطريق)
- *  • مياه زرقاء فاتحة
- *  • مباني رمادية شفافة
- *  • أسماء عربية أولاً ثم الإنجليزية احتياطاً (RTL)
+ * Minimal Light style for SATHA — مظهر هادئ يشبه Apple Maps.
  *
- * المصدر: ملف PMTiles محلي لجنوب العراق (Protomaps Basemaps schema).
+ * FULLY OFFLINE:
+ *  • glyphs  → /fonts/{fontstack}/{range}.pbf  (bundled locally — no CDN)
+ *  • sprite  → /sprites/light                  (bundled locally — no CDN)
  *
- * ⚠️ تتطلب MapLibre تسجيل بروتوكول pmtiles مسبقاً عبر:
- *    maplibregl.addProtocol("pmtiles", new pmtiles.Protocol().tile);
+ * Fonts bundled: Noto Sans Regular, Noto Sans Medium
+ * Ranges: 0-255 (Latin+digits), 1280-1535 (Arabic punctuation), 1536-1791 (Arabic main)
  */
 export function buildMinimalLightStyle(pmtilesUrl: string): StyleSpecification {
-  // Coalesce: name:ar → name (الاسم الافتراضي) — يضمن ظهور الأسماء العربية حيث وُجدت
   const ARABIC_TEXT_FIELD = [
     "coalesce",
     ["get", "name:ar"],
@@ -24,8 +20,8 @@ export function buildMinimalLightStyle(pmtilesUrl: string): StyleSpecification {
   return {
     version: 8,
     name: "SATHA Minimal Light",
-    glyphs: "https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf",
-    sprite: "https://protomaps.github.io/basemaps-assets/sprites/v4/light",
+    glyphs: "/fonts/{fontstack}/{range}.pbf",
+    sprite: "/sprites/light",
     sources: {
       protomaps: {
         type: "vector",
@@ -35,13 +31,13 @@ export function buildMinimalLightStyle(pmtilesUrl: string): StyleSpecification {
       },
     },
     layers: [
-      // ── الخلفية ────────────────────────────────────────────────────────
+      // ── Background ──────────────────────────────────────────────────────
       {
         id: "background",
         type: "background",
         paint: { "background-color": "#f5f5f4" },
       },
-      // ── الأرض / Earth ─────────────────────────────────────────────────
+      // ── Earth ───────────────────────────────────────────────────────────
       {
         id: "earth",
         type: "fill",
@@ -49,13 +45,17 @@ export function buildMinimalLightStyle(pmtilesUrl: string): StyleSpecification {
         "source-layer": "earth",
         paint: { "fill-color": "#fafaf9" },
       },
-      // ── استخدامات الأرض (حدائق، مساحات خضراء، إلخ) ───────────────────
+      // ── Landuse ─────────────────────────────────────────────────────────
       {
         id: "landuse-park",
         type: "fill",
         source: "protomaps",
         "source-layer": "landuse",
-        filter: ["any", ["==", ["get", "kind"], "park"], ["==", ["get", "kind"], "forest"], ["==", ["get", "kind"], "grass"]],
+        filter: ["any",
+          ["==", ["get", "kind"], "park"],
+          ["==", ["get", "kind"], "forest"],
+          ["==", ["get", "kind"], "grass"],
+        ],
         paint: { "fill-color": "#e8efe5" },
       },
       {
@@ -66,7 +66,7 @@ export function buildMinimalLightStyle(pmtilesUrl: string): StyleSpecification {
         filter: ["==", ["get", "kind"], "residential"],
         paint: { "fill-color": "#f2f1ee" },
       },
-      // ── المياه ────────────────────────────────────────────────────────
+      // ── Water ───────────────────────────────────────────────────────────
       {
         id: "water",
         type: "fill",
@@ -80,9 +80,12 @@ export function buildMinimalLightStyle(pmtilesUrl: string): StyleSpecification {
         source: "protomaps",
         "source-layer": "physical_line",
         filter: ["==", ["get", "kind"], "river"],
-        paint: { "line-color": "#cfe4ee", "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 14, 2.5] },
+        paint: {
+          "line-color": "#cfe4ee",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 14, 2.5],
+        },
       },
-      // ── المباني ───────────────────────────────────────────────────────
+      // ── Buildings ───────────────────────────────────────────────────────
       {
         id: "buildings",
         type: "fill",
@@ -94,26 +97,27 @@ export function buildMinimalLightStyle(pmtilesUrl: string): StyleSpecification {
           "fill-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0, 16, 0.85],
         },
       },
-      // ── خط حدود الطرق (يُرسم أولاً ليبدو الطريق محاطاً) ──────────────
+      // ── Road casings ────────────────────────────────────────────────────
       {
         id: "roads-casing",
         type: "line",
         source: "protomaps",
         "source-layer": "roads",
-        filter: ["any", ["==", ["get", "kind"], "highway"], ["==", ["get", "kind"], "major_road"], ["==", ["get", "kind"], "medium_road"]],
+        filter: ["any",
+          ["==", ["get", "kind"], "highway"],
+          ["==", ["get", "kind"], "major_road"],
+          ["==", ["get", "kind"], "medium_road"],
+        ],
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
           "line-color": "#dcdcdc",
           "line-width": [
             "interpolate", ["exponential", 1.6], ["zoom"],
-            8, 0.6,
-            12, 2.0,
-            14, 4.0,
-            18, 16,
+            8, 0.6, 12, 2.0, 14, 4.0, 18, 16,
           ],
         },
       },
-      // ── جسم الطرق (أبيض) ─────────────────────────────────────────────
+      // ── Road fills ──────────────────────────────────────────────────────
       {
         id: "roads-minor",
         type: "line",
@@ -163,7 +167,7 @@ export function buildMinimalLightStyle(pmtilesUrl: string): StyleSpecification {
           "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 6, 0.5, 14, 4.0, 18, 14],
         },
       },
-      // ── الحدود الإدارية (رفيعة وخفيفة) ───────────────────────────────
+      // ── Administrative boundaries ────────────────────────────────────────
       {
         id: "boundaries",
         type: "line",
@@ -176,14 +180,18 @@ export function buildMinimalLightStyle(pmtilesUrl: string): StyleSpecification {
           "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.4, 12, 1.2],
         },
       },
-      // ── أسماء الشوارع ────────────────────────────────────────────────
+      // ── Road labels ─────────────────────────────────────────────────────
       {
         id: "roads-labels",
         type: "symbol",
         source: "protomaps",
         "source-layer": "roads",
         minzoom: 13,
-        filter: ["any", ["==", ["get", "kind"], "highway"], ["==", ["get", "kind"], "major_road"], ["==", ["get", "kind"], "medium_road"]],
+        filter: ["any",
+          ["==", ["get", "kind"], "highway"],
+          ["==", ["get", "kind"], "major_road"],
+          ["==", ["get", "kind"], "medium_road"],
+        ],
         layout: {
           "text-field": ARABIC_TEXT_FIELD,
           "text-font": ["Noto Sans Regular"],
@@ -198,22 +206,22 @@ export function buildMinimalLightStyle(pmtilesUrl: string): StyleSpecification {
           "text-halo-width": 1.5,
         },
       },
-      // ── أسماء الأماكن (مدن/قرى) ──────────────────────────────────────
+      // ── Place labels ────────────────────────────────────────────────────
       {
         id: "places-locality",
         type: "symbol",
         source: "protomaps",
         "source-layer": "places",
-        filter: ["any", ["==", ["get", "kind"], "locality"], ["==", ["get", "kind"], "city"], ["==", ["get", "kind"], "town"], ["==", ["get", "kind"], "village"]],
+        filter: ["any",
+          ["==", ["get", "kind"], "locality"],
+          ["==", ["get", "kind"], "city"],
+          ["==", ["get", "kind"], "town"],
+          ["==", ["get", "kind"], "village"],
+        ],
         layout: {
           "text-field": ARABIC_TEXT_FIELD,
-          "text-font": ["Noto Sans Bold"],
-          "text-size": [
-            "interpolate", ["linear"], ["zoom"],
-            5, 11,
-            10, 14,
-            14, 18,
-          ],
+          "text-font": ["Noto Sans Medium"],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 5, 11, 10, 14, 14, 18],
           "text-anchor": "center",
           "text-allow-overlap": false,
           "text-padding": 4,
@@ -224,14 +232,17 @@ export function buildMinimalLightStyle(pmtilesUrl: string): StyleSpecification {
           "text-halo-width": 2,
         },
       },
-      // ── أسماء الأحياء/مناطق المدينة ──────────────────────────────────
+      // ── Neighbourhood labels ─────────────────────────────────────────────
       {
         id: "places-neighbourhood",
         type: "symbol",
         source: "protomaps",
         "source-layer": "places",
         minzoom: 12,
-        filter: ["any", ["==", ["get", "kind"], "neighbourhood"], ["==", ["get", "kind"], "suburb"]],
+        filter: ["any",
+          ["==", ["get", "kind"], "neighbourhood"],
+          ["==", ["get", "kind"], "suburb"],
+        ],
         layout: {
           "text-field": ARABIC_TEXT_FIELD,
           "text-font": ["Noto Sans Regular"],

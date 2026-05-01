@@ -54,13 +54,28 @@ The `shared/` directory contains code used by both client and server:
 - Session storage with `connect-pg-simple`
 
 ### Maps & Geolocation
-- **Unified map component**: All 5 in-app maps render through `client/src/components/SathaMap.tsx`. This wrapper centralises tile source, bounds, performance flags, and post-mount `invalidateSize()` calls so swapping the engine later (e.g. to `@capacitor/google-maps`) only touches one file.
-- **Tile source**: CartoDB Positron (`https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png`) — clean Baly-style look. **No CSS filter** is applied.
-- **Performance flags**: `preferCanvas: true` (GPU rendering on mobile), `keepBuffer: 10` (preloads 10 extra tile rings for smooth panning), `detectRetina: true`, `tileSize: 256`.
-- **Iraq bounds lock**: `IRAQ_BOUNDS = [[29.0, 38.8], [37.4, 48.6]]` exported from `SathaMap.tsx` and applied as `maxBounds` with `maxBoundsViscosity: 1.0` on every map — physically prevents panning outside Iraq, eliminates gray voids, reduces tile load.
-- **Persistent tile caching**: Service Worker at `client/public/sw.js` (registered in `client/src/main.tsx` only when `import.meta.env.PROD`) caches every Carto tile request in a dedicated `satha-tiles-v1` Cache Storage with a cache-first strategy and a 4000-tile cap. Provides true offline-first behavior inside the Capacitor WebView and the browser PWA.
-- Browser Geolocation API for current location.
-- **Geocoding/Search**: Nominatim with POI-aware ranking. `searchLocation` in `client/src/pages/request-flow.tsx` uses `countrycodes=iq`, an Iraq `viewbox`, `bounded=1`, `namedetails=1`, and `limit=25`, then re-ranks results to prioritize POI classes (amenity, shop, tourism, leisure, office, building, highway, historic, railway, man_made, natural, place) over generic addresses, returning the top 15.
+- **Engine**: MapLibre GL JS v5 + `pmtiles` protocol (NOT Leaflet — that dependency has been removed).
+- **Unified map component**: `client/src/components/SathaMap.tsx` — all 4 in-app maps (request-flow ×2, driver-dashboard ×1, driver-tracking ×1) render through this single component. It exports a Leaflet-compatible shim (`Marker`, `Popup`, `Polyline`, `useMap`, `useMapEvents`, `L.divIcon`) so pages keep their original API.
+- **Tile source**: Local PMTiles archive `client/public/maps/south_iraq.pmtiles` (110 MB, southern Iraq vector tiles). Served statically at `/maps/south_iraq.pmtiles`. Registered via `pmtiles://` protocol. `android/app/build.gradle` has `noCompress 'pmtiles'` so Android doesn't re-compress it. `capacitor.config.ts` uses `androidScheme: 'http'` for correct HTTP Range request support in WebView.
+- **Style**: `client/src/components/sathaMapStyle.ts` — custom Minimal Light style (Apple Maps–inspired). Fully offline: glyphs at `/fonts/{fontstack}/{range}.pbf`, sprite at `/sprites/light`. No CDN calls.
+- **Local font PBFs** (bundled in APK, served by Express/Vite):
+  - `client/public/fonts/Noto Sans Regular/` — ranges 0-255, 1280-1535, 1536-1791
+  - `client/public/fonts/Noto Sans Medium/` — same ranges
+  - Arabic Unicode ranges 1536-1791 (U+0600–U+06FF) cover standard Arabic script.
+- **Local sprites**: `client/public/sprites/light.{json,png}` + `@2x` variants.
+- **Font proxy** (`server/routes.ts` `GET /fonts/:fontstack/:range.pbf`): serves bundled PBF files; for any range not bundled, proxies the protomaps CDN and caches result in-process. This gives correct rendering for every text layer without storing all 256 ranges.
+- **Android WebView hardening** (all in `SathaMap.tsx`):
+  1. `ResizeObserver` deferred init — map created only once container > 0×0 px (primary fix for blank white canvas — flex layout finishes after useEffect fires).
+  2. `antialias: false` — halves GPU memory; prevents WebGL context failure on budget Qualcomm/MediaTek.
+  3. `powerPreference: "default"` — avoids thermal-throttle context kill on mid-range devices.
+  4. `failIfMajorPerformanceCaveat: false` — allows software-rendering fallback.
+  5. `webglcontextlost` / `webglcontextrestored` handlers — recovers from Android memory-pressure context loss.
+  6. Staggered `resize()` calls at 0, 150, 500, 1200 ms after load — handles soft-keyboard viewport changes.
+  7. `translate3d(0,0,0)` + `willChange: transform` on canvas after load — GPU compositing hint.
+- **Iraq bounds lock**: `IRAQ_BOUNDS = [[38.8, 29.0], [48.6, 37.4]]` (GeoJSON [lng,lat] order) applied as `maxBounds`.
+- **Default centre**: Hilla / Babylon `[44.42, 32.48]` at zoom 12.
+- **Geocoding/Search**: Nominatim with POI-aware ranking. `searchLocation` in `client/src/pages/request-flow.tsx` uses `countrycodes=iq`, Iraq `viewbox`, `bounded=1`, `namedetails=1`, `limit=25`, re-ranks by POI class, returns top 15.
+- **RTL text plugin**: loaded from `/mapbox-gl-rtl-text.js` (local, bundled in APK — not unpkg.com).
 
 ### UI Component Libraries
 - Full shadcn/ui component set (Radix UI primitives)

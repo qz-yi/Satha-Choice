@@ -5,13 +5,11 @@
 @tailwind utilities;
 
 :root {
-  /* Yellow/Orange Theme matching Satha branding */
-  /* Primary Yellow: #FBC02D -> HSL approx 43 96% 58% */
   --background: 0 0% 100%;
-  --foreground: 0 0% 10%; /* Dark text */
+  --foreground: 0 0% 10%;
 
   --primary: 43 96% 58%;
-  --primary-foreground: 0 0% 10%; /* Black text on yellow reads best */
+  --primary-foreground: 0 0% 10%;
 
   --secondary: 43 20% 96%;
   --secondary-foreground: 0 0% 10%;
@@ -74,27 +72,35 @@
   * {
     @apply border-border;
   }
-  
+
   html {
     direction: rtl;
-    height: 100%;
+    /* dvh (dynamic viewport height) adapts when the Android soft keyboard
+       appears/disappears — unlike vh which is fixed to the initial viewport. */
+    height: 100dvh;
+    max-height: 100dvh;
     overflow: hidden;
   }
 
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-cairo), ui-sans-serif, system-ui, sans-serif;
-    /* Capacitor safe area: push content below the device status bar */
+    /* Capacitor safe-area: keep content below device status bar */
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
-    height: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
     overflow: hidden;
   }
 
   #root {
-    height: 100%;
+    /* flex column so children can use flex-1 to fill remaining space.
+       Using dvh here ensures the root always matches the visual viewport,
+       even after the Android keyboard changes the available height. */
+    height: 100dvh;
+    max-height: 100dvh;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -106,22 +112,37 @@
   }
 }
 
-/* ── MapLibre GL canvas rendering fix (smooth on mobile / WebView) ───────── */
+/* ── MapLibre GL canvas — Android WebView hardening ────────────────────────
+   The canvas must fill its container exactly. Any padding/margin causes
+   MapLibre to mis-calculate hit-test coordinates on touch devices.
+   `translate3d(0,0,0)` is applied via JS after map load to enable
+   GPU compositing; the CSS below prevents the outline focus ring
+   from appearing on touch in Android Chrome/WebView.                        */
 .maplibregl-canvas {
   outline: none !important;
+  /* Explicit block display prevents a 4px "baseline gap" on some WebViews. */
+  display: block !important;
 }
 
+/* Force the inner map div to always fill the container div exactly.
+   Without this, on some Android WebViews the map canvas is 300×150 px
+   (the HTML canvas default) regardless of the CSS applied to the wrapper. */
 .maplibregl-map {
   font-family: var(--font-cairo), ui-sans-serif, system-ui, sans-serif;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 
-/* Hide the MapTiler logo only when running inside the native APK shell.
-   Web display keeps full attribution to comply with MapTiler's terms. */
 .maplibregl-ctrl-attrib {
   font-size: 10px;
 }
 
-/* Popups: remove default white card chrome to match the app's RTL look. */
+/* Popups: RTL-friendly styling */
 .maplibregl-popup-content {
   padding: 8px 12px;
   border-radius: 16px;

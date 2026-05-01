@@ -291,6 +291,36 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
   
+  // ── Font proxy: serves bundled PBF glyph ranges; falls back to CDN ─────────
+  // MapLibre requests /fonts/{fontstack}/{range}.pbf for every text layer.
+  // We bundle the key Arabic + Latin ranges locally (client/public/fonts/).
+  // For any range NOT bundled, this endpoint proxies the protomaps CDN and
+  // caches the result in-process so subsequent (offline) requests are served.
+  const fontCache = new Map<string, Buffer>();
+  app.get("/fonts/:fontstack/:range.pbf", async (req, res) => {
+    const { fontstack, range } = req.params;
+    const cacheKey = `${fontstack}/${range}`;
+    res.setHeader("Content-Type", "application/x-protobuf");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+
+    if (fontCache.has(cacheKey)) {
+      return res.send(fontCache.get(cacheKey));
+    }
+
+    // Try the CDN, cache on success
+    try {
+      const encoded = encodeURIComponent(fontstack);
+      const url = `https://protomaps.github.io/basemaps-assets/fonts/${encoded}/${range}.pbf`;
+      const upstream = await axios.get(url, { responseType: "arraybuffer", timeout: 8000 });
+      const buf = Buffer.from(upstream.data);
+      fontCache.set(cacheKey, buf);
+      return res.send(buf);
+    } catch {
+      return res.status(404).json({ message: "font range not found" });
+    }
+  });
+
   // FEATURE 1: Google Maps Distance Matrix API Proxy
   app.post("/api/distance-matrix", async (req, res) => {
     try {
