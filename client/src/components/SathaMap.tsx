@@ -22,33 +22,48 @@ import maplibregl, {
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Protocol } from "pmtiles";
 import { buildMinimalLightStyle } from "./sathaMapStyle";
+// ── CSP-safe MapLibre worker ──────────────────────────────────────────────────
+// Capacitor's Android WebView blocks workers created via Blob: URLs — which is
+// MapLibre's default mechanism (new Worker(URL.createObjectURL(blob))).
+// Instead, we import the worker JS as a real asset URL via Vite's ?url suffix.
+// Vite copies the file to dist/assets/ and returns its content-hashed path.
+// We then call maplibregl.setWorkerUrl() to tell MapLibre to use this real URL
+// (e.g. /assets/maplibre-gl-csp-worker-xxxxxx.js) instead of a blob.
+//
+// ⚠️  setWorkerUrl() MUST be called before any Map is instantiated.
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-csp-worker?url";
+maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
 /**
  * 🗺️ ملف PMTiles محلي يغطي جنوب العراق — يعمل أوفلاين بالكامل.
- *  • يُخدَّم من /maps/south_iraq.pmtiles (symlink إلى client/src/assets/maps/)
- *  • Vite يدعم HTTP Range Requests على الملفات الثابتة، وهو ما يحتاجه PMTiles.
+ *  • يُخدَّم من /maps/south_iraq.pmtiles
+ *  • Vite يدعم HTTP Range Requests على الملفات الثابتة وهو ما يحتاجه PMTiles.
+ *  • Android: يجب أن يكون الملف غير مضغوط في APK (noCompress 'pmtiles' في build.gradle).
  */
 export const PMTILES_URL = "/maps/south_iraq.pmtiles";
 
 /**
- * تسجيل بروتوكول pmtiles مع MapLibre — مرة واحدة على مستوى التطبيق.
- * يجب استدعاؤه قبل إنشاء أي خريطة.
+ * مسار البرنامج المساعد لنصوص RTL (العربية/العبرية).
  *
- * كذلك يفعّل دعم RTL لأسماء الشوارع العربية في بابل والمناطق الجنوبية.
+ * ❌ النسخة القديمة كانت تحمّله من unpkg.com — يفشل داخل APK بدون اتصال.
+ * ✅ النسخة الجديدة تحمّله من ملف محلي ضمن الـ APK نفسه (client/public/mapbox-gl-rtl-text.js).
+ */
+const RTL_PLUGIN_URL = "/mapbox-gl-rtl-text.js";
+
+/**
+ * تسجيل بروتوكول pmtiles مع MapLibre — مرة واحدة على مستوى التطبيق.
+ * يُضاف كذلك دعم RTL من ملف محلي (أوفلاين-صديق للـ APK).
  */
 let pmtilesRegistered = false;
 function ensurePmtilesProtocol() {
   if (pmtilesRegistered) return;
   const protocol = new Protocol();
   maplibregl.addProtocol("pmtiles", protocol.tile);
-  // Arabic shaping for proper RTL street labels
+  // Arabic/RTL text shaping — load from local file (works offline in APK)
   if (typeof maplibregl.getRTLTextPluginStatus === "function") {
     const status = maplibregl.getRTLTextPluginStatus();
     if (status === "unavailable") {
-      maplibregl.setRTLTextPlugin(
-        "https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.min.js",
-        true,
-      );
+      maplibregl.setRTLTextPlugin(RTL_PLUGIN_URL, false);
     }
   }
   pmtilesRegistered = true;
