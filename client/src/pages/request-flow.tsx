@@ -89,14 +89,26 @@ const getOrangeArrowIcon = (rotation: number) =>
 // Custom pin icon for a confirmed pickup point visible during destination selection
 const getPickupPinIcon = () =>
   L.divIcon({
-    html: `<div style="display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0px 3px 6px rgba(0,0,0,0.35))">
-      <div style="background:#f97316;color:#fff;font-size:11px;font-weight:900;padding:3px 8px;border-radius:10px;white-space:nowrap;font-family:sans-serif;">تحميل من هنا</div>
-      <div style="width:3px;height:16px;background:#f97316;border-radius:2px"></div>
-      <div style="width:10px;height:10px;background:#f97316;border-radius:50%;margin-top:-2px"></div>
+    html: `<div style="display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0px 4px 12px rgba(249,115,22,0.55))">
+      <div style="background:#f97316;color:#fff;font-size:11px;font-weight:900;padding:4px 10px;border-radius:12px;white-space:nowrap;font-family:sans-serif;letter-spacing:0.3px;box-shadow:0 2px 8px rgba(249,115,22,0.4)">تحميل</div>
+      <div style="width:2px;height:14px;background:linear-gradient(#f97316,rgba(249,115,22,0.3));border-radius:2px"></div>
+      <div style="width:12px;height:12px;background:#f97316;border-radius:50%;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.2);margin-top:-2px"></div>
     </div>`,
     className: "",
-    iconSize: [90, 48],
-    iconAnchor: [45, 48],
+    iconSize: [80, 44],
+    iconAnchor: [40, 44],
+  });
+
+const getDropoffPinIcon = () =>
+  L.divIcon({
+    html: `<div style="display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0px 4px 12px rgba(0,0,0,0.45))">
+      <div style="background:#111827;color:#fff;font-size:11px;font-weight:900;padding:4px 10px;border-radius:12px;white-space:nowrap;font-family:sans-serif;letter-spacing:0.3px;box-shadow:0 2px 8px rgba(0,0,0,0.35)">وجهة</div>
+      <div style="width:2px;height:14px;background:linear-gradient(#111827,rgba(17,24,39,0.3));border-radius:2px"></div>
+      <div style="width:12px;height:12px;background:#111827;border-radius:50%;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.25);margin-top:-2px"></div>
+    </div>`,
+    className: "",
+    iconSize: [70, 44],
+    iconAnchor: [35, 44],
   });
 
 const normalizeCity = (city: string): string => {
@@ -1171,85 +1183,61 @@ export default function RequestFlow() {
     }
   };
 
-  // 🔍 محرك بحث مُحسّن لنقاط الاهتمام (POIs):
-  // - يبحث عن المعالم (جسور، مستشفيات، مطاعم، دوائر حكومية، ...)
-  // - يبحث ضمن العراق فقط مع viewbox واسع لتغطية كل المحافظات
-  // - يجلب أسماء بدائل (namedetails) ودرجة الأهمية لترتيب نتائج أفضل
-  // - يدمج نتيجتين: بحث عام داخل العراق + بحث POI لزيادة دقة المعالم
+  // 🔍 محرك بحث مُحسّن — MapTiler Geocoding API:
+  // - نتائج مُقرَّبة جغرافياً نحو بابل (Babil Governorate) باستخدام proximity
+  // - مقيَّد بالعراق (country=iq) مع إعطاء الأولوية للأسماء العربية
+  const MAPTILER_KEY = "ZgzumFORbF7swvFCViRi";
+  // مركز بابل للـ proximity — يضمن أن نتائج "مجسر"، "كراج"، ... تعود من بابل أولاً
+  const BABIL_PROXIMITY = "44.36,32.48";
+
   const searchLocation = async (query: string) => {
     const q = query.trim();
     if (q.length < 2) return;
     setIsSearching(true);
     try {
-      // العراق bounding box تقريباً: غرب 38.79, جنوب 29.06, شرق 48.57, شمال 37.39
-      const viewbox = "38.79,37.39,48.57,29.06"; // left,top,right,bottom
-      const baseParams =
-        "format=json&addressdetails=1&namedetails=1&extratags=1&dedupe=1" +
-        "&countrycodes=iq&accept-language=ar" +
-        `&viewbox=${viewbox}&bounded=1`;
+      // MapTiler Geocoding: https://api.maptiler.com/geocoding/{query}.json
+      const url =
+        `https://api.maptiler.com/geocoding/${encodeURIComponent(q)}.json` +
+        `?key=${MAPTILER_KEY}` +
+        `&proximity=${BABIL_PROXIMITY}` +
+        `&country=iq` +
+        `&language=ar` +
+        `&limit=15`;
 
-      // طلب موسّع: حد أعلى 25 نتيجة لتغطية المعالم والمحلات
-      const url = `https://nominatim.openstreetmap.org/search?${baseParams}&limit=25&q=${encodeURIComponent(q)}`;
-
-      const res = await fetch(url, {
-        headers: { "Accept-Language": "ar" },
-      });
+      const res = await fetch(url);
       const data = await res.json();
-
-      // ترتيب النتائج: المعالم (POIs) أولاً ثم العناوين العامة
-      const poiClasses = new Set([
-        "amenity", "shop", "tourism", "leisure", "office", "building",
-        "highway", "historic", "railway", "man_made", "natural", "place",
-      ]);
-      const ranked = (Array.isArray(data) ? data : [])
-        .map((item: any) => ({
-          ...item,
-          _poi: poiClasses.has(item.class) ? 1 : 0,
-          _imp: parseFloat(item.importance || "0"),
-        }))
-        .sort((a: any, b: any) => (b._poi - a._poi) || (b._imp - a._imp))
-        .slice(0, 15);
-
-      setSearchResults(ranked);
+      setSearchResults(Array.isArray(data.features) ? data.features : []);
     } catch (error) {
     } finally {
       setIsSearching(false);
     }
   };
 
-  // Extract the most meaningful Arabic location label from Nominatim address
-  const extractArabicLabel = (data: any): string => {
-    const addr = data.address || {};
+  // Extract the most meaningful Arabic location label from a MapTiler GeoJSON feature
+  const extractArabicLabel = (feature: any): string => {
+    // MapTiler returns `text` as the short localised name, `place_name` as full
     return (
-      addr.neighbourhood ||
-      addr.suburb ||
-      addr.quarter ||
-      addr.road ||
-      addr.city_district ||
-      addr.town ||
-      addr.village ||
-      addr.city ||
-      addr.county ||
-      addr.state ||
-      data.display_name?.split(",")[0] ||
+      feature.text ||
+      feature.place_name?.split(",")[0] ||
       "موقع محدد"
     );
   };
 
   const reverseGeocode = async (lat: number, lng: number) => {
     try {
+      // MapTiler Reverse Geocoding — returns Arabic names when language=ar
+      const MAPTILER_KEY_REV = "ZgzumFORbF7swvFCViRi";
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1&accept-language=ar`,
+        `https://api.maptiler.com/geocoding/${lng},${lat}.json?key=${MAPTILER_KEY_REV}&language=ar`,
       );
       const data = await res.json();
-      if (data.address) {
-        const detectedCity =
-          data.address.state ||
-          data.address.city ||
-          data.address.province ||
-          data.address.governorate ||
-          "بابل";
-        const locationName = extractArabicLabel(data);
+      const feature = Array.isArray(data.features) && data.features[0];
+      if (feature) {
+        const regionCtx = feature.context?.find(
+          (c: any) => c.id?.startsWith("region") || c.id?.startsWith("place"),
+        );
+        const detectedCity = regionCtx?.text || "بابل";
+        const locationName = extractArabicLabel(feature);
         setFormData((prev) => ({
           ...prev,
           city: normalizeCity(detectedCity),
@@ -1315,14 +1303,15 @@ export default function RequestFlow() {
   };
 
   const handleSelectResult = (result: any) => {
-    const lat = parseFloat(result.lat);
-    const lon = parseFloat(result.lon);
-    const resultCity =
-      result.address?.state ||
-      result.address?.city ||
-      result.address?.province ||
-      result.address?.governorate ||
-      "بابل";
+    // MapTiler GeoJSON format: coordinates are [lng, lat]
+    const lon = result.geometry?.coordinates?.[0] ?? parseFloat(result.lon ?? "0");
+    const lat = result.geometry?.coordinates?.[1] ?? parseFloat(result.lat ?? "0");
+
+    // Pull city/governorate from MapTiler context array (id starts with "region" or "place")
+    const regionCtx = result.context?.find(
+      (c: any) => c.id?.startsWith("region") || c.id?.startsWith("place"),
+    );
+    const resultCity = regionCtx?.text || "بابل";
 
     setShouldFly(true);
     const locationLabel = extractArabicLabel(result);
@@ -2683,21 +2672,26 @@ export default function RequestFlow() {
                 <div
                   key={i}
                   onClick={() => handleSelectResult(res)}
-                  className="flex items-center gap-4 p-4 hover:bg-orange-50 rounded-2xl cursor-pointer"
+                  className="flex items-center gap-4 p-4 hover:bg-orange-50 rounded-2xl cursor-pointer active:bg-orange-100 transition-colors"
                 >
-                  <div className="bg-white p-2 rounded-xl shadow-sm">
-                    <MapPin className="w-5 h-5 text-orange-500" />
+                  <div className={`p-2.5 rounded-xl shadow-sm ${step === "pickup" ? "bg-orange-50" : "bg-gray-100"}`}>
+                    <MapPin className={`w-5 h-5 ${step === "pickup" ? "text-orange-500" : "text-gray-700"}`} />
                   </div>
                   <div className="flex-1 truncate text-right">
-                    <h4 className="font-bold text-gray-700 truncate">
-                      {res.display_name.split(",")[0]}
+                    <h4 className="font-bold text-gray-800 truncate">
+                      {res.text || res.place_name?.split(",")[0] || "موقع"}
                     </h4>
                     <p className="text-[10px] text-gray-400 truncate">
-                      {res.display_name}
+                      {res.place_name || ""}
                     </p>
                   </div>
                 </div>
               ))}
+              {searchResults.length === 0 && !isSearching && (
+                <div className="text-center py-12 opacity-40 font-bold text-gray-500">
+                  ابدأ الكتابة للبحث عن موقع...
+                </div>
+              )}
             </div>
           </motion.div>
         )}

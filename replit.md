@@ -54,16 +54,10 @@ The `shared/` directory contains code used by both client and server:
 - Session storage with `connect-pg-simple`
 
 ### Maps & Geolocation
-- **Engine**: MapLibre GL JS v5 + `pmtiles` protocol (NOT Leaflet — that dependency has been removed).
+- **Engine**: MapLibre GL JS v5 (NOT Leaflet — that dependency has been removed). **Online** — requires internet.
 - **Unified map component**: `client/src/components/SathaMap.tsx` — all 4 in-app maps (request-flow ×2, driver-dashboard ×1, driver-tracking ×1) render through this single component. It exports a Leaflet-compatible shim (`Marker`, `Popup`, `Polyline`, `useMap`, `useMapEvents`, `L.divIcon`) so pages keep their original API.
-- **Tile source**: Local PMTiles archive `client/public/maps/south_iraq.pmtiles` (110 MB, southern Iraq vector tiles). Served statically at `/maps/south_iraq.pmtiles`. Registered via `pmtiles://` protocol. `android/app/build.gradle` has `noCompress 'pmtiles'` so Android doesn't re-compress it. `capacitor.config.ts` uses `androidScheme: 'http'` for correct HTTP Range request support in WebView.
-- **Style**: `client/src/components/sathaMapStyle.ts` — custom Minimal Light style (Apple Maps–inspired). Fully offline: glyphs at `/fonts/{fontstack}/{range}.pbf`, sprite at `/sprites/light`. No CDN calls.
-- **Local font PBFs** (bundled in APK, served by Express/Vite):
-  - `client/public/fonts/Noto Sans Regular/` — ranges 0-255, 1280-1535, 1536-1791
-  - `client/public/fonts/Noto Sans Medium/` — same ranges
-  - Arabic Unicode ranges 1536-1791 (U+0600–U+06FF) cover standard Arabic script.
-- **Local sprites**: `client/public/sprites/light.{json,png}` + `@2x` variants.
-- **Font proxy** (`server/routes.ts` `GET /fonts/:fontstack/:range.pbf`): serves bundled PBF files; for any range not bundled, proxies the protomaps CDN and caches result in-process. This gives correct rendering for every text layer without storing all 256 ranges.
+- **Tile source / Style**: MapTiler Streets v4 — `https://api.maptiler.com/maps/streets-v4/style.json?key=ZgzumFORbF7swvFCViRi`. High-quality online vector tiles with Arabic labels. No local PMTiles archive (previously 110 MB — removed to reduce APK size).
+- **No offline assets**: `client/public/fonts/`, `client/public/sprites/`, `client/public/mapbox-gl-rtl-text.js`, and `client/public/maps/` were all deleted. `sathaMapStyle.ts` was deleted. The Express font proxy route was removed from `server/routes.ts`.
 - **Android WebView hardening** (all in `SathaMap.tsx`):
   1. `ResizeObserver` deferred init — map created only once container > 0×0 px (primary fix for blank white canvas — flex layout finishes after useEffect fires).
   2. `antialias: false` — halves GPU memory; prevents WebGL context failure on budget Qualcomm/MediaTek.
@@ -73,9 +67,11 @@ The `shared/` directory contains code used by both client and server:
   6. Staggered `resize()` calls at 0, 150, 500, 1200 ms after load — handles soft-keyboard viewport changes.
   7. `translate3d(0,0,0)` + `willChange: transform` on canvas after load — GPU compositing hint.
 - **Iraq bounds lock**: `IRAQ_BOUNDS = [[38.8, 29.0], [48.6, 37.4]]` (GeoJSON [lng,lat] order) applied as `maxBounds`.
-- **Default centre**: Hilla / Babylon `[44.42, 32.48]` at zoom 12.
-- **Geocoding/Search**: Nominatim with POI-aware ranking. `searchLocation` in `client/src/pages/request-flow.tsx` uses `countrycodes=iq`, Iraq `viewbox`, `bounded=1`, `namedetails=1`, `limit=25`, re-ranks by POI class, returns top 15.
-- **RTL text plugin**: loaded from `/mapbox-gl-rtl-text.js` (local, bundled in APK — not unpkg.com).
+- **Default centre**: Hilla / Babil `HILLA_CENTER = [44.36, 32.48]` (MapLibre [lng,lat] order) at zoom 13.
+- **Geocoding/Search** (`client/src/pages/request-flow.tsx` → `searchLocation`): MapTiler Geocoding API — `https://api.maptiler.com/geocoding/{query}.json?key=...&proximity=44.36,32.48&country=iq&language=ar&limit=15`. Babil-first proximity bias via `proximity=44.36,32.48`. Returns MapTiler GeoJSON features; `handleSelectResult` uses `feature.geometry.coordinates[0/1]` for lng/lat.
+- **Reverse geocoding** (`reverseGeocode`): MapTiler Geocoding reverse — `https://api.maptiler.com/geocoding/{lng},{lat}.json?key=...&language=ar`. Returns Arabic place names.
+- **Two-step booking flow**: Pickup (step="pickup") → Dropoff (step="dropoff"). Crosshair overlay changes colour (orange/black). During dropoff step, a fixed orange `getPickupPinIcon()` marker is rendered at the confirmed pickup coords so both points are visible simultaneously. Dropoff pin is `getDropoffPinIcon()` (black).
+- **capacitor.config.ts**: `androidScheme: 'http'` — kept as-is.
 
 ### UI Component Libraries
 - Full shadcn/ui component set (Radix UI primitives)

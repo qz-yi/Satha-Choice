@@ -1,0 +1,21 @@
+Master Refactor Prompt for Satha App Map
+​Role: You are a Senior React & Geospatial Developer.
+Objective: Replace the current offline PMTiles map with a high-performance MapTiler web-based map and fix the search/booking logic.
+​1. Core Map Replacement:
+​Remove: All old offline map logic, pmtiles protocol registrations, and references to local .pmtiles files.
+​Implement: A fresh maplibre-gl map using this EXACT Style URL: https://api.maptiler.com/maps/streets-v4/style.json?key=ZgzumFORbF7swvFCViRi.
+​Default View: Set the map center to Babil (Hilla), Iraq (Coordinates: 32.48, 44.36) with zoom: 13.
+​2. Localized Search Bias (Babil-First):
+​Integration: Link the top search bar UI to the map's navigation.
+​Bias Logic: When the user searches for a place (like "مجسر" or "كراج"), you must bias the results to Babil Governorate.
+​Implementation: If using a Geocoding API, use the proximity parameter set to 44.36, 32.48 and a bbox (Bounding Box) covering Babil to ensure local results appear first before showing Baghdad or other cities.
+​3. Two-Step Booking Workflow (UX Fix):
+​Refactor the pickup/drop-off selection to work as follows:
+​Phase A (Pickup): The user moves the map to find the pickup point. A central marker indicates the location.
+​Phase B (Fixing Pickup): When the user confirms the pickup point, fix/freeze that marker at those specific coordinates on the map. It should no longer move with the map.
+​Phase C (Drop-off): Display a second, different-colored marker (e.g., Black or Red) at the center of the map for the user to select the destination.
+​Visibility: Both markers (Pickup and Drop-off) must be visible simultaneously once the second phase starts.
+​4. Technical Details:
+​Performance: Disable antialias and set trackResize: true for better mobile performance.
+​Styling: Markers should use a premium design. Use Orange for Pickup and Black for Drop-off to match the "Satha" branding.
+​Cleanup: Delete any unused assets or code related to the old offline map to keep the APK size small.

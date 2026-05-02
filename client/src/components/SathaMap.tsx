@@ -20,8 +20,6 @@ import maplibregl, {
   LngLatLike,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Protocol } from "pmtiles";
-import { buildMinimalLightStyle } from "./sathaMapStyle";
 
 // ── CSP-safe MapLibre worker ──────────────────────────────────────────────────
 // Capacitor Android WebView blocks Blob: URLs. We import the worker as a real
@@ -30,29 +28,9 @@ import { buildMinimalLightStyle } from "./sathaMapStyle";
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-csp-worker?url";
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
-/** Local PMTiles file — served offline from bundled assets. */
-export const PMTILES_URL = "/maps/south_iraq.pmtiles";
-
-/**
- * RTL text plugin — loaded from a local file bundled in the APK.
- * The old version pointed to unpkg.com, which fails offline.
- */
-const RTL_PLUGIN_URL = "/mapbox-gl-rtl-text.js";
-
-// Register the pmtiles:// protocol + RTL plugin exactly once per page load.
-let pmtilesRegistered = false;
-function ensurePmtilesProtocol() {
-  if (pmtilesRegistered) return;
-  const protocol = new Protocol();
-  maplibregl.addProtocol("pmtiles", protocol.tile);
-  if (typeof maplibregl.getRTLTextPluginStatus === "function") {
-    const status = maplibregl.getRTLTextPluginStatus();
-    if (status === "unavailable") {
-      maplibregl.setRTLTextPlugin(RTL_PLUGIN_URL, false);
-    }
-  }
-  pmtilesRegistered = true;
-}
+/** MapTiler Streets v4 style — high-quality online vector map with Arabic labels. */
+const MAPTILER_STYLE =
+  "https://api.maptiler.com/maps/streets-v4/style.json?key=ZgzumFORbF7swvFCViRi";
 
 /** Iraq bounding box for maplibre — [lng, lat] GeoJSON order. */
 export const IRAQ_BOUNDS: LngLatBoundsLike = [
@@ -60,8 +38,8 @@ export const IRAQ_BOUNDS: LngLatBoundsLike = [
   [48.6, 37.4], // NE
 ];
 
-/** Default centre: Hilla city, Babylon Governorate ([lng, lat]) */
-export const HILLA_CENTER: [number, number] = [44.42, 32.48];
+/** Default centre: Hilla / Babil Governorate ([lng, lat] — MapLibre order) */
+export const HILLA_CENTER: [number, number] = [44.36, 32.48];
 
 // ── Map context ───────────────────────────────────────────────────────────────
 const MapContext = createContext<MlMap | null>(null);
@@ -394,28 +372,24 @@ interface SathaMapProps {
 }
 
 /**
- * Unified map component — MapLibre GL JS + local PMTiles (fully offline).
+ * Unified map component — MapLibre GL JS + MapTiler Streets v4.
  *
  * Android WebView hardening applied:
  *  1. ResizeObserver deferred init — map is only created once the container
- *     has actual pixel dimensions (> 0 × 0). This is the primary fix for the
- *     blank white canvas on Android, where React's useEffect fires before the
- *     browser completes flex/percentage layout.
- *  2. antialias: false — halves GPU memory usage. Antialias is the #1 cause
- *     of WebGL context creation failure on budget Android hardware.
+ *     has actual pixel dimensions (> 0 × 0). Fixes blank white canvas on
+ *     Android where React's useEffect fires before flex layout completes.
+ *  2. antialias: false — halves GPU memory. #1 cause of WebGL context failure
+ *     on budget Qualcomm/MediaTek GPUs.
  *  3. powerPreference: "default" — "high-performance" causes context loss on
- *     many Qualcomm/MediaTek GPUs when thermal throttling kicks in.
- *  4. failIfMajorPerformanceCaveat: false — allows MapLibre to fall back to
- *     software rendering instead of returning a null context.
- *  5. webglcontextlost/restored — detect and recover from GPU context loss
- *     (Android kills WebGL contexts under memory pressure).
- *  6. Local glyphs + sprite — no CDN calls; works fully offline in the APK.
- *  7. Multiple resize() calls with increasing delays to handle dynamic
- *     viewport changes caused by the Android soft keyboard.
+ *     many Android GPUs when thermal throttling kicks in.
+ *  4. failIfMajorPerformanceCaveat: false — allows software-rendering fallback.
+ *  5. webglcontextlost/restored — recover from Android memory-pressure context kill.
+ *  6. Staggered resize() calls — handle dynamic viewport changes from soft keyboard.
+ *  7. trackResize: true — standard resize tracking.
  */
 export function SathaMap({
   center,
-  zoom = 12,
+  zoom = 13,
   minZoom = 5,
   maxZoom = 19,
   zoomControl = false,
@@ -436,8 +410,6 @@ export function SathaMap({
     const container = containerRef.current;
     if (!container) return;
 
-    ensurePmtilesProtocol();
-
     const startCenter: [number, number] = center
       ? [center[1], center[0]]
       : HILLA_CENTER;
@@ -449,7 +421,6 @@ export function SathaMap({
 
       const { width, height } = container.getBoundingClientRect();
       if (width === 0 || height === 0) {
-        // Should not reach here normally (observer guards below), but be safe.
         console.warn("[SathaMap] Container still 0×0 at createMap — retrying in 100ms");
         setTimeout(createMap, 100);
         return;
@@ -459,7 +430,7 @@ export function SathaMap({
       try {
         map = new maplibregl.Map({
           container,
-          style: buildMinimalLightStyle(PMTILES_URL),
+          style: MAPTILER_STYLE,
           center: startCenter,
           zoom,
           minZoom,
@@ -468,14 +439,8 @@ export function SathaMap({
           trackResize: true,
           // ── WebGL context attributes hardened for Android WebView ─────
           canvasContextAttributes: {
-            // antialias OFF: biggest single GPU-memory saving on mobile.
-            // With antialias ON many budget Qualcomm/MediaTek GPUs silently
-            // fail to create the WebGL context → blank white canvas.
             antialias: false,
-            // Allow software-rendering fallback instead of null context.
             failIfMajorPerformanceCaveat: false,
-            // "default" avoids triggering thermal throttle-kill on mid-range
-            // Android devices (which drops the GPU context entirely).
             powerPreference: "default",
           },
           attributionControl: false,
@@ -496,8 +461,6 @@ export function SathaMap({
       mapRef.current = map;
 
       // ── WebGL context-loss recovery ───────────────────────────────────
-      // Android kills WebGL contexts under memory pressure. Without this
-      // handler the canvas turns permanently white after any memory spike.
       const canvas = map.getCanvas();
 
       const onContextLost = (e: Event) => {
@@ -538,7 +501,6 @@ export function SathaMap({
         canvas.style.transform = "translate3d(0,0,0)";
 
         // Staggered resize() calls handle dynamic viewport changes on Android
-        // (e.g. soft keyboard appearing, status-bar animation, Capacitor safe-area).
         map.resize();
         setTimeout(() => { if (!destroyedRef.current) map.resize(); }, 150);
         setTimeout(() => { if (!destroyedRef.current) map.resize(); }, 500);
@@ -549,13 +511,9 @@ export function SathaMap({
     }
 
     // ── ResizeObserver: only init the map once the container has pixels ───
-    // On Android WebView, React's useEffect fires BEFORE the browser has
-    // calculated percentage-based heights. The container may be 0×0 at this
-    // point. We observe it and create the map as soon as it has real size.
     const { width, height } = container.getBoundingClientRect();
 
     if (width > 0 && height > 0) {
-      // Container already has size — create map immediately.
       createMap();
     } else {
       const ro = new ResizeObserver((entries) => {
@@ -570,7 +528,6 @@ export function SathaMap({
       });
       ro.observe(container);
 
-      // Absolute fallback: if ResizeObserver never fires within 2s, try anyway.
       const fallbackTimer = setTimeout(() => {
         ro.disconnect();
         createMap();
@@ -588,7 +545,6 @@ export function SathaMap({
       };
     }
 
-    // Cleanup for the "already has size" path
     return () => {
       destroyedRef.current = true;
       if (mapRef.current) {
@@ -606,9 +562,6 @@ export function SathaMap({
       className={className}
       style={{
         position: "relative",
-        // Explicit inset-fill for Android WebView — do not use height:100% alone,
-        // it may resolve to 0 if the flex parent hasn't completed layout yet.
-        // "100%" on width is safe; height is forced via flex-grow in the wrapper.
         width: "100%",
         height: "100%",
         overflow: "hidden",
