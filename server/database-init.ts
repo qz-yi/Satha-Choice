@@ -56,6 +56,13 @@ export async function ensureDatabaseSchema() {
     `);
     console.log('✅ [DATABASE INIT] Settings initialized');
 
+    // Add image column to users table if missing
+    console.log('[DATABASE INIT] Checking users.image column...');
+    await client.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS image TEXT;
+    `);
+    console.log('✅ [DATABASE INIT] users.image column ready');
+
     console.log('✅ [DATABASE INIT] Auto-migration complete!\n');
     
   } catch (error: any) {

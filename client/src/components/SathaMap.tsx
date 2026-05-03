@@ -107,6 +107,7 @@ export function useMap(): SathaMapInstance {
 
 // ── useMapEvents ──────────────────────────────────────────────────────────────
 type MapEventHandlers = {
+  move?: () => void;     // fires continuously during drag — use for live coord updates
   moveend?: () => void;
   movestart?: () => void;
   dragend?: () => void;
@@ -119,13 +120,30 @@ export function useMapEvents(handlers: MapEventHandlers): SathaMapInstance {
   const map = useContext(MapContext);
   if (!map) throw new Error("useMapEvents() must be used inside <SathaMap>");
 
+  // ── Stale-closure fix ──────────────────────────────────────────────────────
+  // The `useEffect` below only re-runs when `map` changes (not when `handlers`
+  // change), so it must NOT capture handlers directly. Instead we keep a ref
+  // that is always up-to-date with the latest callbacks from the parent render.
+  // This ensures that when step/state changes in the parent, the registered
+  // listener immediately calls the newest version of the callback.
+  const handlersRef = useRef(handlers);
   useEffect(() => {
-    const entries = Object.entries(handlers).filter(
-      ([, fn]) => typeof fn === "function",
-    ) as [string, (...a: any[]) => void][];
-    entries.forEach(([ev, fn]) => map.on(ev as any, fn));
+    handlersRef.current = handlers;
+    // no deps array intentional — must sync on every render
+  });
+
+  useEffect(() => {
+    if (!map) return;
+    // Register stable wrappers once (per map instance). Each wrapper reads
+    // from handlersRef so it always delegates to the current callback.
+    const keys = Object.keys(handlers) as (keyof MapEventHandlers)[];
+    const stableEntries: [string, (...a: any[]) => void][] = keys.map((key) => [
+      key,
+      (...args: any[]) => (handlersRef.current[key] as any)?.(...args),
+    ]);
+    stableEntries.forEach(([ev, fn]) => map.on(ev as any, fn));
     return () => {
-      entries.forEach(([ev, fn]) => map.off(ev as any, fn));
+      stableEntries.forEach(([ev, fn]) => map.off(ev as any, fn));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map]);

@@ -284,6 +284,7 @@ export default function RequestFlow() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   // Fix 4: Debounce ref for search — prevents firing a request on every keystroke
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const geocodeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [formData, setFormData] = useState({
     location: "",
     destination: "",
@@ -1045,10 +1046,9 @@ export default function RequestFlow() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Reset input value so the same file can be re-selected
+    // Reset input so the same file can be re-selected later
     e.target.value = "";
 
-    // Validate file type & size (max 5 MB)
     if (!file.type.startsWith("image/")) {
       toast({ variant: "destructive", title: "خطأ", description: "يرجى اختيار صورة صحيحة" });
       return;
@@ -1059,60 +1059,47 @@ export default function RequestFlow() {
     }
 
     try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64 = reader.result as string;
+      if (userProfile.phone) {
+        // Multipart upload — avoids base64 JSON body-size limits entirely
+        const formData = new FormData();
+        formData.append("image", file);
 
-        // CRITICAL: Save to database immediately for persistence
-        if (userProfile.phone) {
+        const uploadRes = await fetch(
+          `${API_BASE}/api/users/${userProfile.phone}/upload-avatar`,
+          { method: "POST", body: formData },
+        );
 
-          const uploadRes = await fetch(
-            `${API_BASE}/api/users/${userProfile.phone}/update-image`,
-            {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ image: base64 }),
-            },
-          );
+        const data = await uploadRes.json();
 
-          if (uploadRes.ok) {
-
-            // Update state
-            setUserProfile((prev) => {
-              const updated = { ...prev, image: base64 };
-
-              // Update localStorage
-              try {
-                localStorage.setItem("sat7a_user", JSON.stringify(updated));
-              } catch (e) {
-              }
-
-              return updated;
-            });
-
-            toast({
-              title: "✅ تم تحديث الصورة",
-              description: "تم حفظ صورتك الشخصية بنجاح",
-              className: "bg-green-600 text-white font-black rounded-[24px]",
-            });
-          } else {
-            toast({
-              variant: "destructive",
-              title: "فشل التحميل",
-              description: "لم نتمكن من حفظ الصورة، يرجى المحاولة مرة أخرى",
-            });
-          }
+        if (uploadRes.ok && data.url) {
+          // Build the full URL (relative /uploads/... paths need API_BASE in Capacitor)
+          const imageUrl = resolveImageUrl(data.url);
+          setUserProfile((prev) => {
+            const updated = { ...prev, image: imageUrl };
+            try { localStorage.setItem("sat7a_user", JSON.stringify(updated)); } catch {}
+            return updated;
+          });
+          toast({
+            title: "✅ تم تحديث الصورة",
+            description: "تم حفظ صورتك الشخصية بنجاح",
+            className: "bg-green-600 text-white font-black rounded-[24px]",
+          });
         } else {
-          // Fallback: Just save to state and localStorage if not logged in yet
-          setUserProfile((prev) => ({ ...prev, image: base64 }));
+          throw new Error(data.message || "فشل الرفع");
         }
-      };
-      reader.readAsDataURL(file);
-    } catch (err) {
+      } else {
+        // Pre-login: show local preview only — uploaded after registration
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setUserProfile((prev) => ({ ...prev, image: reader.result as string }));
+        };
+        reader.readAsDataURL(file);
+      }
+    } catch (err: any) {
       toast({
         variant: "destructive",
-        title: "خطأ",
-        description: "حدث خطأ أثناء تحميل الصورة",
+        title: "فشل التحميل",
+        description: err.message || "يرجى المحاولة مرة أخرى",
       });
     }
   };
@@ -1200,20 +1187,55 @@ export default function RequestFlow() {
     const q = query.trim();
     if (q.length < 2) return;
     setIsSearching(true);
+    setSearchResults([]);
     try {
-      // MapTiler Geocoding: https://api.maptiler.com/geocoding/{query}.json
+      // MapTiler Geocoding — no language=ar to maximise result coverage for Arabic queries
       const url =
         `https://api.maptiler.com/geocoding/${encodeURIComponent(q)}.json` +
         `?key=${MAPTILER_KEY}` +
         `&proximity=${BABIL_PROXIMITY}` +
         `&country=iq` +
-        `&language=ar` +
-        `&limit=15`;
+        `&fuzzyMatch=true` +
+        `&limit=10`;
 
       const res = await fetch(url);
+      if (!res.ok) throw new Error(`MapTiler HTTP ${res.status}`);
       const data = await res.json();
-      setSearchResults(Array.isArray(data.features) ? data.features : []);
+      const features = Array.isArray(data.features) ? data.features : [];
+
+      if (features.length > 0) {
+        setSearchResults(features);
+        return;
+      }
+
+      // Fallback: Nominatim (OpenStreetMap) — free, reliable, excellent Arabic support
+      const nomUrl =
+        `https://nominatim.openstreetmap.org/search` +
+        `?q=${encodeURIComponent(q)}` +
+        `&format=geojson` +
+        `&countrycodes=iq` +
+        `&limit=10` +
+        `&viewbox=43.8,31.8,45.2,33.2` +
+        `&bounded=0` +
+        `&accept-language=ar`;
+
+      const nomRes = await fetch(nomUrl, { headers: { "User-Agent": "SathaApp/1.0" } });
+      if (!nomRes.ok) throw new Error(`Nominatim HTTP ${nomRes.status}`);
+      const nomData = await nomRes.json();
+      const nomFeatures = Array.isArray(nomData.features) ? nomData.features : [];
+
+      // Normalise Nominatim features to match MapTiler GeoJSON shape
+      const normalised = nomFeatures.map((f: any) => ({
+        type: "Feature",
+        geometry: f.geometry,
+        text: f.properties?.display_name?.split(",")[0] || "موقع",
+        place_name: f.properties?.display_name || "",
+        center: [f.geometry?.coordinates?.[0], f.geometry?.coordinates?.[1]],
+      }));
+      setSearchResults(normalised);
     } catch (error) {
+      console.error("[Search] Geocoding failed:", error);
+      setSearchResults([]);
     } finally {
       setIsSearching(false);
     }
@@ -2486,7 +2508,8 @@ export default function RequestFlow() {
                 />
               )}
               <MapEventsHandler
-                onMove={(center) => {
+                onMoveCoords={(center) => {
+                  // Update lat/lng instantly during drag — no API call
                   setShouldFly(false);
                   if (step === "pickup") {
                     setFormData((prev) => ({
@@ -2494,15 +2517,21 @@ export default function RequestFlow() {
                       pickupLat: center.lat,
                       pickupLng: center.lng,
                     }));
-                    reverseGeocode(center.lat, center.lng);
                   } else {
                     setFormData((prev) => ({
                       ...prev,
                       destLat: center.lat,
                       destLng: center.lng,
                     }));
-                    reverseGeocode(center.lat, center.lng);
                   }
+                }}
+                onMoveEnd={(center) => {
+                  // Debounced reverse-geocode call when dragging stops
+                  if (geocodeDebounceRef.current) clearTimeout(geocodeDebounceRef.current);
+                  geocodeDebounceRef.current = setTimeout(
+                    () => reverseGeocode(center.lat, center.lng),
+                    400,
+                  );
                 }}
               />
             </SathaMap>
@@ -3092,7 +3121,16 @@ export default function RequestFlow() {
   );
 }
 
-function MapEventsHandler({ onMove }: { onMove: (center: { lat: number; lng: number }) => void }) {
-  const map = useMapEvents({ moveend: () => onMove(map.getCenter()) });
+function MapEventsHandler({
+  onMoveCoords,
+  onMoveEnd,
+}: {
+  onMoveCoords: (center: { lat: number; lng: number }) => void;
+  onMoveEnd: (center: { lat: number; lng: number }) => void;
+}) {
+  const map = useMapEvents({
+    move: () => onMoveCoords(map.getCenter()),     // live coords during drag
+    moveend: () => onMoveEnd(map.getCenter()),     // geocode API call after drag ends
+  });
   return null;
 }

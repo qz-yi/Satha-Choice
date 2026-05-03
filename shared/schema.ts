@@ -32,6 +32,7 @@ export const users = pgTable("users", {
   password: text("password").notNull(), 
   city: text("city").default("غير محدد"), 
   walletBalance: decimal("wallet_balance", { precision: 10, scale: 2 }).notNull().default("0.00"),
+  image: text("image"), // URL path to uploaded profile picture
 });
 
 // === 3. جدول السائقين (Drivers) ===

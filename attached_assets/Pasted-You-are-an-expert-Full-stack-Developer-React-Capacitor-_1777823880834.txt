@@ -1,0 +1,22 @@
+You are an expert Full-stack Developer (React, Capacitor, Node.js) specializing in MapLibre GL JS and state management.
+​Task: Please perform a deep-dive code review and fix the following 3 critical logic and UI issues in the Customer App:
+​1. Map Reverse Geocoding & State Transition Bug:
+​Issue A (Latency): The address bar doesn't update instantly when dragging the map.
+​Issue B (The "Sticky" UI): After the user clicks "Confirm Location" for the first point (Pickup/Orange Pin), the address bar becomes stuck. Even when moving the map to select the destination, the UI keeps showing "حدد وجهة التوصيل" (Select delivery destination) instead of fetching the new area name.
+​Requirements:
+​Ensure the reverseGeocode function is triggered correctly in both "Pickup Selection" and "Destination Selection" states.
+​Implement Debouncing on map movement to ensure smooth API calls.
+​Check the state machine/logic that toggles between pickupLocation and destinationLocation. The UI must listen for map center changes regardless of which point is being selected.
+​2. Search Bar Failure:
+​Issue: Searching for any location returns zero results.
+​Requirements:
+​Debug the geocoding search service. Verify if the API key is valid and if the query format matches the provider's requirements (e.g., Nominatim or MapTiler).
+​Ensure the search results list is correctly rendered and that clicking a result updates the map center and triggers the reverse geocoding for that point.
+​3. Profile Image Upload & Persistence Failure:
+​Issue A (Upload Error): "فشل التحميل" error appears when trying to change the profile picture on both Web and Mobile.
+​Issue B (Persistence): Images uploaded during signup disappear after the app is restarted.
+​Requirements:
+​Capacitor: Ensure Camera and Photos permissions are properly configured in AndroidManifest.xml.
+​Backend: Review the image upload controller (Node.js/Multer). Ensure it saves the file path correctly in the database.
+​Frontend Persistence: Verify that the user object in the Auth Context/Redux is updated with the new image URL from the database upon login/app-load. The app should fetch the latest profileImage field from the DB every time the user opens the app.
+​Deliverables: Fix the logic in SathaMap.tsx, the search service, and the profile update/persistence flow.

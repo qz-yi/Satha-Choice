@@ -669,6 +669,19 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
+  // Customer profile avatar — multipart upload, saves file to disk (avoids base64 body-size limits)
+  app.post("/api/users/:phone/upload-avatar", upload.single("image"), async (req, res) => {
+    try {
+      const { phone } = req.params;
+      if (!req.file) return res.status(400).json({ message: "لم يتم اختيار صورة" });
+      const imageUrl = `/uploads/avatars/${req.file.filename}`;
+      await storage.updateUser(phone, { image: imageUrl });
+      res.json({ url: imageUrl });
+    } catch (err: any) {
+      res.status(500).json({ message: "فشل في رفع صورة المستخدم: " + err.message });
+    }
+  });
+
   app.delete("/api/drivers/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);

@@ -46,4 +46,10 @@
 
     <!-- Phone - allows direct call between customer and driver -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
+
+    <!-- Camera & Photos - required for profile picture capture/selection -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
 </manifest>
