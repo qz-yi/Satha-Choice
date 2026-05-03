@@ -21,6 +21,96 @@ import { getSocket } from "@/lib/socket";
 type Driver  = any;
 type Request = any;
 
+// ── Test Notification Panel ────────────────────────────────────────────────
+function TestNotificationPanel({ toast }: { toast: any }) {
+  const [testToken, setTestToken] = useState("");
+  const [sending, setSending]     = useState(false);
+
+  const sendTest = async () => {
+    if (!testToken.trim()) {
+      toast({ variant: "destructive", title: "أدخل الـ FCM Token أولاً" });
+      return;
+    }
+    setSending(true);
+    try {
+      const res  = await fetch("/api/admin/test-notification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fcmToken: testToken.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast({ title: "✅ تم الإرسال", description: "الإشعار التجريبي أُرسل بنجاح!", className: "bg-green-600 text-white" });
+      } else {
+        toast({ variant: "destructive", title: "فشل الإرسال", description: data.message });
+      }
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "خطأ في الاتصال", description: e.message });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="bg-gradient-to-br from-purple-900 to-slate-900 rounded-[36px] p-8 text-white relative overflow-hidden shadow-2xl border border-purple-500/20">
+      <div className="absolute top-0 left-0 w-48 h-48 bg-purple-500/10 rounded-full -ml-16 -mt-16 blur-3xl" />
+      <div className="relative z-10">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="bg-purple-500/20 border border-purple-500/30 p-3 rounded-2xl">
+            <Bell className="w-6 h-6 text-purple-400" />
+          </div>
+          <div>
+            <h4 className="font-black text-lg">اختبار الإشعارات 🧪</h4>
+            <p className="text-slate-400 text-xs font-bold">أرسل إشعاراً تجريبياً لجهاز محدد عبر FCM Token</p>
+          </div>
+        </div>
+
+        {/* Self-check status */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-3 flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            <span className="text-xs font-black text-slate-300">google-services.json ✅</span>
+          </div>
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-3 flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            <span className="text-xs font-black text-slate-300">مسارات FCM جاهزة ✅</span>
+          </div>
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-3 flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-yellow-400" />
+            <span className="text-xs font-black text-slate-300">يحتاج service-account.json</span>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <textarea
+            value={testToken}
+            onChange={e => setTestToken(e.target.value)}
+            placeholder="الصق FCM Token هنا (يظهر في console.log عند تشغيل التطبيق على Android)..."
+            rows={3}
+            data-testid="input-test-fcm-token"
+            className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 px-5 text-sm font-bold text-white placeholder:text-slate-600 focus:border-purple-500 outline-none transition-colors resize-none"
+          />
+          <Button
+            onClick={sendTest}
+            disabled={sending || !testToken.trim()}
+            data-testid="button-send-test-notification"
+            className="w-full bg-gradient-to-r from-purple-600 to-purple-700 h-14 rounded-2xl font-black text-white shadow-xl shadow-purple-500/20 hover:shadow-2xl transition-all disabled:opacity-50"
+          >
+            {sending ? <Loader2 className="animate-spin w-5 h-5" /> : "🔔 إرسال إشعار تجريبي"}
+          </Button>
+        </div>
+
+        <div className="mt-4 bg-black/20 rounded-2xl p-4 text-xs text-slate-400 font-bold leading-relaxed">
+          <p className="text-purple-300 font-black mb-1">📋 كيفية الحصول على FCM Token:</p>
+          <p>1. شغّل التطبيق على Android (بعد npx cap sync && npx cap run android)</p>
+          <p>2. افتح Logcat وابحث عن: <span className="text-green-400 font-mono">🔔 [FCM] Token received:</span></p>
+          <p>3. انسخ التوكن والصقه هنا للاختبار</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const VEHICLE_COLORS: Record<string, string> = {
   "سطحة":    "#f97316",
   "سحب":     "#3b82f6",
@@ -849,6 +939,10 @@ export default function AdminDashboard() {
                     </div>
                   </div>
                 </div>
+
+                {/* ── Test Notification Panel ── */}
+                <TestNotificationPanel toast={toast} />
+
               </motion.div>
             )}
           </AnimatePresence>

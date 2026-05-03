@@ -1572,6 +1572,52 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
 
+  // ── FCM Token: Users ──────────────────────────────────────────────────────
+  app.post("/api/users/update-fcm-token", async (req, res) => {
+    try {
+      const { phone, fcmToken } = req.body;
+      if (!phone || !fcmToken) return res.status(400).json({ message: "phone و fcmToken مطلوبان" });
+      const user = await storage.getUserByPhone(phone);
+      if (!user) return res.status(404).json({ message: "المستخدم غير موجود" });
+      await storage.updateUser(phone, { fcmToken } as any);
+      console.log(`✅ [FCM] User token updated — phone: ${phone}, token: ${fcmToken.slice(0, 20)}...`);
+      res.json({ success: true, message: "تم حفظ توكن الإشعارات للمستخدم" });
+    } catch (err: any) {
+      console.error("❌ [FCM] update-user-token error:", err.message);
+      res.status(500).json({ message: "فشل في حفظ التوكن: " + err.message });
+    }
+  });
+
+  // ── FCM Token: Drivers ─────────────────────────────────────────────────────
+  app.post("/api/drivers/update-fcm-token", async (req, res) => {
+    try {
+      const { driverId, fcmToken } = req.body;
+      if (!driverId || !fcmToken) return res.status(400).json({ message: "driverId و fcmToken مطلوبان" });
+      const driver = await storage.getDriver(Number(driverId));
+      if (!driver) return res.status(404).json({ message: "السائق غير موجود" });
+      await storage.updateDriver(Number(driverId), { fcmToken } as any);
+      console.log(`✅ [FCM] Driver token updated — id: ${driverId}, token: ${fcmToken.slice(0, 20)}...`);
+      res.json({ success: true, message: "تم حفظ توكن الإشعارات للسائق" });
+    } catch (err: any) {
+      console.error("❌ [FCM] update-driver-token error:", err.message);
+      res.status(500).json({ message: "فشل في حفظ التوكن: " + err.message });
+    }
+  });
+
+  // ── Test Notification (Admin) ──────────────────────────────────────────────
+  app.post("/api/admin/test-notification", async (req, res) => {
+    try {
+      const { fcmToken, title, body } = req.body;
+      if (!fcmToken) return res.status(400).json({ message: "fcmToken مطلوب" });
+      const notifTitle = title || "🔔 اختبار الإشعارات";
+      const notifBody  = body  || "نجح الاختبار! نظام الإشعارات يعمل بشكل صحيح ✅";
+      await sendPushNotification(fcmToken, notifTitle, notifBody);
+      res.json({ success: true, message: "تم إرسال الإشعار التجريبي" });
+    } catch (err: any) {
+      res.status(500).json({ message: "فشل في إرسال الإشعار: " + err.message });
+    }
+  });
+
   const seed = async () => {
     const driversList = await storage.getDrivers();
     if (driversList.length === 0) {
