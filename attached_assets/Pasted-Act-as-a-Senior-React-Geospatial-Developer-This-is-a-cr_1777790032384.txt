@@ -1,0 +1,34 @@
+Act as a Senior React & Geospatial Developer. This is a critical task to finalize the map refactor for the "Satha" (سطحة) app. We have switched to a high-performance web-based MapTiler map, but there are four major bugs we must fix immediately. Do not reuse old logic; write clean code.
+
+Use this EXACT Style URL for all logic: `https://api.maptiler.com/maps/streets-v4/style.json?key=ZgzumFORbF7swvFCViRi`.
+
+### Your Task: Step-by-Step Fix List
+
+#### Fix 1: Broken Arabic Text on Map (URGENT)
+- **Problem:** Arabic labels on the map (streets, cities) are disjointed, broken, and unreadable in the Android APK. This is a classic MapLibre RTL issue in Capacitor.
+- **Solution:** In `SathaMap.tsx`, BEFORE instantiating the map instance, you MUST enable the MapLibre RTL plugin.
+- **Implementation:** Add this line at the top level (outside useEffect):
+  `maplibregl.setRTLTextPlugin('https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.js', () => {}, true);`
+- Ensure this JS file is cached by the service worker to work if the connection drops momentarily later.
+
+#### Fix 2: Updated Outdated Map Theme (UX)
+- **Problem:** The current map style looks outdated ("from the 90s"). The user wants a clean, minimal, modern theme like `image_8.png` (contextually, a standard, modern, clean light style).
+- **Solution:** Check the current Style URL. While the provided key works, we need a better Style ID. In MapTiler, the modern, clean style is often `basic-v2` or `dataviz-v2`. Update the style URL in the `SathaMap` initialization to use a modern variant of streets or basic (e.g., `basic-v2` or similar that matches `image_8.png` aesthetic). *[Instruction for Agent: Do not change the key, just the style ID part of the URL]*.
+
+#### Fix 3: Sticky Orange Marker Logic (State Management)
+- **Problem:** The orange Pickup marker keeps following the map center after it has been "confirmed." It should stay put.
+- **Refactor:** Implement distinct state variables in `SathaMap.tsx` to handle the flow:
+  1.  **State 1: Map Center (moving).**
+  2.  **State 2: `confirmedPickupCoord`.** Initially null.
+  3.  **Logic:**
+      - **When in "Pickup Select" mode:** Render a temporary orange marker at the Map Center (moving state).
+      - **When "Confirm Pickup" button is clicked:** Store the current Map Center coords in `confirmedPickupCoord` state.
+      - **AFTER Confirmation:** Create a static, fixed marker (using `new maplibregl.Marker()`) at `confirmedPickupCoord`. The user can now move the map, and the pickup pin must NOT follow. Introduce a new, black destination marker for the next step that *does* stay centered for now.
+
+#### Fix 4: Empty Search Bar & Babil Prioritization
+- **Problem:** The search bar UI doesn't return any results (is wired up but not processing). Also, results from Baghdad appear instead of Babil for terms like "مجسر."
+- **Wiring Audit:** Review the interaction between the top Search component and the MapLibre instance. Ensure input changes trigger an API call, and results are passed back to the UI.
+- **Implementation:** Implement MapTiler Geocoding API or another geocoder that supports `proximity`.
+- **Search Bias Logic:** For all searches, pass the Babil Governorate coordinates (`Latitude: 32.48, Longitude: 44.36`) to the `proximity` parameter of the geocoding request to ensure local results are prioritized first. If no results found in Babil, then broaden search. Fly the map to the selected result.
+
+**Techncial details:** Ensure all dependencies are updated. Use a premium, minimal pin style for markers (e.g., Orange for Pickup, Black for Drop-off). Cleanup any code related to the old offline pmtiles logic.

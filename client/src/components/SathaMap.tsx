@@ -28,9 +28,20 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-csp-worker?url";
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
-/** MapTiler Streets v4 style — high-quality online vector map with Arabic labels. */
+// ── Fix 1: RTL text plugin — fixes broken Arabic labels in Android WebView ───
+// Must be called ONCE at module level, before any Map instance is created.
+// The third argument (lazy) = true avoids blocking the first render.
+// The MapLibre type definition only declares 2 params but the runtime accepts
+// a third `lazy` boolean — cast to any to bypass the stale type signature.
+(maplibregl.setRTLTextPlugin as any)(
+  "https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.js",
+  () => {},
+  true,
+);
+
+/** Fix 2: MapTiler Basic v2 — clean, modern minimal style (replaces dated streets-v4). */
 const MAPTILER_STYLE =
-  "https://api.maptiler.com/maps/streets-v4/style.json?key=ZgzumFORbF7swvFCViRi";
+  "https://api.maptiler.com/maps/basic-v2/style.json?key=ZgzumFORbF7swvFCViRi";
 
 /** Iraq bounding box for maplibre — [lng, lat] GeoJSON order. */
 export const IRAQ_BOUNDS: LngLatBoundsLike = [

@@ -269,6 +269,10 @@ export default function RequestFlow() {
   // Bottom Sheet Smart Handle State
   const [isSheetExpanded, setIsSheetExpanded] = useState(true); // true = expanded (50%), false = minimized (15%)
 
+  // Fix 3: Confirmed pickup coordinates — set once when user taps "Confirm Pickup",
+  // then rendered as a static imperative marker that never follows the map center.
+  const [confirmedPickupCoord, setConfirmedPickupCoord] = useState<[number, number] | null>(null);
+
   // FEATURE 2: Dynamic Pricing State
   const [calculatedPrice, setCalculatedPrice] = useState<number>(0);
   const [distanceKm, setDistanceKm] = useState<number>(0);
@@ -278,6 +282,8 @@ export default function RequestFlow() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const signupFileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  // Fix 4: Debounce ref for search — prevents firing a request on every keystroke
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [formData, setFormData] = useState({
     location: "",
     destination: "",
@@ -2471,10 +2477,11 @@ export default function RequestFlow() {
                 }
                 shouldFly={shouldFly}
               />
-              {/* Persistent pickup marker — visible while user selects destination */}
-              {step === "dropoff" && formData.location && (
+              {/* Fix 3: Static confirmed pickup marker — uses confirmedPickupCoord which
+                  is frozen on confirm, so it NEVER follows the map center again. */}
+              {confirmedPickupCoord && step !== "pickup" && (
                 <Marker
-                  position={[formData.pickupLat, formData.pickupLng]}
+                  position={confirmedPickupCoord}
                   icon={getPickupPinIcon()}
                 />
               )}
@@ -2606,8 +2613,12 @@ export default function RequestFlow() {
       <footer className="fixed bottom-0 inset-x-0 bg-white p-8 pb-10 rounded-t-[45px] shadow-[0_-15px_40px_rgba(0,0,0,0.1)] z-[5000] border-t border-gray-100">
         <Button
           onClick={() => {
-            if (step === "pickup") setStep("dropoff");
-            else if (step === "dropoff") setStep("vehicle");
+            if (step === "pickup") {
+              // Fix 3: Freeze the pickup coords into confirmedPickupCoord before
+              // advancing to dropoff — the marker will never follow the map again.
+              setConfirmedPickupCoord([formData.pickupLat, formData.pickupLng]);
+              setStep("dropoff");
+            } else if (step === "dropoff") setStep("vehicle");
             else handleFinalOrder();
           }}
           disabled={step === "vehicle" && !formData.vehicleType}
@@ -2625,6 +2636,8 @@ export default function RequestFlow() {
               if (showPriceConfirmation) {
                 setShowPriceConfirmation(false);
               } else {
+                // Fix 3: reset confirmed pickup when going back to pickup step
+                if (step === "dropoff") setConfirmedPickupCoord(null);
                 setStep(step === "dropoff" ? "pickup" : "dropoff");
               }
             }}
@@ -2661,7 +2674,12 @@ export default function RequestFlow() {
                 autoFocus
                 placeholder="ادخل اسم المنطقة..."
                 className="bg-transparent border-none outline-none w-full font-bold text-right"
-                onChange={(e) => searchLocation(e.target.value)}
+                onChange={(e) => {
+                  // Fix 4: Debounce — wait 350ms after user stops typing before firing
+                  const val = e.target.value;
+                  if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+                  searchDebounceRef.current = setTimeout(() => searchLocation(val), 350);
+                }}
               />
               {isSearching && (
                 <Loader2 className="animate-spin text-orange-500" />
