@@ -8,3 +8,4 @@ vite.config.ts.*
 .env.*
 *.sqlite.expo/
 .expo/
+server/config/*.json

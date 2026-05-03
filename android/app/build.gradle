@@ -12,16 +12,9 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
-             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
 
             // ─── PMTiles: MUST NOT be compressed ──────────────────────────────
-            // PMTiles is a random-access binary format that requires HTTP Range
-            // requests to fetch individual map tiles. Android's AAPT tool
-            // compresses unrecognised extensions by default; once compressed the
-            // byte offsets inside the archive are invalid and ALL Range reads
-            // silently return empty data → blank/white map canvas.
-            // This single line keeps the .pmtiles file as a raw, seekable stream.
             noCompress 'pmtiles'
         }
     }
@@ -49,10 +42,21 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+
+    // ─── FIREBASE SDK (التعديلات الجديدة) ────────────────────────────────
+    // استيراد منصة Firebase BoM لضمان توافق النسخ
+    implementation platform('com.google.firebase:firebase-bom:34.12.0')
+    
+    // إضافة مكتبة التحليلات (التي طلبتها)
+    implementation 'com.google.firebase:firebase-analytics'
+    
+    // إضافة مكتبة الإشعارات (ضرورية جداً لتطبيق سطحة)
+    implementation 'com.google.firebase:firebase-messaging'
 }
 
 apply from: 'capacitor.build.gradle'
 
+// هذا الجزء هو الذي يفعل Plugin جوجل عند وجود ملف google-services.json
 try {
     def servicesJSON = file('google-services.json')
     if (servicesJSON.text) {
