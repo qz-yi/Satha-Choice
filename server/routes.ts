@@ -13,6 +13,7 @@ import NodeGeocoder from 'node-geocoder';
 import { calculateDynamicFare, calculateSimpleFare, getSurgeMultiplier, getVehicleConfig } from './services/PricingService';
 import axios from 'axios';
 import * as PricingConfig from './services/PricingConfig';
+import { sendPushNotification, sendPushToMany } from './notificationService';
 
 // FEATURE 2: Google Polyline decoder
 function decodeGooglePolyline(encoded: string): [number, number][] {
@@ -291,24 +292,49 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
     }
   });
   
-  // FEATURE 1: Google Maps Distance Matrix API Proxy
+  // Distance Matrix — uses MapTiler Directions API (MAPTILER_API_KEY secret)
   app.post("/api/distance-matrix", async (req, res) => {
     try {
       const { origin, destination } = req.body;
-      
-      const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-      
-      if (!apiKey) {
+      const apiKey = process.env.MAPTILER_API_KEY;
+
+      if (!apiKey || !origin || !destination) {
         return res.status(200).json({ status: 'FALLBACK', message: 'Using Haversine calculation' });
       }
-      
-      const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${destination}&mode=driving&departure_time=now&traffic_model=best_guess&key=${apiKey}`;
-      
+
+      // origin/destination arrive as "lat,lng" strings — MapTiler wants "lng,lat"
+      const [oLat, oLng] = String(origin).split(',').map(Number);
+      const [dLat, dLng] = String(destination).split(',').map(Number);
+
+      if (isNaN(oLat) || isNaN(oLng) || isNaN(dLat) || isNaN(dLng)) {
+        return res.status(200).json({ status: 'FALLBACK', message: 'Invalid coordinates' });
+      }
+
+      const url =
+        `https://api.maptiler.com/directions/v2/directions/driving/` +
+        `${oLng},${oLat};${dLng},${dLat}` +
+        `?key=${apiKey}&steps=false&geometries=geojson`;
+
       const response = await axios.get(url);
-      
-      res.json(response.data);
+      const route = response.data?.routes?.[0];
+
+      if (!route) {
+        return res.status(200).json({ status: 'FALLBACK', message: 'No route found' });
+      }
+
+      // Normalise to Google Distance Matrix response shape so the frontend works unchanged
+      res.json({
+        status: 'OK',
+        rows: [{
+          elements: [{
+            status: 'OK',
+            distance: { value: route.distance, text: `${(route.distance / 1000).toFixed(1)} كم` },
+            duration: { value: route.duration, text: `${Math.round(route.duration / 60)} دقيقة` },
+          }]
+        }]
+      });
     } catch (error: any) {
-      res.status(500).json({ status: 'ERROR', message: error.message });
+      res.status(200).json({ status: 'FALLBACK', message: error.message });
     }
   });
   
@@ -840,6 +866,10 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       matchingDrivers.forEach(driver => {
         io.to(`driver_${driver.id}`).emit("new_request_available", request);
       });
+
+      // Push notifications to available matching drivers
+      const driverTokens = matchingDrivers.map(d => (d as any).fcmToken).filter(Boolean);
+      sendPushToMany(driverTokens, 'طلب جديد متوفر', 'يوجد طلب سطحة جديد بالقرب منك').catch(() => {});
       
       // STEP 5: City broadcast (admin tracking only)
       io.to(`city_${detectedCity}`).emit("new_request_in_city", {
@@ -961,6 +991,15 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       // [تصحيح] إشعار لوحة تحكم المدير فوراً لتحديث القائمة دون Refresh
       io.emit("request_updated", { id: requestId, ...payload });
 
+      // Push notification to customer: driver accepted
+      const acceptedRequest = await storage.getRequest(requestId);
+      if (acceptedRequest?.customerPhone) {
+        const customer = await storage.getUserByPhone(acceptedRequest.customerPhone);
+        if (customer?.fcmToken) {
+          sendPushNotification(customer.fcmToken, 'تم قبول طلبك', 'السائق في طريقه إليك').catch(() => {});
+        }
+      }
+
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "حدث خطأ أثناء قبول الطلب" });
@@ -1039,6 +1078,17 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       io.to(`order_${id}`).emit("status_changed", { status });
       io.emit(`order_status_${id}`, { status });
       io.emit("request_updated", { id, status });
+
+      // Push notification when driver arrives at pickup location
+      if (status === 'arrived') {
+        const arrivedRequest = await storage.getRequest(id);
+        if (arrivedRequest?.customerPhone) {
+          const customer = await storage.getUserByPhone(arrivedRequest.customerPhone);
+          if (customer?.fcmToken) {
+            sendPushNotification(customer.fcmToken, 'وصل السائق', 'السائق الآن في موقع الانطلاق').catch(() => {});
+          }
+        }
+      }
 
       res.json(updated);
     } catch (err: any) {
@@ -1330,6 +1380,12 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
         
         // إرسال معلومات الزبون للسائق
         io.to(`driver_${driverId}`).emit("customer_info", payload.customerInfo);
+
+        // Push notification to driver: admin assigned order
+        const assignedDriver = await storage.getDriver(driverId);
+        if (assignedDriver?.fcmToken) {
+          sendPushNotification(assignedDriver.fcmToken, 'تم تعيين طلب لك', 'قامت الإدارة بتحويل طلب جديد إليك').catch(() => {});
+        }
       }
 
       // إزالة الطلب من قوائم السائقين الآخرين

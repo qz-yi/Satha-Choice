@@ -26,6 +26,11 @@ const config: CapacitorConfig = {
       requestAlwaysAccess: true,
     },
   },
+  android: {
+    allowMixedContent: true,
+    webContentsDebuggingEnabled: false,
+    initialFocus: true,
+  },
 };
 
 export default config;

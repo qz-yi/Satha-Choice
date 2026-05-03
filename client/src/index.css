@@ -75,6 +75,11 @@
 
   html {
     direction: rtl;
+    /* Prevent Android/iOS WebView from scaling text based on system font size setting */
+    -webkit-text-size-adjust: 100%;
+    -moz-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+    text-size-adjust: 100%;
     /* dvh (dynamic viewport height) adapts when the Android soft keyboard
        appears/disappears — unlike vh which is fixed to the initial viewport. */
     height: 100dvh;
@@ -85,6 +90,11 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-cairo), ui-sans-serif, system-ui, sans-serif;
+    /* Prevent Android WebView text zoom */
+    -webkit-text-size-adjust: 100%;
+    -moz-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+    text-size-adjust: 100%;
     /* Capacitor safe-area: keep content below device status bar */
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);

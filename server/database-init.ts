@@ -63,6 +63,20 @@ export async function ensureDatabaseSchema() {
     `);
     console.log('✅ [DATABASE INIT] users.image column ready');
 
+    // Add fcm_token column to users table if missing (push notifications)
+    console.log('[DATABASE INIT] Checking users.fcm_token column...');
+    await client.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT;
+    `);
+    console.log('✅ [DATABASE INIT] users.fcm_token column ready');
+
+    // Add fcm_token column to drivers table if missing (push notifications)
+    console.log('[DATABASE INIT] Checking drivers.fcm_token column...');
+    await client.query(`
+      ALTER TABLE drivers ADD COLUMN IF NOT EXISTS fcm_token TEXT;
+    `);
+    console.log('✅ [DATABASE INIT] drivers.fcm_token column ready');
+
     console.log('✅ [DATABASE INIT] Auto-migration complete!\n');
     
   } catch (error: any) {

@@ -1251,12 +1251,21 @@ export default function RequestFlow() {
     );
   };
 
-  const reverseGeocode = async (lat: number, lng: number) => {
+  const reverseGeocodeAbortRef = React.useRef<AbortController | null>(null);
+
+  const reverseGeocode = async (lat: number, lng: number, currentStep?: "pickup" | "dropoff") => {
+    // Cancel any in-flight request to prevent race conditions
+    if (reverseGeocodeAbortRef.current) {
+      reverseGeocodeAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    reverseGeocodeAbortRef.current = controller;
+
     try {
-      // MapTiler Reverse Geocoding — returns Arabic names when language=ar
       const MAPTILER_KEY_REV = "ZgzumFORbF7swvFCViRi";
       const res = await fetch(
         `https://api.maptiler.com/geocoding/${lng},${lat}.json?key=${MAPTILER_KEY_REV}&language=ar`,
+        { signal: controller.signal },
       );
       const data = await res.json();
       const feature = Array.isArray(data.features) && data.features[0];
@@ -1266,15 +1275,18 @@ export default function RequestFlow() {
         );
         const detectedCity = regionCtx?.text || "بابل";
         const locationName = extractArabicLabel(feature);
+        // Use currentStep param when provided to avoid stale closure bugs
+        const resolvedStep = currentStep ?? step;
         setFormData((prev) => ({
           ...prev,
           city: normalizeCity(detectedCity),
-          ...(step === "pickup"
+          ...(resolvedStep === "pickup"
             ? { location: locationName }
             : { destination: locationName }),
         }));
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === "AbortError") return; // Cancelled — ignore silently
     }
   };
 
@@ -1299,10 +1311,10 @@ export default function RequestFlow() {
             pickupLat: latitude,
             pickupLng: longitude,
           }));
-          reverseGeocode(latitude, longitude);
+          reverseGeocode(latitude, longitude, "pickup");
         } else {
           setFormData((p) => ({ ...p, destLat: latitude, destLng: longitude }));
-          reverseGeocode(latitude, longitude);
+          reverseGeocode(latitude, longitude, "dropoff");
         }
 
         // Trigger fly animation AFTER state update
@@ -2527,9 +2539,11 @@ export default function RequestFlow() {
                 }}
                 onMoveEnd={(center) => {
                   // Debounced reverse-geocode call when dragging stops
+                  // Pass current step explicitly to avoid stale closure
+                  const currentStep = step;
                   if (geocodeDebounceRef.current) clearTimeout(geocodeDebounceRef.current);
                   geocodeDebounceRef.current = setTimeout(
-                    () => reverseGeocode(center.lat, center.lng),
+                    () => reverseGeocode(center.lat, center.lng, currentStep),
                     400,
                   );
                 }}

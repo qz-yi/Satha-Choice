@@ -33,6 +33,7 @@ export const users = pgTable("users", {
   city: text("city").default("غير محدد"), 
   walletBalance: decimal("wallet_balance", { precision: 10, scale: 2 }).notNull().default("0.00"),
   image: text("image"), // URL path to uploaded profile picture
+  fcmToken: text("fcm_token"), // Firebase Cloud Messaging token for push notifications
 });
 
 // === 3. جدول السائقين (Drivers) ===
@@ -50,7 +51,8 @@ export const drivers = pgTable("drivers", {
   createdAt: timestamp("created_at").defaultNow(),
   lastLat: text("last_lat"),
   lastLng: text("last_lng"),
-  avatarUrl: text("avatar_url"), 
+  avatarUrl: text("avatar_url"),
+  fcmToken: text("fcm_token"), // Firebase Cloud Messaging token for push notifications
 });
 
 // === 4. جدول الطلبات (Requests) ===
