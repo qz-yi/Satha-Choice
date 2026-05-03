@@ -1251,7 +1251,7 @@ export default function RequestFlow() {
     );
   };
 
-  const reverseGeocodeAbortRef = React.useRef<AbortController | null>(null);
+  const reverseGeocodeAbortRef = useRef<AbortController | null>(null);
 
   const reverseGeocode = async (lat: number, lng: number, currentStep?: "pickup" | "dropoff") => {
     // Cancel any in-flight request to prevent race conditions
