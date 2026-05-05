@@ -6,7 +6,7 @@ import {
   UserPlus, AlertCircle, Phone, MapPin, Wallet, TrendingUp,
   Coins, Plus, Minus, ExternalLink, Loader2, Clock,
   DollarSign, BarChart3, ArrowUpRight, Bell, LogOut,
-  Star, Zap, Navigation
+  Star, Zap, Navigation, RotateCcw
 } from "lucide-react";
 import AdminPricingPanel from "./admin-pricing-panel";
 import { Marker, Popup, SathaMap, L } from "@/components/SathaMap";
@@ -233,6 +233,11 @@ export default function AdminDashboard() {
     enabled:  activeTab === "finance",
   });
 
+  const { data: earningsData, refetch: refetchEarnings } = useQuery<{ total: number }>({
+    queryKey: ["/api/admin/earnings"],
+    refetchInterval: 30_000,
+  });
+
   const { data: systemSettings } = useQuery<any>({
     queryKey: ["/api/admin/settings"],
     enabled:  activeTab === "finance",
@@ -250,15 +255,17 @@ export default function AdminDashboard() {
     socket.on("request_deleted",         () => refetchRequests());
     socket.on("new_driver_registration", () => refetchDrivers());
     socket.on("order_accepted",          () => { refetchRequests(); refetchDrivers(); });
-    socket.on("order_completed",         () => { refetchRequests(); refetchDrivers(); });
+    socket.on("order_completed",         () => { refetchRequests(); refetchDrivers(); refetchEarnings(); });
+    socket.on("earnings_reset",          () => refetchEarnings());
     return () => {
       socket.off("request_updated");
       socket.off("request_deleted");
       socket.off("new_driver_registration");
       socket.off("order_accepted");
       socket.off("order_completed");
+      socket.off("earnings_reset");
     };
-  }, [refetchRequests, refetchDrivers, selectedOrderId]);
+  }, [refetchRequests, refetchDrivers, selectedOrderId, refetchEarnings]);
 
   useEffect(() => {
     socket.on("driver_location_broadcast", (d: { driverId: number; lat: number; lng: number }) => {
@@ -300,11 +307,7 @@ export default function AdminDashboard() {
     (d.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
     (d.phone || "").includes(searchQuery)
   );
-  const systemEarnings    = useMemo(() =>
-    allTransactions.filter(t => t.type === "fee" || t.type === "commission")
-      .reduce((s, t) => s + Math.abs(Number(t.amount)), 0),
-    [allTransactions]
-  );
+  const systemEarnings = earningsData?.total ?? 0;
 
   // ── Mutations ─────────────────────────────────────────────────────────────
   const adjustCustomerWallet = useMutation({
@@ -409,6 +412,18 @@ export default function AdminDashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/drivers"] });
       toast({ title: "تم حذف الطلب بدون عمولة", className: "bg-green-600 text-white" });
     },
+  });
+
+  const resetEarnings = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/reset-earnings", {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/earnings"] });
+      toast({ title: "✅ تم تصفير الأرباح", description: "تمت إعادة تعيين إجمالي الأرباح إلى صفر", className: "bg-green-600 text-white" });
+    },
+    onError: (e: any) => toast({ variant: "destructive", title: "فشل التصفير", description: e.message }),
   });
 
   const switchTab = (tab: string) => { setActiveTab(tab); setSidebarOpen(false); };
@@ -926,16 +941,37 @@ export default function AdminDashboard() {
                         </div>
                         <div>
                           <h4 className="font-black text-lg text-slate-900">إجمالي الأرباح</h4>
-                          <p className="text-gray-400 text-xs font-bold">مجموع العمولات المحصلة</p>
+                          <p className="text-gray-400 text-xs font-bold">مجموع العمولات غير المسحوبة (admin_commission)</p>
                         </div>
                       </div>
                       <div className="flex items-baseline gap-2 mb-4">
-                        <span className="text-5xl font-black text-slate-900">{systemEarnings.toLocaleString()}</span>
+                        <span className="text-5xl font-black text-slate-900" data-testid="text-total-earnings">
+                          {Number(systemEarnings).toLocaleString()}
+                        </span>
                         <span className="text-gray-400 font-bold">د.ع</span>
                       </div>
                     </div>
-                    <div className="bg-gray-50 rounded-2xl p-4 text-xs font-bold text-gray-500">
-                      يتم تحديث هذه الأرقام تلقائياً عند إتمام كل رحلة جديدة
+
+                    {/* Reset Earnings Button */}
+                    <div className="space-y-3">
+                      <div className="bg-gray-50 rounded-2xl p-3 text-xs font-bold text-gray-500">
+                        يتضمن عمولات الرحلات المكتملة فقط (غير المصفّاة)
+                      </div>
+                      <Button
+                        data-testid="button-reset-earnings"
+                        disabled={resetEarnings.isPending || Number(systemEarnings) === 0}
+                        onClick={() => {
+                          if (window.confirm("هل أنت متأكد من تصفير الأرباح؟\n\nسيتم تعيين إجمالي الأرباح إلى 0 وتسجيل جميع الأرباح الحالية كمسحوبة.")) {
+                            resetEarnings.mutate();
+                          }
+                        }}
+                        className="w-full bg-red-600 hover:bg-red-700 text-white h-12 rounded-2xl font-black gap-2 transition-all disabled:opacity-40"
+                      >
+                        {resetEarnings.isPending
+                          ? <Loader2 className="animate-spin w-4 h-4" />
+                          : <><RotateCcw className="w-4 h-4" /> تصفير الأرباح (سحب)</>
+                        }
+                      </Button>
                     </div>
                   </div>
                 </div>

@@ -78,6 +78,9 @@ export const requests = pgTable("requests", {
   rating: integer("rating"),
   paymentMethod: text("payment_method"),
   isRefunded: boolean("is_refunded").default(sql`false`),
+  // ── حقول نظام الأرباح ──
+  adminCommission: decimal("admin_commission", { precision: 10, scale: 2 }).default("0.00"),
+  isWithdrawn: boolean("is_withdrawn").default(sql`false`),
 });
 
 // === 5. جدول العمليات المالية (Transactions) ===

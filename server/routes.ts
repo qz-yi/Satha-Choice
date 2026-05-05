@@ -2,7 +2,9 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { z } from "zod";
-import { insertDriverSchema, loginSchema, insertUserSchema, insertRequestSchema } from "@shared/schema"; 
+import { insertDriverSchema, loginSchema, insertUserSchema, insertRequestSchema, requests } from "@shared/schema"; 
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -1037,6 +1039,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const tripPrice = parseFloat(request.price || "0");
       const fee = Math.round((tripPrice * commissionPercent) / 100);
 
+      // حفظ admin_commission في جدول الطلبات قبل تغيير الحالة
+      await db.update(requests).set({ adminCommission: fee.toFixed(2), isWithdrawn: false }).where(eq(requests.id, requestId));
       await storage.updateRequestStatus(requestId, "completed");
 
       const currentBalance = parseFloat(driver.walletBalance || "0");
@@ -1520,6 +1524,8 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const tripPrice = parseFloat(request.price || "0");
       const fee = Math.round((tripPrice * commissionPercent) / 100);
 
+      // حفظ admin_commission في جدول الطلبات
+      await db.update(requests).set({ adminCommission: fee.toFixed(2), isWithdrawn: false }).where(eq(requests.id, requestId));
       // Update order status to completed
       await storage.updateRequestStatus(requestId, "completed");
 
@@ -1569,6 +1575,38 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       });
     } catch (err: any) {
       res.status(500).json({ message: "فشل في إتمام الطلب: " + err.message });
+    }
+  });
+
+  // ── Admin Earnings ────────────────────────────────────────────────────────
+  app.get("/api/admin/earnings", async (_req, res) => {
+    try {
+      const total = await storage.getAdminEarnings();
+      res.json({ total });
+    } catch (err: any) {
+      res.status(500).json({ message: "فشل في جلب الأرباح: " + err.message });
+    }
+  });
+
+  app.post("/api/admin/reset-earnings", async (_req, res) => {
+    try {
+      await storage.resetAdminEarnings();
+      io.emit("earnings_reset");
+      res.json({ success: true, message: "تم تصفير الأرباح بنجاح" });
+    } catch (err: any) {
+      res.status(500).json({ message: "فشل في تصفير الأرباح: " + err.message });
+    }
+  });
+
+  // ── Admin Transactions (legacy) ───────────────────────────────────────────
+  app.get("/api/admin/transactions", async (_req, res) => {
+    try {
+      const { db: rawDb } = await import("./db");
+      const { transactions: txTable } = await import("@shared/schema");
+      const txs = await rawDb.select().from(txTable).orderBy();
+      res.json(txs);
+    } catch (err: any) {
+      res.status(500).json({ message: "فشل في جلب المعاملات" });
     }
   });
 

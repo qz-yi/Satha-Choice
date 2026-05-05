@@ -17,7 +17,7 @@ import {
   type Message,
   type InsertMessage,
 } from "@shared/schema";
-import { eq, desc, sql, and } from "drizzle-orm";
+import { eq, desc, sql, and, sum } from "drizzle-orm";
 
 export interface IStorage {
   // --- الزبائن (Users) ---
@@ -60,6 +60,10 @@ export interface IStorage {
   // --- إعدادات النظام ---
   getSettings(): Promise<Setting>;
   updateCommission(amount: number): Promise<Setting>;
+
+  // --- أرباح الإدارة ---
+  getAdminEarnings(): Promise<number>;
+  resetAdminEarnings(): Promise<void>;
 
   // --- نظام الدردشة ---
   createMessage(message: InsertMessage): Promise<Message>;
@@ -384,6 +388,22 @@ export class DatabaseStorage implements IStorage {
       .where(eq(settings.id, currentSettings.id))
       .returning();
     return updated;
+  }
+
+  // --- أرباح الإدارة ---
+  async getAdminEarnings(): Promise<number> {
+    const result = await db
+      .select({ total: sum(requests.adminCommission) })
+      .from(requests)
+      .where(and(eq(requests.status, "completed"), eq(requests.isWithdrawn, false)));
+    return Number(result[0]?.total ?? 0);
+  }
+
+  async resetAdminEarnings(): Promise<void> {
+    await db
+      .update(requests)
+      .set({ isWithdrawn: true })
+      .where(and(eq(requests.status, "completed"), eq(requests.isWithdrawn, false)));
   }
 
   // === التعديل الجوهري: تحسين دقة قبول الطلب ===

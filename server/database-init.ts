@@ -77,6 +77,20 @@ export async function ensureDatabaseSchema() {
     `);
     console.log('✅ [DATABASE INIT] drivers.fcm_token column ready');
 
+    // Add admin_commission column to requests table (earnings tracking)
+    console.log('[DATABASE INIT] Checking requests.admin_commission column...');
+    await client.query(`
+      ALTER TABLE requests ADD COLUMN IF NOT EXISTS admin_commission DECIMAL(10,2) DEFAULT 0.00;
+    `);
+    console.log('✅ [DATABASE INIT] requests.admin_commission column ready');
+
+    // Add is_withdrawn column to requests table (reset earnings tracking)
+    console.log('[DATABASE INIT] Checking requests.is_withdrawn column...');
+    await client.query(`
+      ALTER TABLE requests ADD COLUMN IF NOT EXISTS is_withdrawn BOOLEAN DEFAULT false;
+    `);
+    console.log('✅ [DATABASE INIT] requests.is_withdrawn column ready');
+
     console.log('✅ [DATABASE INIT] Auto-migration complete!\n');
     
   } catch (error: any) {
