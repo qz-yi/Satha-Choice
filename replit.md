@@ -68,9 +68,14 @@ android/       Capacitor native Android project
 - CORS allows `*.replit.dev` and `*.replit.app` origins automatically
 - The `script/build.ts` build script copies the PMTiles map file — this is no longer needed (tiles are served online via MapTiler)
 - `capacitor.config.ts` uses `androidScheme: 'http'` — required for Android WebView range requests
+- Use `import.meta.env.VITE_*` (not `process.env.VITE_*`) in all client code — Vite replaces these at build time
+- Commission math: `fee = Math.round((price × commissionPercent) / 100)` — `commissionAmount` in DB is a percentage (0–100), not a fixed IQD amount
+- `adminCommission` + `status=completed` are written atomically in one SQL UPDATE to prevent race conditions
+- Firebase FCM requires `server/config/*.json` service-account file — silently no-ops if missing
 
 ## Pointers
 
 - Drizzle config: `drizzle.config.ts`
 - Capacitor config: `capacitor.config.ts`
-- Deployment guide: `DEPLOYMENT_GUIDE.md`
+- Hetzner deployment guide: `HETZNER_DEPLOY.md`
+- Deployment guide (legacy): `DEPLOYMENT_GUIDE.md`

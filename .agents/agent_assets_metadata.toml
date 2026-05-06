@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "lhiaIWej97hyGgYcfqThA"
+uri = "file://HETZNER_DEPLOY.md"
+type = "text"
+title = "Hetzner Deployment Guide"

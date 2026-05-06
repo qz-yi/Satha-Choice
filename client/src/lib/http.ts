@@ -15,7 +15,7 @@ import { Capacitor } from "@capacitor/core";
 function resolveBaseUrl(): string {
   // للاندرويد والايفون: نستخدم process.env حصراً
   if (Capacitor.isNativePlatform()) {
-    const url = process.env.VITE_API_URL || "https://satha-iq.com";
+    const url = import.meta.env.VITE_API_URL || "https://satha-iq.com";
     
     if (!url) {
       console.warn("[HTTP] Native platform detected but URL is not set.");

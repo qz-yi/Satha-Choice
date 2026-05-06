@@ -4,10 +4,10 @@
  */
 
 // Always use the current origin so the APK works regardless of port
-export const API_URL = process.env.VITE_API_URL ||
+export const API_URL = import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' ? window.location.origin : '');
 
-export const SOCKET_URL = process.env.VITE_SOCKET_URL || API_URL;
+export const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || API_URL;
 
 /**
  * Make an API request with automatic base URL handling
