@@ -22,6 +22,7 @@ export default defineConfig({
     hmr: {
       overlay: false,
     },
+    allowedHosts: true,
     fs: {
       strict: true,
       deny: ["**/.*"],

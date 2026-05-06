@@ -29,7 +29,12 @@ app.use(
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
       // تحديث: السماح لروابط Replit تلقائياً لضمان عمل التطبيق أثناء التطوير
-      if (ALLOWED_ORIGINS.includes(origin) || origin.includes("replit.dev")) {
+      if (
+        ALLOWED_ORIGINS.includes(origin) ||
+        origin.includes("replit.dev") ||
+        origin.includes("replit.app") ||
+        origin.includes("pike.replit.dev")
+      ) {
         return callback(null, true);
       }
       if (/^https?:\/\/([a-z0-9-]+\.)?satha-iq\.com$/.test(origin)) {
