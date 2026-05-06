@@ -774,7 +774,22 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
   app.post("/api/requests", async (req, res) => {
     try {
-      const { status, ...bodyData } = req.body; 
+      const { status, ...bodyData } = req.body;
+
+      // ── التحقق من الإحداثيات والسعر قبل أي معالجة ──────────────────────────
+      const hasPickup = bodyData.pickupLat && bodyData.pickupLng;
+      const hasDest   = bodyData.destLat   && bodyData.destLng;
+      if (!hasPickup || !hasDest) {
+        return res.status(400).json({
+          message: "لم يتم تحديد موقع الانطلاق أو الوجهة. يرجى تحديد الموقع على الخريطة.",
+        });
+      }
+      const incomingPrice = parseFloat(bodyData.price || "0");
+      if (!incomingPrice || incomingPrice <= 0) {
+        return res.status(400).json({
+          message: "السعر غير محدد بعد. يرجى الانتظار حتى يتم احتساب السعر قبل تقديم الطلب.",
+        });
+      }
 
       let detectedCity = bodyData.city;
       if (bodyData.pickupLat && bodyData.pickupLng) {
@@ -871,7 +886,7 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
 
       // Push notifications to available matching drivers
       const driverTokens = matchingDrivers.map(d => (d as any).fcmToken).filter(Boolean);
-      sendPushToMany(driverTokens, 'طلب جديد متوفر', 'يوجد طلب سطحة جديد بالقرب منك').catch(() => {});
+      sendPushToMany(driverTokens, 'طلب سطحة جديد! 🚛', 'هناك طلب قريب منك، اضغط للتفاصيل.').catch(() => {});
       
       // STEP 5: City broadcast (admin tracking only)
       io.to(`city_${detectedCity}`).emit("new_request_in_city", {
@@ -1039,9 +1054,10 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const tripPrice = parseFloat(request.price || "0");
       const fee = Math.round((tripPrice * commissionPercent) / 100);
 
-      // حفظ admin_commission في جدول الطلبات قبل تغيير الحالة
-      await db.update(requests).set({ adminCommission: fee.toFixed(2), isWithdrawn: false }).where(eq(requests.id, requestId));
-      await storage.updateRequestStatus(requestId, "completed");
+      // حفظ admin_commission وتغيير الحالة في تحديث واحد ذري
+      await db.update(requests)
+        .set({ adminCommission: fee.toFixed(2), isWithdrawn: false, status: "completed" })
+        .where(eq(requests.id, requestId));
 
       const currentBalance = parseFloat(driver.walletBalance || "0");
       const newBalance = (currentBalance - fee).toFixed(2);
@@ -1524,10 +1540,10 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       const tripPrice = parseFloat(request.price || "0");
       const fee = Math.round((tripPrice * commissionPercent) / 100);
 
-      // حفظ admin_commission في جدول الطلبات
-      await db.update(requests).set({ adminCommission: fee.toFixed(2), isWithdrawn: false }).where(eq(requests.id, requestId));
-      // Update order status to completed
-      await storage.updateRequestStatus(requestId, "completed");
+      // حفظ admin_commission وتغيير الحالة في تحديث واحد ذري
+      await db.update(requests)
+        .set({ adminCommission: fee.toFixed(2), isWithdrawn: false, status: "completed" })
+        .where(eq(requests.id, requestId));
 
       // Deduct commission from driver
       const currentBalance = parseFloat(driver.walletBalance || "0");

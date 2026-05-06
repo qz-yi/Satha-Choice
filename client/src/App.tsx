@@ -83,6 +83,12 @@ async function registerPushNotifications() {
 
     PushNotifications.addListener("pushNotificationReceived", (notification) => {
       console.log("📩 [FCM] Notification received (foreground):", notification);
+      // عرض تنبيه مرئي للسائق عندما يكون التطبيق مفتوحاً
+      const title = notification.title || "إشعار جديد";
+      const body  = notification.body  || "";
+      if (title || body) {
+        alert(`${title}${body ? "\n" + body : ""}`);
+      }
     });
 
     PushNotifications.addListener("pushNotificationActionPerformed", (action) => {

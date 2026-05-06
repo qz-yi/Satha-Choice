@@ -33,7 +33,15 @@ export async function sendPushNotification(token: string, title: string, body: s
   const messaging = initFirebase();
   if (!messaging) return;
   try {
-    await messaging.send({ notification: { title, body }, token });
+    await messaging.send({
+      notification: { title, body },
+      android: {
+        priority: "high",
+        notification: { sound: "default", channelId: "default", priority: "high" },
+      },
+      apns: { payload: { aps: { sound: "default", contentAvailable: true } } },
+      token,
+    });
     console.log(`🔔 [PUSH] Sent: "${title}" → ${token.slice(0, 20)}...`);
   } catch (err: any) {
     console.warn('⚠️ [PUSH] Send failed:', err.message);

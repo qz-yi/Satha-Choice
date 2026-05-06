@@ -1432,7 +1432,7 @@ export default function RequestFlow() {
     }
   };
 
-  // CRITICAL FIX #2: Professional Dynamic Pricing with Loading State
+  // CRITICAL FIX #2: Professional Dynamic Pricing with Loading State + 1.5s Debounce
   useEffect(() => {
     if (
       formData.vehicleType &&
@@ -1441,10 +1441,11 @@ export default function RequestFlow() {
       formData.destLat &&
       formData.destLng
     ) {
+      // عرض حالة التحميل فوراً — لا نبدأ الحساب الفعلي إلا بعد 1.5 ثانية
+      setIsPriceCalculating(true);
+      setCalculatedPrice(0);
 
       const calculateFare = async () => {
-        setIsPriceCalculating(true); // CRITICAL: Show loading
-        setCalculatedPrice(0); // Reset price while calculating
 
         try {
           // Call backend to get traffic-aware pricing
@@ -1565,7 +1566,9 @@ export default function RequestFlow() {
         }
       };
 
-      calculateFare();
+      // تأخير 1.5 ثانية لمنع الحسابات المتكررة أثناء تحريك الخريطة
+      const debounceTimer = setTimeout(() => { calculateFare(); }, 1500);
+      return () => clearTimeout(debounceTimer);
     } else {
       // Reset if incomplete data
       setCalculatedPrice(0);
@@ -2664,13 +2667,18 @@ export default function RequestFlow() {
             } else if (step === "dropoff") setStep("vehicle");
             else handleFinalOrder();
           }}
-          disabled={step === "vehicle" && !formData.vehicleType}
+          disabled={
+            (step === "vehicle" && !formData.vehicleType) ||
+            (step === "vehicle" && isPriceCalculating)
+          }
           className={`w-full h-18 rounded-[28px] font-black text-xl transition-all shadow-xl ${step === "vehicle" ? "bg-orange-500 text-white" : "bg-black text-white"}`}
         >
           {step === "vehicle"
-            ? showPriceConfirmation
-              ? `تأكيد الطلب - ${calculatedPrice?.toLocaleString()} د.ع`
-              : "متابعة"
+            ? isPriceCalculating
+              ? "جاري احتساب السعر..."
+              : showPriceConfirmation
+                ? `تأكيد الطلب - ${calculatedPrice?.toLocaleString()} د.ع`
+                : "متابعة"
             : "تأكيد الموقع"}
         </Button>
         {step !== "pickup" && (
