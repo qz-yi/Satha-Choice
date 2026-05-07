@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, memo, useRef } from "react";
+import { flushPendingFcmToken } from "@/App";
 import { API_BASE } from "@/lib/http";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -974,6 +975,8 @@ export default function RequestFlow() {
         localStorage.setItem("sat7a_session_active", "true");
         localStorage.setItem("sat7a_role", "customer");
       }
+      // إرسال أي توكن إشعارات مؤجّل كان محفوظاً قبل التسجيل
+      await flushPendingFcmToken("user", completeProfile.phone);
       setIsLoggedIn(true);
     } catch (err: any) {
       toast({ variant: "destructive", title: "خطأ", description: err.message });
@@ -1011,6 +1014,8 @@ export default function RequestFlow() {
         localStorage.setItem("sat7a_role", "customer");
       } catch (e) {
       }
+      // إرسال أي توكن إشعارات مؤجّل كان محفوظاً قبل تسجيل الدخول
+      await flushPendingFcmToken("user", completeProfile.phone);
       setIsLoggedIn(true);
     } catch (err: any) {
       toast({

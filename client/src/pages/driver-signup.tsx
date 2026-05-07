@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Truck, User, Phone, MapPin, CreditCard, Loader2, Lock, ArrowRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { flushPendingFcmToken } from "@/App";
 
 export default function DriverAuth() {
   const [, setLocation] = useLocation();
@@ -43,8 +44,13 @@ export default function DriverAuth() {
     try {
       const res = await apiRequest("POST", "/api/drivers/login", data);
       const driver = await res.json();
-      
+
       localStorage.setItem("currentDriverId", driver.id.toString());
+      localStorage.setItem("driverPhone", driver.phone);
+
+      // إرسال أي توكن إشعارات مؤجّل كان محفوظاً قبل تسجيل الدخول
+      await flushPendingFcmToken("driver", driver.id);
+
       toast({ title: "أهلاً بك مجدداً كابتن", description: driver.name });
       setLocation("/driver");
     } catch (error: any) {
@@ -69,10 +75,14 @@ export default function DriverAuth() {
 
       const newDriver = await res.json();
       localStorage.setItem("currentDriverId", newDriver.id.toString());
+      localStorage.setItem("driverPhone", newDriver.phone);
       queryClient.invalidateQueries({ queryKey: ["/api/drivers"] });
 
+      // إرسال أي توكن إشعارات مؤجّل كان محفوظاً قبل التسجيل
+      await flushPendingFcmToken("driver", newDriver.id);
+
       toast({ title: "تم إرسال طلبك بنجاح", description: "سيقوم المسؤول بمراجعة حسابك وتفعيله قريباً." });
-      setLocation("/driver"); 
+      setLocation("/driver");
     } catch (error: any) {
       toast({ variant: "destructive", title: "خطأ في التسجيل", description: error.message });
     } finally {

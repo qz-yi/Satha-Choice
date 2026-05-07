@@ -21,6 +21,43 @@ import AdminDashboard from "@/pages/admin-dashboard";
 // ✅ تم تغيير المسمى هنا ليشمل (التسجيل + تسجيل الدخول) الذي صنعناه مؤخراً
 import DriverAuth from "@/pages/driver-signup";
 
+// ── FCM Utilities (shared across login flows) ──────────────────────────────
+
+/**
+ * بعد تسجيل الدخول مباشرةً: إرسال التوكن المؤجّل للسيرفر إن وُجد.
+ * يُستدعى من صفحات تسجيل الدخول (driver-signup, request-flow).
+ */
+export async function flushPendingFcmToken(
+  role: "driver" | "user",
+  identifier: string | number   // driverId أو phone
+) {
+  if (!Capacitor.isNativePlatform()) return;
+  const token = localStorage.getItem("pending_fcm_token");
+  if (!token) return;
+
+  const endpoint =
+    role === "driver"
+      ? "/api/drivers/update-fcm-token"
+      : "/api/users/update-fcm-token";
+  const body =
+    role === "driver"
+      ? { driverId: Number(identifier), fcmToken: token }
+      : { phone: String(identifier), fcmToken: token };
+
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    console.log(`✅ [FCM] Pending token flushed (${role}):`, data);
+    localStorage.removeItem("pending_fcm_token");
+  } catch (e) {
+    console.warn(`⚠️ [FCM] Failed to flush pending ${role} token:`, e);
+  }
+}
+
 // ── FCM Token Registration ─────────────────────────────────────────────────
 async function registerPushNotifications() {
   if (!Capacitor.isNativePlatform()) {
@@ -35,13 +72,15 @@ async function registerPushNotifications() {
       return;
     }
 
+    // إزالة المستمعين القديمة قبل إضافة الجديدة لتجنب التكرار
+    await PushNotifications.removeAllListeners();
+
     await PushNotifications.register();
 
     PushNotifications.addListener("registration", async (token) => {
       const fcmToken = token.value;
-      console.log("🔔 [FCM] Token received:", fcmToken);
+      console.log("🔔 [FCM] Token received:", fcmToken.slice(0, 30) + "...");
 
-      // Determine role and send token to server
       const savedUser = localStorage.getItem("sat7a_user");
       const driverId  = localStorage.getItem("currentDriverId");
 
@@ -55,6 +94,7 @@ async function registerPushNotifications() {
           });
           const data = await res.json();
           console.log("✅ [FCM] User token saved:", data);
+          localStorage.removeItem("pending_fcm_token");
         } catch (e) {
           console.warn("⚠️ [FCM] Failed to save user token:", e);
         }
@@ -67,13 +107,14 @@ async function registerPushNotifications() {
           });
           const data = await res.json();
           console.log("✅ [FCM] Driver token saved:", data);
+          localStorage.removeItem("pending_fcm_token");
         } catch (e) {
           console.warn("⚠️ [FCM] Failed to save driver token:", e);
         }
       } else {
-        // Store for later — will be sent after login
+        // المستخدم لم يسجل دخوله بعد — حفظ التوكن محلياً لإرساله بعد الدخول
         localStorage.setItem("pending_fcm_token", fcmToken);
-        console.log("📦 [FCM] Token stored locally (user not logged in yet)");
+        console.log("📦 [FCM] Token stored locally — will be sent after login");
       }
     });
 
@@ -82,8 +123,7 @@ async function registerPushNotifications() {
     });
 
     PushNotifications.addListener("pushNotificationReceived", (notification) => {
-      console.log("📩 [FCM] Notification received (foreground):", notification);
-      // عرض تنبيه مرئي للسائق عندما يكون التطبيق مفتوحاً
+      console.log("📩 [FCM] Foreground notification:", notification);
       const title = notification.title || "إشعار جديد";
       const body  = notification.body  || "";
       if (title || body) {
@@ -98,7 +138,7 @@ async function registerPushNotifications() {
   } catch (err) {
     console.warn("⚠️ [FCM] Push notification setup failed:", err);
   }
-} 
+}
 
 function Router() {
   return (
