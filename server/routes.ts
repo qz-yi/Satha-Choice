@@ -11,6 +11,7 @@ import fs from "fs";
 import express from "express";
 import { Server as SocketIOServer } from "socket.io";
 import jwt from "jsonwebtoken"; 
+import bcrypt from "bcrypt";
 import NodeGeocoder from 'node-geocoder';
 import { calculateDynamicFare, calculateSimpleFare, getSurgeMultiplier, getVehicleConfig } from './services/PricingService';
 import axios from 'axios';
@@ -610,7 +611,12 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       if (!driver) {
         return res.status(401).json({ message: "رقم الهاتف غير مسجل لدينا" });
       }
-      if (driver.password !== password) {
+      // دعم كلمات المرور المشفرة (bcrypt) وغير المشفرة (نص عادي) معاً
+      const isHashed = driver.password.startsWith("$2");
+      const passwordMatch = isHashed
+        ? await bcrypt.compare(password, driver.password)
+        : driver.password === password;
+      if (!passwordMatch) {
         return res.status(401).json({ message: "كلمة المرور غير صحيحة" });
       }
 
@@ -1511,6 +1517,75 @@ export async function registerRoutes(arg1: any, arg2: any): Promise<Server> {
       res.json({ success: true, message: "تم حذف الطلب بنجاح بدون خصم عمولة" });
     } catch (err: any) {
       res.status(500).json({ message: "فشل في حذف الطلب" });
+    }
+  });
+
+  // ── Admin: إعادة الطلب لقائمة الانتظار ────────────────────────────────────
+  app.post("/api/admin/requests/:requestId/return-to-queue", async (req, res) => {
+    try {
+      const requestId = parseInt(req.params.requestId);
+      const request = await storage.getRequest(requestId);
+      if (!request) {
+        return res.status(404).json({ message: "الطلب غير موجود" });
+      }
+
+      const previousDriverId = request.driverId;
+
+      // إعادة ضبط الطلب: driver_id = NULL, status = pending
+      await db.update(requests)
+        .set({ driverId: null, status: "pending" })
+        .where(eq(requests.id, requestId));
+
+      // إشعار السائق السابق (إن وُجد) بإلغاء تعيينه
+      if (previousDriverId) {
+        io.to(`driver_${previousDriverId}`).emit("order_reassigned", {
+          requestId,
+          message: "تم إعادة الطلب لقائمة الانتظار من قبل الإدارة",
+        });
+        // إشعار push للسائق
+        const driver = await storage.getDriver(previousDriverId);
+        if (driver?.fcmToken) {
+          await sendPushNotification(
+            driver.fcmToken,
+            "تم إلغاء تعيين طلبك",
+            "قامت الإدارة بإعادة الطلب لقائمة الانتظار"
+          );
+        }
+      }
+
+      // إشعار لوحة الإدارة بالتحديث
+      io.emit("request_updated", { id: requestId, status: "pending", driverId: null });
+      // إشعار السائقين المتاحين بوجود طلب جديد
+      io.emit("new_request", { id: requestId });
+
+      res.json({ success: true, message: "تم إعادة الطلب لقائمة الانتظار بنجاح" });
+    } catch (err: any) {
+      res.status(500).json({ message: "فشل في إعادة الطلب: " + err.message });
+    }
+  });
+
+  // ── Admin: تغيير كلمة مرور السائق ─────────────────────────────────────────
+  app.put("/api/admin/drivers/:id/reset-password", async (req, res) => {
+    try {
+      const driverId = parseInt(req.params.id);
+      const { newPassword } = req.body;
+
+      if (!newPassword || newPassword.length < 6) {
+        return res.status(400).json({ message: "كلمة المرور يجب أن لا تقل عن 6 أحرف" });
+      }
+
+      const driver = await storage.getDriver(driverId);
+      if (!driver) {
+        return res.status(404).json({ message: "السائق غير موجود" });
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await storage.updateDriver(driverId, { password: hashedPassword });
+
+      console.log(`✅ [ADMIN] Password reset for driver #${driverId}`);
+      res.json({ success: true, message: "تم تغيير كلمة المرور بنجاح" });
+    } catch (err: any) {
+      res.status(500).json({ message: "فشل في تغيير كلمة المرور: " + err.message });
     }
   });
 

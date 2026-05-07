@@ -6,7 +6,7 @@ import {
   UserPlus, AlertCircle, Phone, MapPin, Wallet, TrendingUp,
   Coins, Plus, Minus, ExternalLink, Loader2, Clock,
   DollarSign, BarChart3, ArrowUpRight, Bell, LogOut,
-  Star, Zap, Navigation, RotateCcw
+  Star, Zap, Navigation, RotateCcw, Lock, RefreshCcw
 } from "lucide-react";
 import AdminPricingPanel from "./admin-pricing-panel";
 import { Marker, Popup, SathaMap, L } from "@/components/SathaMap";
@@ -202,6 +202,8 @@ export default function AdminDashboard() {
   const [customerWalletAmount, setCustomerWalletAmount] = useState("");
   const [driverToDelete, setDriverToDelete]           = useState<number | null>(null);
   const [driverLocations, setDriverLocations]         = useState<Record<number, { lat: number; lng: number }>>({});
+  const [resetPasswordDriverId, setResetPasswordDriverId] = useState<number | null>(null);
+  const [newPasswordInput, setNewPasswordInput]       = useState("");
 
   const [, setLocation] = useLocation();
   const { toast }       = useToast();
@@ -426,14 +428,50 @@ export default function AdminDashboard() {
     onError: (e: any) => toast({ variant: "destructive", title: "فشل التصفير", description: e.message }),
   });
 
+  const returnToQueue = useMutation({
+    mutationFn: async (requestId: number) => {
+      const res = await apiRequest("POST", `/api/admin/requests/${requestId}/return-to-queue`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/requests?role=admin"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/drivers"] });
+      toast({ title: "✅ تم إعادة الطلب للانتظار", description: "الطلب متاح الآن لجميع السائقين القريبين", className: "bg-blue-600 text-white" });
+    },
+    onError: (e: any) => toast({ variant: "destructive", title: "فشل الإعادة", description: e.message }),
+  });
+
+  const resetPassword = useMutation({
+    mutationFn: async ({ driverId, newPassword }: { driverId: number; newPassword: string }) => {
+      const res = await apiRequest("PUT", `/api/admin/drivers/${driverId}/reset-password`, { newPassword });
+      return res.json();
+    },
+    onSuccess: () => {
+      setResetPasswordDriverId(null);
+      setNewPasswordInput("");
+      toast({ title: "✅ تم تغيير كلمة المرور", description: "تم تحديث كلمة المرور بنجاح", className: "bg-green-600 text-white" });
+    },
+    onError: (e: any) => toast({ variant: "destructive", title: "فشل تغيير كلمة المرور", description: e.message }),
+  });
+
   const switchTab = (tab: string) => { setActiveTab(tab); setSidebarOpen(false); };
 
   // ── Driver Card ───────────────────────────────────────────────────────────
   const DriverCard = ({ driver }: { driver: Driver }) => {
-    const job      = allRequests.find(r => r.driverId === driver.id && ["accepted","confirmed"].includes(r.status));
+    // Feature 1: إظهار البطاقة لجميع الحالات النشطة حتى اكتمال الرحلة
+    const job      = allRequests.find(r => r.driverId === driver.id && ["accepted","confirmed","arrived","picked_up","in_progress","arrived_dropoff"].includes(r.status));
     const isActive = driver.status === "approved";
     const isOnline = !!driver.isOnline;
     const [walletInput, setWalletInput] = useState("");
+
+    const statusLabel: Record<string, string> = {
+      accepted:       "قبل الطلب",
+      confirmed:      "مؤكد",
+      arrived:        "وصل للموقع",
+      picked_up:      "استلم السيارة",
+      in_progress:    "في الطريق",
+      arrived_dropoff:"وصل للوجهة",
+    };
 
     return (
       <motion.div
@@ -455,7 +493,17 @@ export default function AdminDashboard() {
                 {driver.name?.charAt(0) || "؟"}
               </div>
               <div>
-                <h4 className="font-black text-slate-800 text-base leading-tight">{driver.name}</h4>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-black text-slate-800 text-base leading-tight">{driver.name}</h4>
+                  {/* Feature 3: زر تغيير كلمة المرور */}
+                  <button
+                    onClick={() => { setResetPasswordDriverId(driver.id); setNewPasswordInput(""); }}
+                    title="تغيير كلمة المرور"
+                    className="w-6 h-6 rounded-lg flex items-center justify-center text-gray-400 hover:text-orange-500 hover:bg-orange-50 transition-all"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                  </button>
+                </div>
                 <div className="flex items-center gap-2 mt-1">
                   <div className={`w-2 h-2 rounded-full ${isOnline && isActive ? "bg-green-500 animate-pulse" : "bg-gray-300"}`} />
                   <span className={`text-[11px] font-black ${isOnline && isActive ? "text-green-600" : "text-gray-400"}`}>
@@ -519,26 +567,36 @@ export default function AdminDashboard() {
             </a>
           </div>
 
-          {/* Active job */}
+          {/* Active job — Feature 1: يظهر لجميع الحالات النشطة */}
           {job ? (
             <div className="bg-orange-50 border border-orange-100 rounded-2xl p-4 mb-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-black text-orange-600 uppercase">طلب نشط #{job.id}</span>
-                <span className="bg-orange-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full">مشغول</span>
+                <span className="bg-orange-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full">
+                  {statusLabel[job.status] || "مشغول"}
+                </span>
               </div>
               <p className="text-xs font-bold text-gray-700 truncate mb-3">{job.location || job.pickupAddress}</p>
-              <div className="flex gap-2">
+              {/* Feature 2: 4 أزرار — إتمام، تحويل، إعادة للطلبات، حذف */}
+              <div className="grid grid-cols-2 gap-2">
                 <button onClick={() => { if (confirm("إتمام الطلب؟")) forceComplete.mutate(job.id); }}
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white text-[10px] font-black py-2 rounded-xl transition-all active:scale-95">
+                  className="bg-green-600 hover:bg-green-700 text-white text-[10px] font-black py-2 rounded-xl transition-all active:scale-95">
                   ✓ إتمام
                 </button>
                 <button onClick={() => { setAssigningRequest(job); setSelectedOrderId(null); }}
-                  className="flex-1 bg-slate-800 hover:bg-slate-900 text-white text-[10px] font-black py-2 rounded-xl transition-all active:scale-95">
+                  className="bg-slate-800 hover:bg-slate-900 text-white text-[10px] font-black py-2 rounded-xl transition-all active:scale-95">
                   ↻ تحويل
                 </button>
+                <button
+                  onClick={() => { if (confirm("إعادة الطلب لقائمة الانتظار؟ سيتم إلغاء تعيين السائق.")) returnToQueue.mutate(job.id); }}
+                  disabled={returnToQueue.isPending}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black py-2 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-1 disabled:opacity-50 col-span-2"
+                >
+                  <RefreshCcw className="w-3 h-3" /> إعادة للطلبات
+                </button>
                 <button onClick={() => { if (confirm("حذف الطلب بدون عمولة؟")) deleteNoCommission.mutate(job.id); }}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black py-2 rounded-xl transition-all active:scale-95">
-                  🗑
+                  className="bg-red-600 hover:bg-red-700 text-white text-[10px] font-black py-2 rounded-xl transition-all active:scale-95 col-span-2">
+                  🗑 حذف بدون عمولة
                 </button>
               </div>
             </div>
@@ -1193,6 +1251,54 @@ export default function AdminDashboard() {
                   {assignMutation.isPending ? <Loader2 className="animate-spin" /> : "تأكيد الآن"}
                 </Button>
                 <Button onClick={() => setShowConfirmModal(false)} variant="outline" className="flex-1 h-14 rounded-2xl font-black">
+                  إلغاء
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Feature 3: Password Reset Modal */}
+        {resetPasswordDriverId !== null && (
+          <div className="fixed inset-0 z-[8000] bg-black/60 backdrop-blur-md flex items-center justify-center p-6">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+              className="bg-white p-8 rounded-[36px] shadow-2xl max-w-sm w-full text-center"
+            >
+              <div className="w-16 h-16 bg-orange-50 rounded-3xl flex items-center justify-center mx-auto mb-5">
+                <Lock className="w-8 h-8 text-orange-500" />
+              </div>
+              <h4 className="text-xl font-black text-slate-900 mb-2">تغيير كلمة المرور</h4>
+              <p className="text-gray-500 text-sm font-bold mb-6 leading-relaxed">
+                أدخل كلمة المرور الجديدة للكابتن. يجب أن لا تقل عن 6 أحرف.
+              </p>
+              <input
+                type="password"
+                value={newPasswordInput}
+                onChange={e => setNewPasswordInput(e.target.value)}
+                placeholder="كلمة المرور الجديدة..."
+                data-testid="input-new-password"
+                className="w-full bg-gray-50 border-2 border-gray-200 rounded-2xl py-3.5 px-5 text-sm font-bold text-slate-900 placeholder:text-gray-400 focus:border-orange-400 outline-none transition-colors mb-6 text-right"
+              />
+              <div className="flex gap-3">
+                <Button
+                  onClick={() => {
+                    if (newPasswordInput.length < 6) {
+                      toast({ variant: "destructive", title: "كلمة المرور قصيرة", description: "يجب أن لا تقل عن 6 أحرف" });
+                      return;
+                    }
+                    resetPassword.mutate({ driverId: resetPasswordDriverId!, newPassword: newPasswordInput });
+                  }}
+                  disabled={resetPassword.isPending || newPasswordInput.length < 6}
+                  data-testid="button-confirm-reset-password"
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 text-white h-14 rounded-2xl font-black"
+                >
+                  {resetPassword.isPending ? <Loader2 className="animate-spin" /> : "تأكيد التغيير"}
+                </Button>
+                <Button
+                  onClick={() => { setResetPasswordDriverId(null); setNewPasswordInput(""); }}
+                  variant="outline" className="flex-1 h-14 rounded-2xl font-black"
+                >
                   إلغاء
                 </Button>
               </div>
