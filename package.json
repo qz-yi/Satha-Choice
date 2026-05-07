@@ -4,7 +4,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "NODE_ENV=development npx tsx server/index.ts",
+    "dev": "NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
     "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
@@ -123,7 +123,7 @@
     "postcss-import": "^16.1.1",
     "postcss-loader": "^8.2.1",
     "tailwindcss": "^3.4.17",
-    "tsx": "^4.20.5",
+    "tsx": "^4.21.0",
     "typescript": "~5.9.2",
     "vite": "^7.3.0"
   }
